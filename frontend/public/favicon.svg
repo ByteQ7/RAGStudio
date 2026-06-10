@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RAGStudio">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#0D9488" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)" />
+  <path
+    d="M32 8 C32 8 33.26 22.74 34.26 23.74 C35.26 24.74 56 26 56 26 C56 26 35.26 27.26 34.26 28.26 C33.26 29.26 32 56 32 56 C32 56 30.74 29.26 29.74 28.26 C28.74 27.26 8 26 8 26 C8 26 28.74 24.74 29.74 23.74 C30.74 22.74 32 8 32 8Z"
+    fill="#ffffff"
+  />
+</svg>

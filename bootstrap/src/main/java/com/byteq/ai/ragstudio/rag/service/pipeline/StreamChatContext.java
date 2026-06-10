@@ -1,0 +1,59 @@
+package com.byteq.ai.ragstudio.rag.service.pipeline;
+
+import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
+import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
+import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.util.List;
+
+/**
+ * 流式对话上下文
+ * <p>
+ * 承载流式对话流水线（StreamChatPipeline）执行过程中所需的全部数据。
+ * 包含两部分内容：
+ * <ol>
+ *   <li><b>不可变输入参数</b>：由调用方在构建时传入，在整个流水线中只读</li>
+ *   <li><b>中间状态</b>：在流水线各阶段逐步填充，传递到后续阶段使用</li>
+ * </ol>
+ * </p>
+ */
+@Getter
+@Builder
+public class StreamChatContext {
+
+    // ==================== 不可变输入参数 ====================
+
+    /** 用户问题文本 */
+    private final String question;
+
+    /** 会话 ID，为空时将创建新会话 */
+    private final String conversationId;
+
+    /** 任务 ID，用于追踪和取消任务 */
+    private final String taskId;
+
+    /** 是否开启深度思考模式 */
+    private final boolean deepThinking;
+
+    /** 当前用户 ID */
+    private final String userId;
+
+    /** SSE 流式回调，用于向客户端推送结果 */
+    private final StreamCallback callback;
+
+    /** 用户选择的知识库 ID 列表 */
+    private final List<String> knowledgeBaseIds;
+
+    // ==================== 管道中填充的中间状态 ====================
+
+    /** 对话历史消息列表（包含当前用户问题） */
+    @Setter
+    private List<ChatMessage> history;
+
+    /** 查询改写结果，包含改写后的问题和子问题列表 */
+    @Setter
+    private RewriteResult rewriteResult;
+}
