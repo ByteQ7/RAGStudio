@@ -3,8 +3,8 @@
 ## 概述
 
 本项目实现了一个可扩展的多通道检索架构，支持：
-- **多种检索策略**：向量全局检索、意图定向检索、ES 关键词检索等
-- **灵活的后置处理**：去重、版本过滤、分数归一化、Rerank 等
+- **多种检索策略**：向量全局检索、知识库选择检索（按需扩展）
+- **灵活的后置处理**：去重、Rerank 重排序
 - **易于扩展**：新增检索通道或后置处理器只需实现接口并注册为 Spring Bean
 
 ## 架构设计
@@ -15,17 +15,14 @@
 【问题重写】
     ↓
 【多通道并行检索】
-    ├─→ VectorGlobalSearchChannel（向量全局检索）
-    ├─→ IntentDirectedSearchChannel（意图定向检索）
-    └─→ KeywordESSearchChannel（ES 关键词检索，未来扩展）
+    ├─→ VectorGlobalSearchChannel（向量全局检索，始终执行）
+    └─→ KnowledgeBaseSelectionChannel（知识库选择检索，选择 KB 时启用）
     ↓
 【结果聚合】
     ↓
 【后置处理器链】
     ├─→ DeduplicationPostProcessor（去重）
-    ├─→ VersionFilterPostProcessor（版本过滤）
-    ├─→ ScoreNormalizationPostProcessor（分数归一化）
-    └─→ RerankPostProcessor（重排序）
+    └─→ RerankPostProcessor（Rerank 重排序）
     ↓
 【上下文格式化】
     ↓
@@ -42,7 +39,7 @@
 ```java
 public interface SearchChannel {
     String getName();                              // 通道名称
-    int getPriority();                             // 优先级
+    int getPriority();                             // 优先级（越小越高）
     boolean isEnabled(SearchContext context);      // 是否启用
     SearchChannelResult search(SearchContext context);  // 执行检索
     SearchChannelType getType();                   // 通道类型
@@ -50,28 +47,29 @@ public interface SearchChannel {
 ```
 
 **已实现的通道**：
-- `VectorGlobalSearchChannel`：向量全局检索，在所有知识库中检索
-- `IntentDirectedSearchChannel`：意图定向检索，基于意图识别结果在特定知识库中检索
+
+| 通道 | 类名 | 说明 |
+|------|------|------|
+| 向量全局检索 | `VectorGlobalSearchChannel` | 在所有知识库中执行向量检索，始终启用 |
+| 知识库选择检索 | `KnowledgeBaseSelectionChannel` | 仅当用户在前端选择了特定知识库时启用 |
 
 **扩展示例**：
 ```java
 @Component
-public class KeywordESSearchChannel implements SearchChannel {
+public class CustomSearchChannel implements SearchChannel {
     @Override
     public String getName() {
-        return "KeywordESSearch";
+        return "CustomSearch";
     }
 
     @Override
     public boolean isEnabled(SearchContext context) {
-        // 判断是否启用该通道
-        return containsKeywords(context.getMainQuestion());
+        return true;
     }
 
     @Override
     public SearchChannelResult search(SearchContext context) {
-        // 实现 ES 检索逻辑
-        // ...
+        // 实现自定义检索逻辑
     }
 }
 ```
@@ -84,7 +82,7 @@ public class KeywordESSearchChannel implements SearchChannel {
 ```java
 public interface SearchResultPostProcessor {
     String getName();                              // 处理器名称
-    int getOrder();                                // 执行顺序
+    int getOrder();                                // 执行顺序（越小越先）
     boolean isEnabled(SearchContext context);      // 是否启用
     List<RetrievedChunk> process(                  // 处理结果
         List<RetrievedChunk> chunks,
@@ -95,21 +93,24 @@ public interface SearchResultPostProcessor {
 ```
 
 **已实现的处理器**：
-- `DeduplicationPostProcessor`：去重，合并多个通道的结果
-- `RerankPostProcessor`：重排序，使用 Rerank 模型对结果进行精排
+
+| 处理器 | 类名 | 说明 |
+|--------|------|------|
+| 去重 | `DeduplicationPostProcessor` | 合并多个通道的结果，移除重复 Chunk |
+| Rerank 重排序 | `RerankPostProcessor` | 使用 Rerank 模型对结果进行精排 |
 
 **扩展示例**：
 ```java
 @Component
-public class VersionFilterPostProcessor implements SearchResultPostProcessor {
+public class CustomPostProcessor implements SearchResultPostProcessor {
     @Override
     public String getName() {
-        return "VersionFilter";
+        return "CustomProcessor";
     }
 
     @Override
     public int getOrder() {
-        return 2;  // 在去重之后执行
+        return 5;  // 去重之后、Rerank 之前执行
     }
 
     @Override
@@ -118,9 +119,7 @@ public class VersionFilterPostProcessor implements SearchResultPostProcessor {
         List<SearchChannelResult> results,
         SearchContext context
     ) {
-        // 实现版本过滤逻辑
-        // 当检索到同一文档的多个版本时，只保留最新版本
-        // ...
+        // 实现自定义处理逻辑
     }
 }
 ```
@@ -129,25 +128,20 @@ public class VersionFilterPostProcessor implements SearchResultPostProcessor {
 
 协调多个检索通道和后置处理器的执行。
 
-**核心方法**：
-```java
-public List<RetrievedChunk> retrieveKB(List<SubQuestionIntent> subIntents, int topK) {
-    // 1. 构建检索上下文
-    SearchContext context = buildSearchContext(subIntents, topK);
-
-    // 2. 并行执行所有启用的检索通道
-    List<SearchChannelResult> channelResults = executeSearchChannels(context);
-
-    // 3. 依次执行后置处理器链
-    List<RetrievedChunk> processedChunks = executePostProcessors(channelResults, context);
-
-    return processedChunks;
-}
+**核心流程**：
+```
+MultiChannelRetrievalEngine.retrieveKnowledgeChannels()
+    │
+    ├─ Phase 1: 并行执行所有启用的检索通道
+    │    └─ CompletableFuture.supplyAsync() + ragRetrievalExecutor
+    │
+    └─ Phase 2: 依次执行后置处理器链
+         └─ 按 order 排序，前一个输出作为后一个输入
 ```
 
 ## 配置说明
 
-配置文件：`application-search.yml`
+在 `application.yaml` 中配置：
 
 ```yaml
 rag:
@@ -155,20 +149,13 @@ rag:
     channels:
       vector-global:
         enabled: true
-        confidence-threshold: 0.6  # 意图置信度低于此值时启用
         top-k-multiplier: 3
-
-      intent-directed:
+      knowledge-base-selection:
         enabled: true
-        min-intent-score: 0.4
-        top-k-multiplier: 2
-
-    post-processors:
-      deduplication:
-        enabled: true
-      rerank:
-        enabled: true
+        top-k-multiplier: 3
 ```
+
+**注意**：后置处理器（去重、Rerank）由代码自动管理，无需配置文件控制。
 
 ## 使用示例
 
@@ -180,15 +167,12 @@ public class RAGService {
     @Autowired
     private MultiChannelRetrievalEngine retrievalEngine;
 
-    public void search(String question) {
-        // 构建意图列表
-        List<SubQuestionIntent> intents = ...;
-
-        // 执行多通道检索
-        List<RetrievedChunk> chunks = retrievalEngine.retrieveKB(intents, 5);
-
+    public RetrievalContext search(String mainQuestion, List<String> subQuestions,
+                                    List<String> collectionNames, int topK) {
+        List<RetrievedChunk> chunks = retrievalEngine.retrieveKnowledgeChannels(
+            collectionNames, subQuestions, mainQuestion, topK
+        );
         // 使用检索结果
-        // ...
     }
 }
 ```
@@ -205,66 +189,28 @@ public class CustomSearchChannel implements SearchChannel {
 
     @Override
     public int getPriority() {
-        return 5;  // 中等优先级
+        return 5;
     }
 
     @Override
     public boolean isEnabled(SearchContext context) {
         // 自定义启用条件
-        return true;
+        return context.getMainQuestion().contains("关键词");
     }
 
     @Override
     public SearchChannelResult search(SearchContext context) {
         // 实现自定义检索逻辑
-        List<RetrievedChunk> chunks = ...;
-
         return SearchChannelResult.builder()
             .channelType(SearchChannelType.HYBRID)
             .channelName(getName())
             .chunks(chunks)
-            .confidence(0.8)
             .build();
     }
 
     @Override
     public SearchChannelType getType() {
         return SearchChannelType.HYBRID;
-    }
-}
-```
-
-### 3. 新增后置处理器
-
-```java
-@Component
-public class CustomPostProcessor implements SearchResultPostProcessor {
-    @Override
-    public String getName() {
-        return "CustomProcessor";
-    }
-
-    @Override
-    public int getOrder() {
-        return 5;  // 在去重之后、Rerank 之前执行
-    }
-
-    @Override
-    public boolean isEnabled(SearchContext context) {
-        return true;
-    }
-
-    @Override
-    public List<RetrievedChunk> process(
-        List<RetrievedChunk> chunks,
-        List<SearchChannelResult> results,
-        SearchContext context
-    ) {
-        // 实现自定义处理逻辑
-        // 例如：过滤、排序、增强等
-        return chunks.stream()
-            .filter(chunk -> chunk.getScore() > 0.5)
-            .toList();
     }
 }
 ```
@@ -276,14 +222,13 @@ public class CustomPostProcessor implements SearchResultPostProcessor {
 所有启用的检索通道会**并行执行**，互不影响：
 
 ```
-VectorGlobalSearchChannel  ─┐
-                            ├─→ 并行执行
-IntentDirectedSearchChannel ─┘
+VectorGlobalSearchChannel     ─┐
+                               ├─→ 并行执行
+KnowledgeBaseSelectionChannel ─┘
 ```
 
 每个通道返回 `SearchChannelResult`，包含：
 - 检索到的 Chunk 列表
-- 通道置信度
 - 检索耗时
 - 元数据
 
@@ -294,11 +239,9 @@ IntentDirectedSearchChannel ─┘
 ```
 原始 Chunks
     ↓
-DeduplicationPostProcessor (order=1)
+DeduplicationPostProcessor (order=1) — 去重
     ↓
-VersionFilterPostProcessor (order=2)
-    ↓
-RerankPostProcessor (order=10)
+RerankPostProcessor (order=10) — Rerank 重排序
     ↓
 最终 Chunks
 ```
@@ -312,10 +255,9 @@ RerankPostProcessor (order=10)
 ```java
 public enum SearchChannelType {
     VECTOR_GLOBAL,
-    INTENT_DIRECTED,
-    KEYWORD_ES,
-    HYBRID,
-    CUSTOM_TYPE  // 新增类型
+    KNOWLEDGE_BASE_SELECTION,
+    KEYWORD_ES,    // ES 关键词检索（预留）
+    HYBRID         // 混合检索（预留）
 }
 ```
 
@@ -326,53 +268,28 @@ public enum SearchChannelType {
 ```java
 @Override
 public boolean isEnabled(SearchContext context) {
-    // 示例：只在问题包含特定关键词时启用
     String question = context.getMainQuestion();
     return question.contains("实时") || question.contains("最新");
 }
 ```
 
-### 3. 自定义后置处理逻辑
-
-实现 `SearchResultPostProcessor` 接口，添加自定义处理逻辑：
-
-```java
-@Component
-public class ScoreBoostPostProcessor implements SearchResultPostProcessor {
-    @Override
-    public List<RetrievedChunk> process(...) {
-        // 示例：对特定来源的 Chunk 提升分数
-        return chunks.stream()
-            .map(chunk -> {
-                if (isHighQualitySource(chunk)) {
-                    chunk.setScore(chunk.getScore() * 1.2f);
-                }
-                return chunk;
-            })
-            .toList();
-    }
-}
-```
-
 ## 优势
 
-1. **高覆盖率**：多通道并行检索，即使意图识别失败也能通过全局检索兜底
-2. **高准确率**：意图定向检索提供精确结果，Rerank 进一步优化排序
+1. **高覆盖率**：多通道并行检索，全局检索 + 知识库选择检索覆盖全面
+2. **高准确率**：Rerank 重排序进一步优化结果排序
 3. **易扩展**：新增通道或处理器只需实现接口，无需修改核心代码
-4. **灵活配置**：通过配置文件控制通道和处理器的启用状态
+4. **灵活配置**：通过配置文件控制通道启用状态
 5. **性能优化**：通道并行执行，处理器按需启用
 
 ## 注意事项
 
-1. **通道优先级**：数字越小优先级越高，影响去重时的结果保留策略
-2. **处理器顺序**：`order` 决定执行顺序，去重应该最先执行，Rerank 应该最后执行
+1. **通道优先级**：`getPriority()` 数字越小优先级越高，影响去重时的结果保留策略
+2. **处理器顺序**：`getOrder()` 决定执行顺序，去重应最先执行，Rerank 应最后执行
 3. **性能考虑**：启用过多通道会增加延迟，建议根据实际需求选择性启用
-4. **配置调优**：`confidence-threshold`、`top-k-multiplier` 等参数需要根据实际效果调整
+4. **异常隔离**：单个通道失败不影响其他通道；单个处理器失败自动跳过
 
 ## 未来扩展
 
 1. **ES 关键词检索通道**：基于 Elasticsearch 的全文检索
-2. **版本过滤处理器**：当检索到同一文档的多个版本时，只保留最新版本
-3. **分数归一化处理器**：统一不同通道的分数尺度
-4. **缓存机制**：对检索结果进行缓存，提升性能
-5. **监控和统计**：记录各通道的命中率、耗时等指标
+2. **缓存机制**：对检索结果进行缓存，提升性能
+3. **监控和统计**：记录各通道的命中率、耗时等指标
