@@ -243,13 +243,31 @@ public class ParserNode implements IngestionNode {
     private String normalizeType(String raw) {
         if (!StringUtils.hasText(raw)) return null;
         String value = raw.trim().toUpperCase();
-        return switch (value) {
+
+        // 支持完整 MIME 类型（如 "TEXT/MARKDOWN"、"APPLICATION/PDF"）
+        // 提取斜杠后的子类型进行匹配
+        int slash = value.indexOf('/');
+        String subType = slash >= 0 ? value.substring(slash + 1) : value;
+
+        // OpenXML 格式（如 VND.OPENXMLFORMATS-OFFICEDOCUMENT.WORDPROCESSINGML.DOCUMENT）
+        // 通过子类型中的关键词识别
+        if (subType.contains("WORDPROCESSINGML") || subType.contains("MSWORD")) {
+            return "WORD";
+        }
+        if (subType.contains("SPREADSHEETML") || subType.contains("MSEXCEL")) {
+            return "EXCEL";
+        }
+        if (subType.contains("PRESENTATIONML") || subType.contains("MSPOWERPOINT")) {
+            return "PPT";
+        }
+
+        return switch (subType) {
             case "*", "ALL", "DEFAULT" -> "ALL";
             case "MD", "MARKDOWN" -> "MARKDOWN";
             case "DOC", "DOCX", "WORD" -> "WORD";
             case "XLS", "XLSX", "EXCEL" -> "EXCEL";
             case "PPT", "PPTX", "POWERPOINT" -> "PPT";
-            case "TXT", "TEXT" -> "TEXT";
+            case "TXT", "TEXT", "PLAIN", "HTML" -> "TEXT";
             case "PNG", "JPG", "JPEG", "GIF", "BMP", "WEBP", "IMAGE", "IMG" -> "IMAGE";
             case "PDF" -> "PDF";
             default -> value;
