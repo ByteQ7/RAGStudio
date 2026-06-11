@@ -25,6 +25,9 @@ import com.byteq.ai.ragstudio.framework.mq.producer.MessageQueueProducer;
 import com.byteq.ai.ragstudio.ingestion.dao.entity.IngestionPipelineDO;
 import com.byteq.ai.ragstudio.ingestion.dao.mapper.IngestionPipelineMapper;
 import com.byteq.ai.ragstudio.ingestion.domain.context.IngestionContext;
+import com.byteq.ai.ragstudio.ingestion.dao.entity.IngestionTaskDO;
+import com.byteq.ai.ragstudio.ingestion.dao.mapper.IngestionTaskMapper;
+import com.byteq.ai.ragstudio.ingestion.domain.enums.IngestionStatus;
 import com.byteq.ai.ragstudio.ingestion.domain.pipeline.PipelineDefinition;
 import com.byteq.ai.ragstudio.ingestion.engine.IngestionEngine;
 import com.byteq.ai.ragstudio.ingestion.service.IngestionPipelineService;
@@ -93,6 +96,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final IngestionEngine ingestionEngine;
     private final ChunkEmbeddingService chunkEmbeddingService;
     private final KnowledgeDocumentChunkLogMapper chunkLogMapper;
+    private final IngestionTaskMapper ingestionTaskMapper;
     private final TransactionOperations transactionOperations;
     private final MessageQueueProducer messageQueueProducer;
     private final KnowledgeScheduleProperties scheduleProperties;
@@ -334,6 +338,21 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw new RuntimeException("读取文件内容失败：docId=" + docId, e);
         }
 
+        // 创建摄入任务记录，使其出现在“流水线任务”列表中
+        String fileName = documentDO.getFileName();
+        IngestionTaskDO task = IngestionTaskDO.builder()
+                .pipelineId(pipelineId)
+                .sourceType(documentDO.getSourceType())
+                .sourceLocation(documentDO.getFileUrl())
+                .sourceFileName(fileName)
+                .status(IngestionStatus.RUNNING.getValue())
+                .chunkCount(0)
+                .startedAt(new Date())
+                .createdBy(UserContext.getUsername())
+                .updatedBy(UserContext.getUsername())
+                .build();
+        ingestionTaskMapper.insert(task);
+
         IngestionContext context = IngestionContext.builder()
                 .taskId(docId)
                 .pipelineId(pipelineId)
@@ -348,10 +367,19 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         IngestionContext result = ingestionEngine.execute(pipelineDef, context);
 
         if (result.getError() != null) {
+            task.setStatus(IngestionStatus.FAILED.getValue());
+            task.setErrorMessage(result.getError().getMessage());
+            task.setCompletedAt(new Date());
+            ingestionTaskMapper.updateById(task);
             throw new RuntimeException("Pipeline执行失败：" + result.getError().getMessage(), result.getError());
         }
 
         List<VectorChunk> chunks = result.getChunks();
+        task.setStatus(IngestionStatus.COMPLETED.getValue());
+        task.setChunkCount(chunks == null ? 0 : chunks.size());
+        task.setCompletedAt(new Date());
+        ingestionTaskMapper.updateById(task);
+
         if (chunks == null || chunks.isEmpty()) {
             log.warn("Pipeline执行完成但未产生分块：docId={}", docId);
             return List.of();
