@@ -1,6 +1,5 @@
 package com.byteq.ai.ragstudio.rag.core.retrieve.channel;
 
-import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeBaseDO;
@@ -49,14 +48,8 @@ public class VectorGlobalSearchChannel implements SearchChannel {
 
     @Override
     public boolean isEnabled(SearchContext context) {
-        if (!properties.getChannels().getVectorGlobal().isEnabled()) {
-            return false;
-        }
-        if (CollUtil.isNotEmpty(context.getSelectedCollectionNames())) {
-            log.info("用户已选择知识库，跳过全局检索");
-            return false;
-        }
-        return true;
+        // 已禁用全局检索，只检索用户选择的知识库
+        return false;
     }
 
     @Override

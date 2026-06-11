@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  ChevronDown,
+  ChevronUp,
   ClipboardList,
-  FileUp,
   FolderKanban,
   Pencil,
   Plus,
@@ -19,23 +20,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   IngestionPipeline,
   IngestionPipelineNode,
   IngestionPipelinePayload,
   IngestionTask,
-  IngestionTaskCreatePayload,
   IngestionTaskNode,
   PageResult
 } from "@/services/ingestionService";
 import {
   createIngestionPipeline,
-  createIngestionTask,
   deleteIngestionPipeline,
   getIngestionPipeline,
   getIngestionPipelines,
@@ -43,9 +43,7 @@ import {
   getIngestionTaskNodes,
   getIngestionTasks,
   updateIngestionPipeline,
-  uploadIngestionTask
 } from "@/services/ingestionService";
-import { getSystemSettings } from "@/services/settingsService";
 import { getErrorMessage } from "@/utils/error";
 const PIPELINE_PAGE_SIZE = 10;
 const TASK_PAGE_SIZE = 10;
@@ -57,38 +55,91 @@ const STATUS_OPTIONS = [
   { value: "failed", label: "failed" }
 ];
 
-const SOURCE_OPTIONS = [
-  { value: "file", label: "Local File" },
-  { value: "url", label: "Remote URL" },
-  { value: "feishu", label: "Feishu" },
-  { value: "s3", label: "S3" }
+const NODE_TYPE_OPTIONS = [
+  { value: "fetcher", label: "从数据源获取文档原始字节流" },
+  { value: "parser", label: "将原始字节解析为结构化文本" },
+  { value: "chunker", label: "将文本按策略切分为 Chunk" },
+  { value: "enricher", label: "对每个 Chunk 进行 AI 元数据富化" },
+  { value: "enhancer", label: "整个文档级别的 AI 增强处理" },
+  { value: "indexer", label: "将 Chunk 向量化并写入向量库" }
 ];
 
-const NODE_TYPE_OPTIONS = [
-  { value: "fetcher", label: "fetcher" },
-  { value: "parser", label: "parser" },
-  { value: "enhancer", label: "enhancer" },
-  { value: "chunker", label: "chunker" },
-  { value: "enricher", label: "enricher" },
-  { value: "indexer", label: "indexer" }
-];
+const getNodeTypeLabel = (type: string): string => {
+  const option = NODE_TYPE_OPTIONS.find((o) => o.value === type);
+  return option?.label ?? type;
+};
 
 const CHUNK_STRATEGY_OPTIONS = [
-  { value: "fixed_size", label: "fixed_size" },
-  { value: "structure_aware", label: "structure_aware" }
+  { value: "fixed_size", label: "固定大小" },
+  { value: "structure_aware", label: "语义感知（推荐）" }
 ];
 
 const ENHANCER_TASK_OPTIONS = [
-  { value: "context_enhance", label: "context_enhance" },
-  { value: "keywords", label: "keywords" },
-  { value: "questions", label: "questions" },
-  { value: "metadata", label: "metadata" }
+  { value: "context_enhance", label: "上下文增强" },
+  { value: "keywords", label: "关键词提取" },
+  { value: "questions", label: "问题生成" },
+  { value: "metadata", label: "元数据生成" }
 ];
 
 const ENRICHER_TASK_OPTIONS = [
-  { value: "keywords", label: "keywords" },
-  { value: "summary", label: "summary" },
-  { value: "metadata", label: "metadata" }
+  { value: "keywords", label: "关键词提取" },
+  { value: "summary", label: "摘要生成" },
+  { value: "metadata", label: "元数据富化" }
+];
+
+const NODE_TYPE_SHORT_LABEL: Record<string, string> = {
+  fetcher: "获取文档",
+  parser: "解析文本",
+  chunker: "文本分块",
+  enricher: "Chunk 富化",
+  enhancer: "文档增强",
+  indexer: "向量入库"
+};
+
+const getNodeTypeShortLabel = (type: string): string => NODE_TYPE_SHORT_LABEL[type] ?? type;
+
+interface PipelineTemplate {
+  name: string;
+  description: string;
+  nodeTypes: PipelineNodeType[];
+}
+
+const PIPELINE_TEMPLATES: PipelineTemplate[] = [
+  {
+    name: "标准流水线",
+    description: "获取 → 解析 → 分块 → Chunk富化 → 向量入库，适合大多数场景",
+    nodeTypes: ["fetcher", "parser", "chunker", "enricher", "indexer"]
+  },
+  {
+    name: "简洁流水线",
+    description: "获取 → 解析 → 分块 → 向量入库，跳过 AI 富化，处理速度更快",
+    nodeTypes: ["fetcher", "parser", "chunker", "indexer"]
+  },
+  {
+    name: "深度处理流水线",
+    description: "获取 → 解析 → 文档增强 → 分块 → Chunk富化 → 向量入库，最高质量",
+    nodeTypes: ["fetcher", "parser", "enhancer", "chunker", "enricher", "indexer"]
+  }
+];
+
+const CONDITION_FIELDS = [
+  { value: "source_type", label: "来源类型" },
+  { value: "file_name", label: "文件名" },
+  { value: "mime_type", label: "MIME 类型" }
+];
+
+const CONDITION_OPERATORS = [
+  { value: "eq", label: "等于" },
+  { value: "neq", label: "不等于" },
+  { value: "contains", label: "包含" }
+];
+
+const PARSER_MIME_OPTIONS = [
+  { value: "application/pdf", label: "PDF" },
+  { value: "text/markdown", label: "Markdown" },
+  { value: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", label: "Word" },
+  { value: "text/plain", label: "Plain Text" },
+  { value: "text/html", label: "HTML" }
 ];
 
 const formatDate = (value?: string | null) => {
@@ -132,8 +183,7 @@ const nodeStatusVariant = (status?: string | null) => {
 
 const pipelineSchema = z.object({
   name: z.string().min(1, "请输入流水线名称").max(60, "名称不能超过60个字符"),
-  description: z.string().optional(),
-  nodesJson: z.string().optional()
+  description: z.string().optional()
 });
 
 type PipelineFormValues = z.infer<typeof pipelineSchema>;
@@ -149,6 +199,7 @@ type PipelineNodeType =
 interface EnhancerTaskForm {
   id: string;
   type: string;
+  enabled: boolean;
   systemPrompt: string;
   userPromptTemplate: string;
 }
@@ -181,28 +232,9 @@ interface PipelineNodeForm {
     embeddingModel: string;
     metadataFields: string;
   };
+  /** 保留原始 settings 中前端不处理的字段，编辑往返时原样写回 */
+  _rawSettings?: Record<string, unknown>;
 }
-
-const taskSchema = z
-  .object({
-    pipelineId: z.string().min(1, "请选择流水线"),
-    sourceType: z.string().min(1, "请选择来源类型"),
-    location: z.string().optional(),
-    fileName: z.string().optional(),
-    credentialsJson: z.string().optional(),
-    metadataJson: z.string().optional()
-  })
-  .superRefine((values, ctx) => {
-    if (values.sourceType !== "file" && !values.location?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["location"],
-        message: "请输入来源地址"
-      });
-    }
-  });
-
-type TaskFormValues = z.infer<typeof taskSchema>;
 
 export function IngestionPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -232,8 +264,6 @@ export function IngestionPage() {
   const [taskStatus, setTaskStatus] = useState<string | undefined>();
   const [taskPageNo, setTaskPageNo] = useState(1);
   const [taskLoading, setTaskLoading] = useState(false);
-  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [taskDetail, setTaskDetail] = useState<{ open: boolean; taskId: string | null }>({
     open: false,
     taskId: null
@@ -505,14 +535,6 @@ export function IngestionPage() {
                   <RefreshCw className="mr-2 h-4 w-4" />
                   刷新
                 </Button>
-                <Button variant="outline" onClick={() => setUploadDialogOpen(true)}>
-                  <FileUp className="mr-2 h-4 w-4" />
-                  上传文件
-                </Button>
-                <Button className="admin-primary-gradient" onClick={() => setTaskDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  新建任务
-                </Button>
               </div>
             </div>
           </CardHeader>
@@ -619,36 +641,6 @@ export function IngestionPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <TaskDialog
-        open={taskDialogOpen}
-        pipelineOptions={pipelineOptions}
-        onOpenChange={setTaskDialogOpen}
-        onSubmit={async (payload) => {
-          const result = await createIngestionTask(payload);
-          toast.success(`任务已创建：${result.taskId}`);
-          setTaskDialogOpen(false);
-          await loadTasks(1, taskStatus);
-        }}
-        onUpload={async (pipelineId, file) => {
-          const result = await uploadIngestionTask(pipelineId, file);
-          toast.success(`上传成功：${result.taskId}`);
-          setTaskDialogOpen(false);
-          await loadTasks(1, taskStatus);
-        }}
-      />
-
-      <UploadDialog
-        open={uploadDialogOpen}
-        pipelineOptions={pipelineOptions}
-        onOpenChange={setUploadDialogOpen}
-        onSubmit={async (pipelineId, file) => {
-          const result = await uploadIngestionTask(pipelineId, file);
-          toast.success(`上传成功：${result.taskId}`);
-          setUploadDialogOpen(false);
-          await loadTasks(1, taskStatus);
-        }}
-      />
-
       <TaskDetailDialog
         open={taskDetail.open}
         taskId={taskDetail.taskId}
@@ -696,24 +688,30 @@ interface PipelineDialogProps {
 
 function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: PipelineDialogProps) {
   const [saving, setSaving] = useState(false);
-  const [nodeMode, setNodeMode] = useState<"form" | "json">("form");
   const [nodes, setNodes] = useState<PipelineNodeForm[]>([]);
-  const defaultNodes = pipeline?.nodes?.length ? JSON.stringify(pipeline.nodes, null, 2) : "";
+  const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
+  const [conditionExpanded, setConditionExpanded] = useState<Record<string, boolean>>({});
+  const [conditionAdvanced, setConditionAdvanced] = useState<Record<string, boolean>>({});
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
 
   const form = useForm<PipelineFormValues>({
     resolver: zodResolver(pipelineSchema),
     defaultValues: {
       name: pipeline?.name || "",
-      description: pipeline?.description || "",
-      nodesJson: defaultNodes
+      description: pipeline?.description || ""
     }
   });
 
+  /* ------------------------------------------------------------------ */
+  /*  Helpers                                                            */
+  /* ------------------------------------------------------------------ */
+
   const createLocalId = () => `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
-  const createTask = (type: string) => ({
+  const createTask = (type: string): EnhancerTaskForm => ({
     id: createLocalId(),
     type,
+    enabled: true,
     systemPrompt: "",
     userPromptTemplate: ""
   });
@@ -724,28 +722,11 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     nodeType,
     nextNodeId: "",
     condition: "",
-    chunker: {
-      strategy: "structure_aware",
-      chunkSize: "",
-      overlapSize: "",
-      separator: ""
-    },
-    enhancer: {
-      modelId: "",
-      tasks: []
-    },
-    enricher: {
-      modelId: "",
-      attachDocumentMetadata: true,
-      tasks: []
-    },
-    parser: {
-      rulesJson: ""
-    },
-    indexer: {
-      embeddingModel: "",
-      metadataFields: ""
-    }
+    chunker: { strategy: "structure_aware", chunkSize: "", overlapSize: "", separator: "" },
+    enhancer: { modelId: "", tasks: [] },
+    enricher: { modelId: "", attachDocumentMetadata: true, tasks: [] },
+    parser: { rulesJson: "" },
+    indexer: { embeddingModel: "", metadataFields: "" }
   });
 
   const mapSettingsTasks = (tasks: unknown): EnhancerTaskForm[] => {
@@ -753,6 +734,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     return tasks.map((task) => ({
       id: createLocalId(),
       type: String((task as { type?: string }).type || ""),
+      enabled: true,
       systemPrompt: String((task as { systemPrompt?: string }).systemPrompt || ""),
       userPromptTemplate: String((task as { userPromptTemplate?: string }).userPromptTemplate || "")
     }));
@@ -800,7 +782,8 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
         metadataFields: Array.isArray((settings as { metadataFields?: string[] }).metadataFields)
           ? (settings as { metadataFields?: string[] }).metadataFields?.join(", ") || ""
           : ""
-      }
+      },
+      _rawSettings: settings && Object.keys(settings).length > 0 ? { ...settings } : undefined
     };
   };
 
@@ -809,13 +792,210 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     return source.map(buildNodeForm);
   };
 
-  const parseCondition = (raw: string) => {
+  /* ------------------------------------------------------------------ */
+  /*  Condition helpers                                                  */
+  /* ------------------------------------------------------------------ */
+
+  const parseConditionFields = (
+    raw: string
+  ): { field: string; op: string; value: string } | null => {
+    if (!raw.trim()) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && "field" in parsed && "op" in parsed) {
+        return {
+          field: String(parsed.field ?? ""),
+          op: String(parsed.op ?? ""),
+          value: String(parsed.value ?? "")
+        };
+      }
+    } catch {
+      /* not structured JSON – fall through */
+    }
+    return null;
+  };
+
+  const parseCondition = (raw: string): Record<string, unknown> | null => {
     const trimmed = raw.trim();
     if (!trimmed) return null;
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      return JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object") {
+        return parsed as Record<string, unknown>;
+      }
+      // JSON 值但不是对象/数组（如 JSON 字符串），包装为 { value } 保证类型安全
+      return { value: parsed };
     }
-    return trimmed;
+    // 纯文本条件包装为 { expr } 结构，确保返回值始终为对象
+    return { expr: trimmed };
+  };
+
+  const updateConditionFromBuilder = (
+    nodeId: string,
+    field: string,
+    op: string,
+    value: string
+  ) => {
+    if (!field && !op && !value) {
+      setNodes((prev) =>
+        prev.map((n) => (n.id === nodeId ? { ...n, condition: "" } : n))
+      );
+    } else {
+      const json = JSON.stringify({ field, op, value });
+      setNodes((prev) =>
+        prev.map((n) => (n.id === nodeId ? { ...n, condition: json } : n))
+      );
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Parser rules helpers                                               */
+  /* ------------------------------------------------------------------ */
+
+  const parseRulesMimes = (rulesJson: string): string[] => {
+    if (!rulesJson.trim()) return [];
+    try {
+      const parsed = JSON.parse(rulesJson);
+      const rules: unknown[] = Array.isArray(parsed)
+        ? parsed
+        : parsed && typeof parsed === "object" && Array.isArray((parsed as { rules?: unknown }).rules)
+          ? (parsed as { rules: unknown[] }).rules
+          : [];
+      return rules
+        .filter((r): r is { mimeType: string } => !!r && typeof (r as { mimeType?: string }).mimeType === "string")
+        .map((r) => r.mimeType);
+    } catch {
+      return [];
+    }
+  };
+
+  const updateRulesFromCheckboxes = (nodeId: string, mimes: string[]) => {
+    const rules = mimes.map((mimeType) => ({ mimeType }));
+    const rulesJson = rules.length > 0 ? JSON.stringify(rules, null, 2) : "";
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === nodeId ? { ...n, parser: { ...n.parser, rulesJson } } : n
+      )
+    );
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Enhancer / Enricher checkbox helpers                               */
+  /* ------------------------------------------------------------------ */
+
+  const toggleEnhancerTask = (nodeId: string, taskType: string, checked: boolean) => {
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id !== nodeId) return n;
+        const existing = n.enhancer.tasks.find((t) => t.type === taskType);
+        if (existing) {
+          // 软删除：保留 task 对象，仅切换 enabled 状态
+          return {
+            ...n,
+            enhancer: {
+              ...n.enhancer,
+              tasks: n.enhancer.tasks.map((t) =>
+                t.type === taskType ? { ...t, enabled: checked } : t
+              )
+            }
+          };
+        }
+        // 不存在则新建
+        if (checked) {
+          return {
+            ...n,
+            enhancer: { ...n.enhancer, tasks: [...n.enhancer.tasks, createTask(taskType)] }
+          };
+        }
+        return n;
+      })
+    );
+  };
+
+  const toggleEnricherTask = (nodeId: string, taskType: string, checked: boolean) => {
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id !== nodeId) return n;
+        const existing = n.enricher.tasks.find((t) => t.type === taskType);
+        if (existing) {
+          return {
+            ...n,
+            enricher: {
+              ...n.enricher,
+              tasks: n.enricher.tasks.map((t) =>
+                t.type === taskType ? { ...t, enabled: checked } : t
+              )
+            }
+          };
+        }
+        if (checked) {
+          return {
+            ...n,
+            enricher: { ...n.enricher, tasks: [...n.enricher.tasks, createTask(taskType)] }
+          };
+        }
+        return n;
+      })
+    );
+  };
+
+  const isTaskExpanded = (taskId: string) => expandedTasks[taskId] ?? false;
+
+  const toggleTaskExpanded = (taskId: string) => {
+    setExpandedTasks((prev) => ({ ...prev, [taskId]: !prev[taskId] }));
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Node reorder                                                       */
+  /* ------------------------------------------------------------------ */
+
+  const moveNode = (index: number, direction: "up" | "down") => {
+    setNodes((prev) => {
+      const next = [...prev];
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Template selection                                                 */
+  /* ------------------------------------------------------------------ */
+
+  const applyTemplate = (templateIndex: number) => {
+    setSelectedTemplate(templateIndex);
+    const template = PIPELINE_TEMPLATES[templateIndex];
+    setNodes(template.nodeTypes.map((nt) => createNode(nt)));
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Build settings (unchanged logic)                                   */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * 将前端不处理的原始 settings 字段保留到输出中，避免编辑往返时丢失未知字段
+   * （如旧流水线中的 collectionName 等）
+   */
+  const preserveUnknownFields = (
+    formSettings: Record<string, unknown> | undefined,
+    node: PipelineNodeForm
+  ): Record<string, unknown> | undefined => {
+    const raw = node._rawSettings;
+    if (!raw || Object.keys(raw).length === 0) return formSettings;
+
+    const knownKeys = new Set<string>([
+      "strategy", "chunkSize", "overlapSize", "separator",
+      "modelId", "tasks", "attachDocumentMetadata",
+      "rules", "embeddingModel", "metadataFields"
+    ]);
+    const unknownEntries = Object.entries(raw).filter(([k]) => !knownKeys.has(k));
+    if (unknownEntries.length === 0) return formSettings;
+
+    const merged: Record<string, unknown> = {};
+    for (const [k, v] of unknownEntries) merged[k] = v;
+    if (formSettings) Object.assign(merged, formSettings);
+    return merged;
   };
 
   const parseParserRules = (raw: string) => {
@@ -856,7 +1036,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
       }
       case "enhancer": {
         const tasks = node.enhancer.tasks
-          .filter((task) => task.type)
+          .filter((task) => task.type && task.enabled !== false)
           .map((task) => ({
             type: task.type,
             systemPrompt: task.systemPrompt.trim() || undefined,
@@ -873,7 +1053,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
       }
       case "enricher": {
         const tasks = node.enricher.tasks
-          .filter((task) => task.type)
+          .filter((task) => task.type && task.enabled !== false)
           .map((task) => ({
             type: task.type,
             systemPrompt: task.systemPrompt.trim() || undefined,
@@ -916,118 +1096,73 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
     }
   };
 
+  /* ------------------------------------------------------------------ */
+  /*  Build nodes payload – auto-generate nodeId / nextNodeId            */
+  /* ------------------------------------------------------------------ */
+
   const buildNodesPayload = (sourceNodes: PipelineNodeForm[]) => {
     const result: IngestionPipelinePayload["nodes"] = [];
-    for (const node of sourceNodes) {
-      const nodeId = node.nodeId.trim();
-      if (!nodeId) {
-        return { ok: false as const, message: "节点ID不能为空" };
-      }
+    for (let i = 0; i < sourceNodes.length; i++) {
+      const node = sourceNodes[i];
+      const nodeId = `step_${i + 1}`;
+      const nextNodeId = i < sourceNodes.length - 1 ? `step_${i + 2}` : null;
+
       if (!node.nodeType) {
         return { ok: false as const, message: "节点类型不能为空" };
       }
+
       let settings: Record<string, unknown> | undefined;
       let condition: unknown;
       try {
-        settings = buildSettings(node) as Record<string, unknown> | undefined;
+        const rawSettings = buildSettings(node) as Record<string, unknown> | undefined;
+        settings = preserveUnknownFields(rawSettings, node);
         condition = parseCondition(node.condition);
       } catch (error) {
         return { ok: false as const, message: error instanceof Error ? error.message : "节点配置错误" };
       }
+
       result.push({
         nodeId,
         nodeType: node.nodeType,
         settings: settings ?? null,
         condition: condition ?? null,
-        nextNodeId: node.nextNodeId.trim() || null
+        nextNodeId
       });
     }
     return { ok: true as const, nodes: result };
   };
 
-  const parseNodesJson = (raw: string | undefined) => {
-    if (!raw || !raw.trim()) {
-      return { ok: true as const, nodes: [] };
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        return { ok: false as const, message: "节点配置必须是JSON数组" };
-      }
-      const nodesForm = parsed.map((item) => buildNodeForm(item as IngestionPipelineNode));
-      return { ok: true as const, nodes: nodesForm };
-    } catch (error) {
-      return { ok: false as const, message: "节点配置JSON格式错误" };
-    }
-  };
-
-  const switchMode = (nextMode: "form" | "json") => {
-    if (nextMode === nodeMode) return;
-    if (nextMode === "json") {
-      const result = buildNodesPayload(nodes);
-      if (!result.ok) {
-        toast.error(result.message);
-        return;
-      }
-      form.setValue("nodesJson", JSON.stringify(result.nodes, null, 2));
-      setNodeMode("json");
-      return;
-    }
-    const parsed = parseNodesJson(form.getValues("nodesJson"));
-    if (!parsed.ok) {
-      toast.error(parsed.message);
-      return;
-    }
-    setNodes(parsed.nodes);
-    setNodeMode("form");
-  };
+  /* ------------------------------------------------------------------ */
+  /*  Lifecycle                                                          */
+  /* ------------------------------------------------------------------ */
 
   useEffect(() => {
     if (open) {
       form.reset({
         name: pipeline?.name || "",
-        description: pipeline?.description || "",
-        nodesJson: defaultNodes
+        description: pipeline?.description || ""
       });
       setNodes(buildNodesFromPipeline(pipeline?.nodes));
-      setNodeMode("form");
+      setSelectedTemplate(null);
+      setConditionExpanded({});
+      setConditionAdvanced({});
+      setExpandedTasks({});
     }
-  }, [open, pipeline, defaultNodes, form]);
+  }, [open, pipeline, form]);
+
+  /* ------------------------------------------------------------------ */
+  /*  Submit                                                             */
+  /* ------------------------------------------------------------------ */
 
   const handleSubmit = async (values: PipelineFormValues) => {
-    let nodesPayload: IngestionPipelinePayload["nodes"] | undefined;
-    if (nodeMode === "json") {
-      if (values.nodesJson && values.nodesJson.trim()) {
-        try {
-          const parsed = JSON.parse(values.nodesJson);
-          if (!Array.isArray(parsed)) {
-            form.setError("nodesJson", { message: "节点配置必须是JSON数组" });
-            return;
-          }
-          nodesPayload = parsed.map((item) => ({
-            nodeId: String(item.nodeId || "").trim(),
-            nodeType: String(item.nodeType || "").trim(),
-            settings: item.settings ?? null,
-            condition: item.condition ?? null,
-            nextNodeId: item.nextNodeId ? String(item.nextNodeId) : null
-          }));
-          const invalid = nodesPayload.some((node) => !node.nodeId || !node.nodeType);
-          if (invalid) {
-            form.setError("nodesJson", { message: "每个节点必须包含 nodeId 与 nodeType" });
-            return;
-          }
-        } catch (error) {
-          form.setError("nodesJson", { message: "节点配置JSON格式错误" });
-          return;
-        }
-      }
-    } else {
-      const result = buildNodesPayload(nodes);
-      if (!result.ok) {
-        toast.error(result.message);
-        return;
-      }
-      nodesPayload = result.nodes;
+    if (nodes.length === 0) {
+      toast.error("请至少添加一个节点");
+      return;
+    }
+    const result = buildNodesPayload(nodes);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
     }
 
     setSaving(true);
@@ -1035,7 +1170,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
       const payload: IngestionPipelinePayload = {
         name: values.name.trim(),
         description: values.description?.trim() || undefined,
-        nodes: nodesPayload
+        nodes: result.nodes
       };
       await onSubmit(payload, mode);
     } catch (error) {
@@ -1045,6 +1180,148 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
       setSaving(false);
     }
   };
+
+  /* ------------------------------------------------------------------ */
+  /*  Update a single node field                                        */
+  /* ------------------------------------------------------------------ */
+
+  const updateNode = (nodeId: string, patch: Partial<PipelineNodeForm>) => {
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, ...patch } : n))
+    );
+  };
+
+  const updateNodeDeep = <K extends keyof PipelineNodeForm>(
+    nodeId: string,
+    key: K,
+    patch: Partial<PipelineNodeForm[K]>
+  ) => {
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id !== nodeId) return n;
+        const current = n[key];
+        if (Array.isArray(current)) {
+          // 数组类型直接替换，不做展开
+          return { ...n, [key]: patch };
+        }
+        return { ...n, [key]: { ...(current as object), ...patch } };
+      })
+    );
+  };
+
+  const updateEnhancerTask = (
+    nodeId: string,
+    taskId: string,
+    patch: Partial<EnhancerTaskForm>
+  ) => {
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id !== nodeId
+          ? n
+          : {
+              ...n,
+              enhancer: {
+                ...n.enhancer,
+                tasks: n.enhancer.tasks.map((t) =>
+                  t.id === taskId ? { ...t, ...patch } : t
+                )
+              }
+            }
+      )
+    );
+  };
+
+  const updateEnricherTask = (
+    nodeId: string,
+    taskId: string,
+    patch: Partial<EnhancerTaskForm>
+  ) => {
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id !== nodeId
+          ? n
+          : {
+              ...n,
+              enricher: {
+                ...n.enricher,
+                tasks: n.enricher.tasks.map((t) =>
+                  t.id === taskId ? { ...t, ...patch } : t
+                )
+              }
+            }
+      )
+    );
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Render helpers                                                     */
+  /* ------------------------------------------------------------------ */
+
+  const renderConditionBuilder = (node: PipelineNodeForm) => {
+    const cf = parseConditionFields(node.condition);
+    const isAdvanced = conditionAdvanced[node.id] ?? false;
+
+    if (isAdvanced) {
+      return (
+        <Textarea
+          rows={2}
+          value={node.condition}
+          onChange={(e) => updateNode(node.id, { condition: e.target.value })}
+          placeholder='{"field":"source_type","op":"eq","value":"file"} 或 #context.source.type == "file"'
+        />
+      );
+    }
+
+    return (
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Select
+          value={cf?.field || ""}
+          onValueChange={(val) =>
+            updateConditionFromBuilder(node.id, val, cf?.op || "eq", cf?.value || "")
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="选择字段" />
+          </SelectTrigger>
+          <SelectContent>
+            {CONDITION_FIELDS.map((f) => (
+              <SelectItem key={f.value} value={f.value}>
+                {f.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={cf?.op || ""}
+          onValueChange={(val) =>
+            updateConditionFromBuilder(node.id, cf?.field || "", val, cf?.value || "")
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="运算符" />
+          </SelectTrigger>
+          <SelectContent>
+            {CONDITION_OPERATORS.map((op) => (
+              <SelectItem key={op.value} value={op.value}>
+                {op.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          value={cf?.value || ""}
+          onChange={(e) =>
+            updateConditionFromBuilder(node.id, cf?.field || "", cf?.op || "eq", e.target.value)
+          }
+          placeholder="值"
+        />
+      </div>
+    );
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  JSX                                                                */
+  /* ------------------------------------------------------------------ */
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1056,6 +1333,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
 
         <Form {...form}>
           <form className="space-y-4" onSubmit={form.handleSubmit(handleSubmit)}>
+            {/* ── Name ─────────────────────────────────────────────── */}
             <FormField
               control={form.control}
               name="name"
@@ -1070,6 +1348,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
               )}
             />
 
+            {/* ── Description ──────────────────────────────────────── */}
             <FormField
               control={form.control}
               name="description"
@@ -1084,106 +1363,181 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
               )}
             />
 
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-sm font-medium">节点配置</div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={nodeMode === "form" ? "default" : "outline"}
-                  onClick={() => switchMode("form")}
-                >
-                  表单配置
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={nodeMode === "json" ? "default" : "outline"}
-                  onClick={() => switchMode("json")}
-                >
-                  JSON配置
-                </Button>
-              </div>
-            </div>
-
-            {nodeMode === "json" ? (
-              <FormField
-                control={form.control}
-                name="nodesJson"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>节点配置（JSON 数组）</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder='[{"nodeId":"fetch","nodeType":"fetcher","settings":{},"nextNodeId":"parse"}]'
-                        rows={10}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ) : (
-              <div className="space-y-4">
-                {nodes.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                    暂无节点，请添加节点配置
-                  </div>
-                ) : null}
-
-                {nodes.map((node, index) => (
-                  <div key={node.id} className="rounded-lg border p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">{node.nodeType}</Badge>
-                        <span className="text-sm text-muted-foreground">节点 {index + 1}</span>
+            {/* ── Template selector (create mode only) ─────────────── */}
+            {mode === "create" && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">选择模板</label>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {PIPELINE_TEMPLATES.map((template, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`rounded-lg border p-3 text-left transition-colors hover:bg-accent ${
+                        selectedTemplate === idx
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : ""
+                      }`}
+                      onClick={() => applyTemplate(idx)}
+                    >
+                      <div className="text-sm font-medium">{template.name}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {template.description}
                       </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Node config header ───────────────────────────────── */}
+            <div className="text-sm font-medium">节点配置</div>
+
+            {/* ── Flow overview bar ────────────────────────────────── */}
+            {nodes.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-2">
+                {nodes.map((node, idx) => (
+                  <Fragment key={node.id}>
+                    {idx > 0 && (
+                      <span className="text-sm text-muted-foreground select-none">&rarr;</span>
+                    )}
+                    <Badge variant="outline" className="text-xs whitespace-nowrap">
+                      {getNodeTypeShortLabel(node.nodeType)}
+                    </Badge>
+                  </Fragment>
+                ))}
+              </div>
+            )}
+
+            {/* ── Node list ────────────────────────────────────────── */}
+            <div className="space-y-4">
+              {nodes.length === 0 && (
+                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  {mode === "create"
+                    ? "请先选择一个模板来初始化节点"
+                    : "暂无节点，请添加节点配置"}
+                </div>
+              )}
+
+              {nodes.map((node, index) => (
+                <div key={node.id} className="rounded-lg border p-4 space-y-4">
+                  {/* ── Node header with reorder / delete ────────── */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{getNodeTypeLabel(node.nodeType)}</Badge>
+                      <span className="text-sm text-muted-foreground">节点 {index + 1}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={index === 0}
+                        onClick={() => moveNode(index, "up")}
+                        aria-label="上移"
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={index === nodes.length - 1}
+                        onClick={() => moveNode(index, "down")}
+                        aria-label="下移"
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
                         className="text-destructive hover:text-destructive"
-                        onClick={() => setNodes((prev) => prev.filter((item) => item.id !== node.id))}
+                        onClick={() =>
+                          setNodes((prev) => prev.filter((item) => item.id !== node.id))
+                        }
                       >
                         删除
                       </Button>
                     </div>
+                  </div>
 
+                  {/* ── Node type selector ───────────────────────── */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">节点类型</label>
+                    <Select
+                      value={node.nodeType}
+                      onValueChange={(value) =>
+                        updateNode(node.id, { nodeType: value as PipelineNodeType })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择节点类型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {NODE_TYPE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* ── Fetcher ──────────────────────────────────── */}
+                  {node.nodeType === "fetcher" && (
+                    <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                      Fetcher 无额外配置
+                    </div>
+                  )}
+
+                  {/* ── Parser – checkbox MIME rules ─────────────── */}
+                  {node.nodeType === "parser" && (() => {
+                    const selectedMimes = parseRulesMimes(node.parser.rulesJson);
+                    return (
+                      <div className="space-y-3">
+                        <label className="text-sm font-medium">支持的文档类型</label>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          {PARSER_MIME_OPTIONS.map((mime) => {
+                            const isChecked = selectedMimes.includes(mime.value);
+                            return (
+                              <label
+                                key={mime.value}
+                                className="flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-accent/50"
+                              >
+                                <Checkbox
+                                  checked={isChecked}
+                                  onCheckedChange={(checked) => {
+                                    const next = checked
+                                      ? [...selectedMimes, mime.value]
+                                      : selectedMimes.filter((m) => m !== mime.value);
+                                    updateRulesFromCheckboxes(node.id, next);
+                                  }}
+                                />
+                                <span className="text-sm">{mime.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Chunker ──────────────────────────────────── */}
+                  {node.nodeType === "chunker" && (
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">节点ID</label>
-                        <Input
-                          value={node.nodeId}
-                          onChange={(event) =>
-                            setNodes((prev) =>
-                              prev.map((item) =>
-                                item.id === node.id ? { ...item, nodeId: event.target.value } : item
-                              )
-                            )
-                          }
-                          placeholder="例如：fetch"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">节点类型</label>
+                        <label className="text-sm font-medium">分块策略</label>
                         <Select
-                          value={node.nodeType}
+                          value={node.chunker.strategy}
                           onValueChange={(value) =>
-                            setNodes((prev) =>
-                              prev.map((item) =>
-                                item.id === node.id
-                                  ? { ...item, nodeType: value as PipelineNodeType }
-                                  : item
-                              )
-                            )
+                            updateNodeDeep(node.id, "chunker", { strategy: value })
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="选择节点类型" />
+                            <SelectValue placeholder="选择策略" />
                           </SelectTrigger>
                           <SelectContent>
-                            {NODE_TYPE_OPTIONS.map((option) => (
+                            {CHUNK_STRATEGY_OPTIONS.map((option) => (
                               <SelectItem key={option.value} value={option.value}>
                                 {option.label}
                               </SelectItem>
@@ -1192,569 +1546,337 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">下一节点ID</label>
+                        <label className="text-sm font-medium">Chunk Size</label>
                         <Input
-                          value={node.nextNodeId}
-                          onChange={(event) =>
-                            setNodes((prev) =>
-                              prev.map((item) =>
-                                item.id === node.id ? { ...item, nextNodeId: event.target.value } : item
-                              )
-                            )
+                          type="number"
+                          value={node.chunker.chunkSize}
+                          onChange={(e) =>
+                            updateNodeDeep(node.id, "chunker", { chunkSize: e.target.value })
                           }
-                          placeholder="例如：parse"
+                          placeholder="例如：512"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Overlap Size</label>
+                        <Input
+                          type="number"
+                          value={node.chunker.overlapSize}
+                          onChange={(e) =>
+                            updateNodeDeep(node.id, "chunker", { overlapSize: e.target.value })
+                          }
+                          placeholder="例如：128"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">自定义分隔符</label>
+                        <Input
+                          value={node.chunker.separator}
+                          onChange={(e) =>
+                            updateNodeDeep(node.id, "chunker", { separator: e.target.value })
+                          }
+                          placeholder="可选"
                         />
                       </div>
                     </div>
+                  )}
 
-                    {node.nodeType === "fetcher" ? (
-                      <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-                        Fetcher 无额外配置
-                      </div>
-                    ) : null}
-
-                    {node.nodeType === "parser" ? (
+                  {/* ── Enhancer – checkbox tasks ──────────────── */}
+                  {node.nodeType === "enhancer" && (
+                    <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">解析规则（JSON）</label>
-                        <Textarea
-                          rows={5}
-                          value={node.parser.rulesJson}
-                          onChange={(event) =>
-                            setNodes((prev) =>
-                              prev.map((item) =>
-                                item.id === node.id
-                                  ? { ...item, parser: { ...item.parser, rulesJson: event.target.value } }
-                                  : item
-                              )
-                            )
+                        <label className="text-sm font-medium">模型ID</label>
+                        <Input
+                          value={node.enhancer.modelId}
+                          onChange={(e) =>
+                            updateNodeDeep(node.id, "enhancer", { modelId: e.target.value })
                           }
-                          placeholder='[{"mimeType":"PDF","options":{}}]'
+                          placeholder="可选"
                         />
                       </div>
-                    ) : null}
-
-                    {node.nodeType === "chunker" ? (
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">分块策略</label>
-                          <Select
-                            value={node.chunker.strategy}
-                            onValueChange={(value) =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? { ...item, chunker: { ...item.chunker, strategy: value } }
-                                    : item
-                                )
-                              )
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="选择策略" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {CHUNK_STRATEGY_OPTIONS.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Chunk Size</label>
-                          <Input
-                            type="number"
-                            value={node.chunker.chunkSize}
-                            onChange={(event) =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? { ...item, chunker: { ...item.chunker, chunkSize: event.target.value } }
-                                    : item
-                                )
-                              )
-                            }
-                            placeholder="例如：512"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Overlap Size</label>
-                          <Input
-                            type="number"
-                            value={node.chunker.overlapSize}
-                            onChange={(event) =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? { ...item, chunker: { ...item.chunker, overlapSize: event.target.value } }
-                                    : item
-                                )
-                              )
-                            }
-                            placeholder="例如：128"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">自定义分隔符</label>
-                          <Input
-                            value={node.chunker.separator}
-                            onChange={(event) =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? { ...item, chunker: { ...item.chunker, separator: event.target.value } }
-                                    : item
-                                )
-                              )
-                            }
-                            placeholder="可选"
-                          />
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">增强任务</label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {ENHANCER_TASK_OPTIONS.map((taskOpt) => {
+                            const task = node.enhancer.tasks.find(
+                              (t) => t.type === taskOpt.value
+                            );
+                            const isChecked = !!task && task.enabled !== false;
+                            return (
+                              <div key={taskOpt.value} className="space-y-2">
+                                <label className="flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-accent/50">
+                                  <Checkbox
+                                    checked={isChecked}
+                                    onCheckedChange={(checked) =>
+                                      toggleEnhancerTask(node.id, taskOpt.value, !!checked)
+                                    }
+                                  />
+                                  <span className="text-sm flex-1">{taskOpt.label}</span>
+                                  {isChecked && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="ml-auto h-6 w-6 p-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleTaskExpanded(task.id);
+                                      }}
+                                    >
+                                      {isTaskExpanded(task.id) ? (
+                                        <ChevronUp className="h-3 w-3" />
+                                      ) : (
+                                        <ChevronDown className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </label>
+                                {isChecked && isTaskExpanded(task.id) && (
+                                  <div className="ml-6 space-y-2">
+                                    <div className="space-y-1">
+                                      <label className="text-xs text-muted-foreground">
+                                        System Prompt
+                                      </label>
+                                      <Textarea
+                                        rows={2}
+                                        value={task.systemPrompt}
+                                        onChange={(e) =>
+                                          updateEnhancerTask(node.id, task.id, {
+                                            systemPrompt: e.target.value
+                                          })
+                                        }
+                                        placeholder="可选"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-xs text-muted-foreground">
+                                        User Prompt 模板
+                                      </label>
+                                      <Textarea
+                                        rows={2}
+                                        value={task.userPromptTemplate}
+                                        onChange={(e) =>
+                                          updateEnhancerTask(node.id, task.id, {
+                                            userPromptTemplate: e.target.value
+                                          })
+                                        }
+                                        placeholder="可选"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    ) : null}
+                    </div>
+                  )}
 
-                    {node.nodeType === "enhancer" ? (
-                      <div className="space-y-4">
+                  {/* ── Enricher – checkbox tasks ──────────────── */}
+                  {node.nodeType === "enricher" && (
+                    <div className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                           <label className="text-sm font-medium">模型ID</label>
                           <Input
-                            value={node.enhancer.modelId}
-                            onChange={(event) =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? { ...item, enhancer: { ...item.enhancer, modelId: event.target.value } }
-                                    : item
-                                )
-                              )
-                            }
-                            placeholder="可选"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">增强任务</span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? {
-                                        ...item,
-                                        enhancer: {
-                                          ...item.enhancer,
-                                          tasks: [...item.enhancer.tasks, createTask("context_enhance")]
-                                        }
-                                      }
-                                    : item
-                                )
-                              )
-                            }
-                          >
-                            <Plus className="mr-2 h-4 w-4" />
-                            添加任务
-                          </Button>
-                        </div>
-                        {node.enhancer.tasks.length === 0 ? (
-                          <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                            暂无任务
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {node.enhancer.tasks.map((task, taskIndex) => (
-                              <div key={task.id} className="rounded-md border p-3 space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs text-muted-foreground">任务 {taskIndex + 1}</span>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    className="text-destructive hover:text-destructive"
-                                    onClick={() =>
-                                      setNodes((prev) =>
-                                        prev.map((item) =>
-                                          item.id === node.id
-                                            ? {
-                                                ...item,
-                                                enhancer: {
-                                                  ...item.enhancer,
-                                                  tasks: item.enhancer.tasks.filter((t) => t.id !== task.id)
-                                                }
-                                              }
-                                            : item
-                                        )
-                                      )
-                                    }
-                                  >
-                                    删除
-                                  </Button>
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium">任务类型</label>
-                                  <Select
-                                    value={task.type}
-                                    onValueChange={(value) =>
-                                      setNodes((prev) =>
-                                        prev.map((item) =>
-                                          item.id === node.id
-                                            ? {
-                                                ...item,
-                                                enhancer: {
-                                                  ...item.enhancer,
-                                                  tasks: item.enhancer.tasks.map((t) =>
-                                                    t.id === task.id ? { ...t, type: value } : t
-                                                  )
-                                                }
-                                              }
-                                            : item
-                                        )
-                                      )
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="选择类型" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {ENHANCER_TASK_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                          {option.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium">System Prompt</label>
-                                  <Textarea
-                                    rows={2}
-                                    value={task.systemPrompt}
-                                    onChange={(event) =>
-                                      setNodes((prev) =>
-                                        prev.map((item) =>
-                                          item.id === node.id
-                                            ? {
-                                                ...item,
-                                                enhancer: {
-                                                  ...item.enhancer,
-                                                  tasks: item.enhancer.tasks.map((t) =>
-                                                    t.id === task.id
-                                                      ? { ...t, systemPrompt: event.target.value }
-                                                      : t
-                                                  )
-                                                }
-                                              }
-                                            : item
-                                        )
-                                      )
-                                    }
-                                    placeholder="可选"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium">User Prompt 模板</label>
-                                  <Textarea
-                                    rows={2}
-                                    value={task.userPromptTemplate}
-                                    onChange={(event) =>
-                                      setNodes((prev) =>
-                                        prev.map((item) =>
-                                          item.id === node.id
-                                            ? {
-                                                ...item,
-                                                enhancer: {
-                                                  ...item.enhancer,
-                                                  tasks: item.enhancer.tasks.map((t) =>
-                                                    t.id === task.id
-                                                      ? { ...t, userPromptTemplate: event.target.value }
-                                                      : t
-                                                  )
-                                                }
-                                              }
-                                            : item
-                                        )
-                                      )
-                                    }
-                                    placeholder="可选"
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {node.nodeType === "enricher" ? (
-                      <div className="space-y-4">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">模型ID</label>
-                            <Input
-                              value={node.enricher.modelId}
-                              onChange={(event) =>
-                                setNodes((prev) =>
-                                  prev.map((item) =>
-                                    item.id === node.id
-                                      ? { ...item, enricher: { ...item.enricher, modelId: event.target.value } }
-                                      : item
-                                  )
-                                )
-                              }
-                              placeholder="可选"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">附加文档元数据</label>
-                            <Select
-                              value={node.enricher.attachDocumentMetadata ? "true" : "false"}
-                              onValueChange={(value) =>
-                                setNodes((prev) =>
-                                  prev.map((item) =>
-                                    item.id === node.id
-                                      ? {
-                                          ...item,
-                                          enricher: {
-                                            ...item.enricher,
-                                            attachDocumentMetadata: value === "true"
-                                          }
-                                        }
-                                      : item
-                                  )
-                                )
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="选择" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="true">是</SelectItem>
-                                <SelectItem value="false">否</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">富集任务</span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? {
-                                        ...item,
-                                        enricher: {
-                                          ...item.enricher,
-                                          tasks: [...item.enricher.tasks, createTask("keywords")]
-                                        }
-                                      }
-                                    : item
-                                )
-                              )
-                            }
-                          >
-                            <Plus className="mr-2 h-4 w-4" />
-                            添加任务
-                          </Button>
-                        </div>
-                        {node.enricher.tasks.length === 0 ? (
-                          <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                            暂无任务
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {node.enricher.tasks.map((task, taskIndex) => (
-                              <div key={task.id} className="rounded-md border p-3 space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs text-muted-foreground">任务 {taskIndex + 1}</span>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    className="text-destructive hover:text-destructive"
-                                    onClick={() =>
-                                      setNodes((prev) =>
-                                        prev.map((item) =>
-                                          item.id === node.id
-                                            ? {
-                                                ...item,
-                                                enricher: {
-                                                  ...item.enricher,
-                                                  tasks: item.enricher.tasks.filter((t) => t.id !== task.id)
-                                                }
-                                              }
-                                            : item
-                                        )
-                                      )
-                                    }
-                                  >
-                                    删除
-                                  </Button>
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium">任务类型</label>
-                                  <Select
-                                    value={task.type}
-                                    onValueChange={(value) =>
-                                      setNodes((prev) =>
-                                        prev.map((item) =>
-                                          item.id === node.id
-                                            ? {
-                                                ...item,
-                                                enricher: {
-                                                  ...item.enricher,
-                                                  tasks: item.enricher.tasks.map((t) =>
-                                                    t.id === task.id ? { ...t, type: value } : t
-                                                  )
-                                                }
-                                              }
-                                            : item
-                                        )
-                                      )
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="选择类型" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {ENRICHER_TASK_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                          {option.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium">System Prompt</label>
-                                  <Textarea
-                                    rows={2}
-                                    value={task.systemPrompt}
-                                    onChange={(event) =>
-                                      setNodes((prev) =>
-                                        prev.map((item) =>
-                                          item.id === node.id
-                                            ? {
-                                                ...item,
-                                                enricher: {
-                                                  ...item.enricher,
-                                                  tasks: item.enricher.tasks.map((t) =>
-                                                    t.id === task.id
-                                                      ? { ...t, systemPrompt: event.target.value }
-                                                      : t
-                                                  )
-                                                }
-                                              }
-                                            : item
-                                        )
-                                      )
-                                    }
-                                    placeholder="可选"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium">User Prompt 模板</label>
-                                  <Textarea
-                                    rows={2}
-                                    value={task.userPromptTemplate}
-                                    onChange={(event) =>
-                                      setNodes((prev) =>
-                                        prev.map((item) =>
-                                          item.id === node.id
-                                            ? {
-                                                ...item,
-                                                enricher: {
-                                                  ...item.enricher,
-                                                  tasks: item.enricher.tasks.map((t) =>
-                                                    t.id === task.id
-                                                      ? { ...t, userPromptTemplate: event.target.value }
-                                                      : t
-                                                  )
-                                                }
-                                              }
-                                            : item
-                                        )
-                                      )
-                                    }
-                                    placeholder="可选"
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {node.nodeType === "indexer" ? (
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Embedding 模型</label>
-                          <Input
-                            value={node.indexer.embeddingModel}
-                            onChange={(event) =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? { ...item, indexer: { ...item.indexer, embeddingModel: event.target.value } }
-                                    : item
-                                )
-                              )
+                            value={node.enricher.modelId}
+                            onChange={(e) =>
+                              updateNodeDeep(node.id, "enricher", { modelId: e.target.value })
                             }
                             placeholder="可选"
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">元数据字段</label>
-                          <Input
-                            value={node.indexer.metadataFields}
-                            onChange={(event) =>
-                              setNodes((prev) =>
-                                prev.map((item) =>
-                                  item.id === node.id
-                                    ? { ...item, indexer: { ...item.indexer, metadataFields: event.target.value } }
-                                    : item
-                                )
-                              )
+                          <label className="text-sm font-medium">附加文档元数据</label>
+                          <Select
+                            value={node.enricher.attachDocumentMetadata ? "true" : "false"}
+                            onValueChange={(value) =>
+                              updateNodeDeep(node.id, "enricher", {
+                                attachDocumentMetadata: value === "true"
+                              })
                             }
-                            placeholder="用逗号分隔，如 keywords,summary"
-                          />
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="选择" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">是</SelectItem>
+                              <SelectItem value="false">否</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
-                    ) : null}
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">条件（JSON / SpEL，可选）</label>
-                      <Textarea
-                        rows={2}
-                        value={node.condition}
-                        onChange={(event) =>
-                          setNodes((prev) =>
-                            prev.map((item) =>
-                              item.id === node.id ? { ...item, condition: event.target.value } : item
-                            )
-                          )
-                        }
-                        placeholder='{"field":"source_type","op":"eq","value":"file"} 或 #context.source.type == "file"'
-                      />
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">富集任务</label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {ENRICHER_TASK_OPTIONS.map((taskOpt) => {
+                            const task = node.enricher.tasks.find(
+                              (t) => t.type === taskOpt.value
+                            );
+                            const isChecked = !!task && task.enabled !== false;
+                            return (
+                              <div key={taskOpt.value} className="space-y-2">
+                                <label className="flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-accent/50">
+                                  <Checkbox
+                                    checked={isChecked}
+                                    onCheckedChange={(checked) =>
+                                      toggleEnricherTask(node.id, taskOpt.value, !!checked)
+                                    }
+                                  />
+                                  <span className="text-sm flex-1">{taskOpt.label}</span>
+                                  {isChecked && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="ml-auto h-6 w-6 p-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleTaskExpanded(task.id);
+                                      }}
+                                    >
+                                      {isTaskExpanded(task.id) ? (
+                                        <ChevronUp className="h-3 w-3" />
+                                      ) : (
+                                        <ChevronDown className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </label>
+                                {isChecked && isTaskExpanded(task.id) && (
+                                  <div className="ml-6 space-y-2">
+                                    <div className="space-y-1">
+                                      <label className="text-xs text-muted-foreground">
+                                        System Prompt
+                                      </label>
+                                      <Textarea
+                                        rows={2}
+                                        value={task.systemPrompt}
+                                        onChange={(e) =>
+                                          updateEnricherTask(node.id, task.id, {
+                                            systemPrompt: e.target.value
+                                          })
+                                        }
+                                        placeholder="可选"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-xs text-muted-foreground">
+                                        User Prompt 模板
+                                      </label>
+                                      <Textarea
+                                        rows={2}
+                                        value={task.userPromptTemplate}
+                                        onChange={(e) =>
+                                          updateEnricherTask(node.id, task.id, {
+                                            userPromptTemplate: e.target.value
+                                          })
+                                        }
+                                        placeholder="可选"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
+                  )}
+
+                  {/* ── Indexer ─────────────────────────────────── */}
+                  {node.nodeType === "indexer" && (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Embedding 模型</label>
+                        <Input
+                          value={node.indexer.embeddingModel}
+                          onChange={(e) =>
+                            updateNodeDeep(node.id, "indexer", {
+                              embeddingModel: e.target.value
+                            })
+                          }
+                          placeholder="可选，使用系统默认模型"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">元数据字段</label>
+                        <Input
+                          value={node.indexer.metadataFields}
+                          onChange={(e) =>
+                            updateNodeDeep(node.id, "indexer", {
+                              metadataFields: e.target.value
+                            })
+                          }
+                          placeholder="用逗号分隔，如 keywords,summary"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          向量将自动写入触发流水线知识库对应的向量集合
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Condition builder ───────────────────────── */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 text-sm font-medium"
+                        onClick={() =>
+                          setConditionExpanded((prev) => ({
+                            ...prev,
+                            [node.id]: !prev[node.id]
+                          }))
+                        }
+                      >
+                        {conditionExpanded[node.id] ? (
+                          <ChevronUp className="h-3 w-3" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3" />
+                        )}
+                        条件（可选）
+                      </button>
+                      {conditionExpanded[node.id] && (
+                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer ml-auto">
+                          <Checkbox
+                            checked={conditionAdvanced[node.id] ?? false}
+                            onCheckedChange={(checked) =>
+                              setConditionAdvanced((prev) => ({
+                                ...prev,
+                                [node.id]: !!checked
+                              }))
+                            }
+                          />
+                          高级
+                        </label>
+                      )}
+                    </div>
+                    {conditionExpanded[node.id] && renderConditionBuilder(node)}
                   </div>
-                ))}
+                </div>
+              ))}
 
-                <Button type="button" variant="outline" onClick={() => setNodes((prev) => [...prev, createNode()])}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  添加节点
-                </Button>
-              </div>
-            )}
+              {/* ── Add node ──────────────────────────────────────── */}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setNodes((prev) => [...prev, createNode()])}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                添加节点
+              </Button>
+            </div>
 
+            {/* ── Footer ──────────────────────────────────────────── */}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={saving}
+              >
                 取消
               </Button>
               <Button type="submit" disabled={saving}>
@@ -1805,7 +1927,7 @@ function PipelineNodesDialog({ open, pipeline, onOpenChange }: PipelineNodesDial
                   <TableCell>{index + 1}</TableCell>
                   <TableCell className="font-mono text-xs">{node.nodeId}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{node.nodeType}</Badge>
+                    <Badge variant="outline">{getNodeTypeLabel(node.nodeType)}</Badge>
                   </TableCell>
                   <TableCell>{node.nextNodeId || "-"}</TableCell>
                   <TableCell>
@@ -1818,403 +1940,6 @@ function PipelineNodesDialog({ open, pipeline, onOpenChange }: PipelineNodesDial
             </TableBody>
           </Table>
         )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-interface TaskDialogProps {
-  open: boolean;
-  pipelineOptions: IngestionPipeline[];
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (payload: IngestionTaskCreatePayload) => Promise<void>;
-  onUpload: (pipelineId: string, file: File) => Promise<void>;
-}
-
-function TaskDialog({ open, pipelineOptions, onOpenChange, onSubmit, onUpload }: TaskDialogProps) {
-  const [saving, setSaving] = useState(false);
-  const [localFile, setLocalFile] = useState<File | null>(null);
-  const [maxFileSize, setMaxFileSize] = useState<number>(50 * 1024 * 1024);
-  const form = useForm<TaskFormValues>({
-    resolver: zodResolver(taskSchema),
-    defaultValues: {
-      pipelineId: pipelineOptions[0]?.id || "",
-      sourceType: "file",
-      location: "",
-      fileName: "",
-      credentialsJson: "",
-      metadataJson: ""
-    }
-  });
-
-  const sourceType = form.watch("sourceType");
-  const isLocalFile = sourceType === "file";
-
-  const sourceMeta = (() => {
-    switch (sourceType) {
-      case "file":
-        return {
-          locationPlaceholder: "/path/to/file 或 file://path/to/file",
-          locationHint: "支持本地文件路径或 file:// 协议",
-          credentialsHint: ""
-        };
-      case "feishu":
-        return {
-          locationPlaceholder: "https://open.feishu.cn/...",
-          locationHint: "填写飞书文档链接",
-          credentialsHint: '{"tenantAccessToken":"..."} 或 {"app_id":"...","app_secret":"..."}'
-        };
-      case "s3":
-        return {
-          locationPlaceholder: "s3://bucket/key",
-          locationHint: "填写 S3 路径，例如 s3://biz/file.md",
-          credentialsHint: ""
-        };
-      case "url":
-      default:
-        return {
-          locationPlaceholder: "https://example.com/file.pdf",
-          locationHint: "支持 http/https 链接",
-          credentialsHint: '{"token":"xxx"} 或 {"Authorization":"Bearer xxx"}'
-        };
-    }
-  })();
-
-  const showCredentials = sourceType === "url" || sourceType === "feishu";
-
-  useEffect(() => {
-    if (open) {
-      form.reset({
-        pipelineId: pipelineOptions[0]?.id || "",
-        sourceType: "file",
-        location: "",
-        fileName: "",
-        credentialsJson: "",
-        metadataJson: ""
-      });
-      setLocalFile(null);
-      getSystemSettings()
-        .then((settings) => setMaxFileSize(settings.upload.maxFileSize))
-        .catch(() => {});
-    }
-  }, [open, pipelineOptions, form]);
-
-  useEffect(() => {
-    if (!isLocalFile) {
-      setLocalFile(null);
-    }
-  }, [isLocalFile]);
-
-  const parseJsonField = (value?: string) => {
-    if (!value || !value.trim()) return undefined;
-    try {
-      return JSON.parse(value);
-    } catch {
-      return null;
-    }
-  };
-
-  const handleSubmit = async (values: TaskFormValues) => {
-    if (values.sourceType === "file") {
-      if (!localFile) {
-        toast.error("请选择文件");
-        return;
-      }
-      if (localFile.size > maxFileSize) {
-        const sizeMB = Math.floor(maxFileSize / 1024 / 1024);
-        toast.error(`上传文件大小超过限制，最大允许 ${sizeMB}MB`);
-        return;
-      }
-      setSaving(true);
-      try {
-        await onUpload(values.pipelineId, localFile);
-      } catch (error) {
-        toast.error(getErrorMessage(error, "上传失败"));
-        console.error(error);
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
-
-    const credentials = parseJsonField(values.credentialsJson);
-    if (credentials === null) {
-      form.setError("credentialsJson", { message: "凭证JSON格式错误" });
-      return;
-    }
-    const metadata = parseJsonField(values.metadataJson);
-    if (metadata === null) {
-      form.setError("metadataJson", { message: "元数据JSON格式错误" });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const location = values.location?.trim() || "";
-      if (!location) {
-        form.setError("location", { message: "请输入来源地址" });
-        return;
-      }
-      const normalizedType = values.sourceType ? values.sourceType.toUpperCase() : values.sourceType;
-      const payload: IngestionTaskCreatePayload = {
-        pipelineId: values.pipelineId,
-        source: {
-          type: normalizedType,
-          location,
-          fileName: values.fileName?.trim() || undefined,
-          credentials: credentials as Record<string, string> | undefined
-        },
-        metadata: metadata as Record<string, unknown> | undefined
-      };
-      await onSubmit(payload);
-    } catch (error) {
-      toast.error(getErrorMessage(error, "创建失败"));
-      console.error(error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sidebar-scroll sm:max-w-[720px]">
-        <DialogHeader>
-          <DialogTitle>新建通道任务</DialogTitle>
-          <DialogDescription>支持 Local File / URL / Feishu / S3 来源，Local File 会直接上传文件</DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form className="space-y-4" onSubmit={form.handleSubmit(handleSubmit)}>
-            <FormField
-              control={form.control}
-              name="pipelineId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>流水线</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="选择流水线" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {pipelineOptions.map((pipeline) => (
-                        <SelectItem key={pipeline.id} value={pipeline.id}>
-                          {pipeline.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="sourceType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>来源类型</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="选择来源" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {SOURCE_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {isLocalFile ? (
-                <FormItem>
-                  <FormLabel>本地文件</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="file"
-                      onChange={(event) => setLocalFile(event.target.files?.[0] || null)}
-                    />
-                  </FormControl>
-                </FormItem>
-              ) : (
-                <FormField
-                  control={form.control}
-                  name="fileName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>文件名（可选）</FormLabel>
-                      <FormControl>
-                        <Input placeholder="例如：doc.md" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-            </div>
-
-            {isLocalFile ? null : (
-              <FormField
-                control={form.control}
-                name="location"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>来源地址</FormLabel>
-                    <FormControl>
-                      <Input placeholder={sourceMeta.locationPlaceholder} {...field} />
-                    </FormControl>
-                    <FormDescription>{sourceMeta.locationHint}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
-            {showCredentials ? (
-              <FormField
-                control={form.control}
-                name="credentialsJson"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>访问凭证（JSON，可选）</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder={sourceMeta.credentialsHint || '{"token":"xxx"}'} rows={4} {...field} />
-                    </FormControl>
-                    {sourceMeta.credentialsHint ? (
-                      <FormDescription>示例：{sourceMeta.credentialsHint}</FormDescription>
-                    ) : null}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ) : null}
-
-            <FormField
-              control={form.control}
-              name="metadataJson"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>任务元数据（JSON，可选）</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder='{"source":"manual"}' rows={4} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-                取消
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "创建中..." : "创建任务"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-interface UploadDialogProps {
-  open: boolean;
-  pipelineOptions: IngestionPipeline[];
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (pipelineId: string, file: File) => Promise<void>;
-}
-
-function UploadDialog({ open, pipelineOptions, onOpenChange, onSubmit }: UploadDialogProps) {
-  const [pipelineId, setPipelineId] = useState(pipelineOptions[0]?.id || "");
-  const [file, setFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [maxFileSize, setMaxFileSize] = useState<number>(50 * 1024 * 1024);
-
-  useEffect(() => {
-    if (open) {
-      setPipelineId(pipelineOptions[0]?.id || "");
-      setFile(null);
-      getSystemSettings()
-        .then((settings) => setMaxFileSize(settings.upload.maxFileSize))
-        .catch(() => {});
-    }
-  }, [open, pipelineOptions]);
-
-  const handleSubmit = async () => {
-    if (!pipelineId) {
-      toast.error("请选择流水线");
-      return;
-    }
-    if (!file) {
-      toast.error("请选择文件");
-      return;
-    }
-    if (file.size > maxFileSize) {
-      const sizeMB = Math.floor(maxFileSize / 1024 / 1024);
-      toast.error(`上传文件大小超过限制，最大允许 ${sizeMB}MB`);
-      return;
-    }
-    setSaving(true);
-    try {
-      await onSubmit(pipelineId, file);
-    } catch (error) {
-      toast.error(getErrorMessage(error, "上传失败"));
-      console.error(error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle>上传文件并进入通道</DialogTitle>
-          <DialogDescription>上传文件后立即触发通道任务</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">流水线</label>
-            <Select value={pipelineId} onValueChange={setPipelineId}>
-              <SelectTrigger className="mt-2">
-                <SelectValue placeholder="选择流水线" />
-              </SelectTrigger>
-              <SelectContent>
-                {pipelineOptions.map((pipeline) => (
-                  <SelectItem key={pipeline.id} value={pipeline.id}>
-                    {pipeline.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-sm font-medium">文件</label>
-            <Input
-              type="file"
-              className="mt-2"
-              onChange={(event) => setFile(event.target.files?.[0] || null)}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            取消
-          </Button>
-          <Button onClick={handleSubmit} disabled={saving}>
-            {saving ? "上传中..." : "上传"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

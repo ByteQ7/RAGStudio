@@ -56,4 +56,8 @@ public class StreamChatContext {
     /** 查询改写结果，包含改写后的问题和子问题列表 */
     @Setter
     private RewriteResult rewriteResult;
+
+    /** MCP 工具决策结果：非空表示需要调用该工具 */
+    @Setter
+    private String mcpToolId;
 }

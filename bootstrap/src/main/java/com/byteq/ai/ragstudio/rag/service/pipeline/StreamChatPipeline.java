@@ -36,6 +36,7 @@ import java.util.Optional;
 
 import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.CHAT_SYSTEM_PROMPT_PATH;
 import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.MCP_DECISION_PROMPT_PATH;
+import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.QUERY_REWRITE_AND_SPLIT_PROMPT_PATH;
 
 /**
  * 流式对话流水线
@@ -91,26 +92,18 @@ public class StreamChatPipeline {
     /**
      * 执行流式对话流水线
      * <p>
-     * 流程：记忆加载 → 查询改写 → (有MCP则进入流式决策/无MCP则走KB或兜底)
+     * 流程：记忆加载 → 查询改写（含 MCP 决策）→ 检索 → 回答
      * </p>
      */
     public void execute(StreamChatContext ctx) {
         loadMemory(ctx);
         rewriteQuery(ctx);
 
-        if (hasMcpTools()) {
+        String mcpToolId = ctx.getMcpToolId();
+        if (StrUtil.isNotBlank(mcpToolId)) {
+            log.info("LLM 决定调用 MCP 工具: {}", mcpToolId);
             RetrievalContext retrievalCtx = retrieve(ctx);
-            McpDecision decision = decideMcp(ctx);
-            if (decision.wantsMcp()) {
-                log.info("LLM 决定调用 MCP 工具: {}", decision.toolId());
-                executeMcpAndFinalize(ctx, retrievalCtx, decision.toolId());
-            } else if (retrievalCtx.hasKb()) {
-                log.info("LLM 决定不调用 MCP 工具，走 RAG 回答");
-                streamRagResponse(ctx, retrievalCtx);
-            } else {
-                log.info("LLM 决定不调用 MCP 工具，无知识库，走直接回答");
-                streamDirectResponse(ctx);
-            }
+            executeMcpAndFinalize(ctx, retrievalCtx, mcpToolId);
             return;
         }
 
@@ -133,10 +126,118 @@ public class StreamChatPipeline {
         ctx.setHistory(history);
     }
 
+    /**
+     * 查询改写（当 MCP 工具存在时，合并 MCP 决策到同一次 LLM 调用）
+     * <p>
+     * 无 MCP 工具时：直接调用改写服务。
+     * 有 MCP 工具时：将改写指令和 MCP 决策指令合并为一条 Prompt，
+     * 让 LLM 一次性返回改写结果和 MCP 工具选择，省去一次 LLM 调用。
+     * </p>
+     */
     private void rewriteQuery(StreamChatContext ctx) {
-        RewriteResult rewriteResult = queryRewriteService.rewriteWithSplit(
+        if (!hasMcpTools()) {
+            // 无 MCP 工具，走原有改写流程
+            RewriteResult rewriteResult = queryRewriteService.rewriteWithSplit(
+                    ctx.getQuestion(), ctx.getHistory(), ctx.getKnowledgeBaseIds());
+            ctx.setRewriteResult(rewriteResult);
+            return;
+        }
+
+        // 有 MCP 工具：合并改写 + MCP 决策为一次 LLM 调用
+        String toolList = buildMcpToolList();
+        String rewritePrompt = promptTemplateLoader.load(QUERY_REWRITE_AND_SPLIT_PROMPT_PATH);
+
+        // 在改写 Prompt 末尾追加 MCP 决策指令
+        String combinedSystemPrompt = rewritePrompt + "\n\n"
+                + "## 实时数据工具判断\n\n"
+                + "以下是一些可用的实时数据工具：\n\n"
+                + toolList + "\n\n"
+                + "如果用户问题需要通过以上某个工具获取实时数据才能回答，"
+                + "请在输出最开头单独一行写上 " + MCP_CALL_PREFIX + "工具ID，然后换行，再输出改写结果 JSON。\n"
+                + "如果不需要使用任何工具，直接输出改写结果 JSON 即可。";
+
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(ChatMessage.system(combinedSystemPrompt));
+        if (CollUtil.isNotEmpty(ctx.getHistory())) {
+            messages.addAll(ctx.getHistory());
+        }
+        messages.add(ChatMessage.user(ctx.getQuestion()));
+
+        ChatRequest request = ChatRequest.builder()
+                .messages(messages)
+                .thinking(false)
+                .temperature(0.1D)
+                .maxTokens(500)
+                .build();
+
+        String response = llmService.chat(request);
+        String trimmed = response.trim();
+
+        // 先检查是否有 MCP 调用决策
+        String mcpToolId = null;
+        String rewriteRaw = trimmed;
+        if (trimmed.startsWith(MCP_CALL_PREFIX)) {
+            int endOfLine = trimmed.indexOf("\n");
+            if (endOfLine > 0) {
+                String firstLine = trimmed.substring(0, endOfLine).trim();
+                mcpToolId = firstLine.substring(MCP_CALL_PREFIX.length()).trim();
+                mcpToolId = mcpToolId.replace("{", "").replace("}", "");
+                rewriteRaw = trimmed.substring(endOfLine).trim();
+            }
+        }
+
+        // 解析改写结果（复用改写服务的解析逻辑，直接调用其方法）
+        // 通过调用服务来保证解析一致性：传入原始问题让服务走缓存/规则路径
+        RewriteResult fallback = queryRewriteService.rewriteWithSplit(
                 ctx.getQuestion(), ctx.getHistory(), ctx.getKnowledgeBaseIds());
-        ctx.setRewriteResult(rewriteResult);
+
+        // 尝试从 LLM 响应中解析改写 JSON
+        RewriteResult parsed = tryParseRewriteResult(rewriteRaw, fallback);
+        ctx.setRewriteResult(parsed);
+        ctx.setMcpToolId(mcpToolId);
+
+        if (StrUtil.isNotBlank(mcpToolId)) {
+            log.info("改写阶段合并 MCP 决策：调用工具 {}", mcpToolId);
+        }
+    }
+
+    /**
+     * 尝试从 LLM 响应中解析改写结果，失败时返回兜底结果
+     */
+    private RewriteResult tryParseRewriteResult(String raw, RewriteResult fallback) {
+        if (StrUtil.isBlank(raw)) {
+            return fallback;
+        }
+        try {
+            // 复用 LLMResponseCleaner 的清理逻辑
+            String cleaned = com.byteq.ai.ragstudio.infra.util.LLMResponseCleaner.stripMarkdownCodeFence(raw);
+            cleaned = com.byteq.ai.ragstudio.infra.util.LLMResponseCleaner.extractJson(cleaned);
+
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode json = mapper.readTree(cleaned);
+
+            String rewritten = json.has("rewrite") ? json.get("rewrite").asText() : null;
+            if (StrUtil.isBlank(rewritten)) {
+                rewritten = json.has("rewritten_question") ? json.get("rewritten_question").asText() : null;
+            }
+
+            List<String> subQuestions = new ArrayList<>();
+            if (json.has("sub_questions") && json.get("sub_questions").isArray()) {
+                for (var item : json.get("sub_questions")) {
+                    subQuestions.add(item.asText());
+                }
+            }
+
+            if (StrUtil.isNotBlank(rewritten)) {
+                if (subQuestions.isEmpty()) {
+                    subQuestions = List.of(rewritten);
+                }
+                return new RewriteResult(rewritten, subQuestions);
+            }
+        } catch (Exception e) {
+            log.warn("解析合并后的改写结果失败，使用兜底", e);
+        }
+        return fallback;
     }
 
     private RetrievalContext retrieve(StreamChatContext ctx) {

@@ -111,6 +111,13 @@ public class IngestionContext {
     private VectorSpaceId vectorSpaceId;
 
     /**
+     * 嵌入模型标识
+     * 由 IndexerNode 的 settings 中配置，在 ChunkerNode 执行嵌入时使用。
+     * 为 null 时使用系统默认嵌入模型。
+     */
+    private String embeddingModel;
+
+    /**
      * 当前摄入任务的状态
      * 参见 {@link IngestionStatus} 枚举
      */

@@ -103,6 +103,11 @@ public class IndexerNode implements IngestionNode {
         }
         IndexerSettings settings = parseSettings(config.getSettings());
         String collectionName = resolveCollectionName(context);
+
+        // 记录配置的 embedding 模型信息，便于排查
+        if (StringUtils.hasText(settings.getEmbeddingModel())) {
+            log.info("IndexerNode 配置的 embeddingModel: {}", settings.getEmbeddingModel());
+        }
         if (!StringUtils.hasText(collectionName)) {
             return NodeResult.fail(new ClientException("索引器需要指定集合名称"));
         }
@@ -147,16 +152,23 @@ public class IndexerNode implements IngestionNode {
     /**
      * 解析向量集合名称
      * <p>
-     * 优先使用上下文中的向量空间 ID 的逻辑名称，否则使用默认配置中的集合名称。
+     * 集合名称由触发流水线知识库决定，不从节点配置中读取。
+     * 优先级从高到低：
+     * <ol>
+     *   <li>上下文中的向量空间 ID 的逻辑名称（由知识库触发时设置）</li>
+     *   <li>默认配置中的集合名称</li>
+     * </ol>
      * </p>
      *
      * @param context 摄入上下文
      * @return 向量集合名称
      */
     private String resolveCollectionName(IngestionContext context) {
+        // 优先使用上下文中的向量空间 ID（由触发流水线的知识库决定）
         if (context.getVectorSpaceId() != null && StringUtils.hasText(context.getVectorSpaceId().getLogicalName())) {
             return context.getVectorSpaceId().getLogicalName();
         }
+        // 最后使用默认配置
         return ragDefaultProperties.getCollectionName();
     }
 

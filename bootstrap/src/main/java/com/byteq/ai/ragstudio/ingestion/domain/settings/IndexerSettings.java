@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.ingestion.domain.settings;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -10,14 +11,16 @@ import java.util.List;
 /**
  * 索引器设置实体类
  * <p>
- * 定义向量索引节点的配置参数，包括嵌入模型等
- * 索引器负责将处理后的文本块存储到向量数据库中
+ * 定义向量索引节点的配置参数，包括嵌入模型等。
+ * 索引器负责将处理后的文本块存储到向量数据库中。
+ * 目标向量集合由触发流水线的知识库决定，不在此处配置。
  * </p>
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class IndexerSettings {
 
     /**
