@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.ingestion.service.impl;
 
 import cn.hutool.core.lang.Assert;
+import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -27,6 +28,12 @@ import com.byteq.ai.ragstudio.ingestion.domain.pipeline.PipelineDefinition;
 import com.byteq.ai.ragstudio.ingestion.domain.result.IngestionResult;
 import com.byteq.ai.ragstudio.ingestion.engine.IngestionEngine;
 import com.byteq.ai.ragstudio.ingestion.util.MimeTypeDetector;
+import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeBaseDO;
+import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeDocumentDO;
+import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeBaseMapper;
+import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentMapper;
+import com.byteq.ai.ragstudio.knowledge.service.KnowledgeChunkService;
+import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeChunkCreateRequest;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorSpaceId;
 import com.byteq.ai.ragstudio.ingestion.service.IngestionPipelineService;
 import com.byteq.ai.ragstudio.ingestion.service.IngestionTaskService;
@@ -58,6 +65,9 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
     private final IngestionPipelineService pipelineService;
     private final IngestionTaskMapper taskMapper;
     private final IngestionTaskNodeMapper taskNodeMapper;
+    private final KnowledgeBaseMapper knowledgeBaseMapper;
+    private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+    private final KnowledgeChunkService knowledgeChunkService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -156,6 +166,13 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         IngestionContext result = engine.execute(pipeline, context);
         saveNodeLogs(task, pipeline, result.getLogs());
         updateTaskFromContext(task, result);
+
+        // 引擎执行成功后，创建知识库文档和分块记录
+        if (result.getStatus() == IngestionStatus.COMPLETED
+                && result.getChunks() != null && !result.getChunks().isEmpty()) {
+            createKnowledgeDocument(task, pipeline, result, source);
+        }
+
         return IngestionResult.builder()
                 .taskId(result.getTaskId())
                 .pipelineId(result.getPipelineId())
@@ -174,6 +191,126 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         task.setLogsJson(writeJson(buildLogSummary(context.getLogs())));
         task.setMetadataJson(writeJson(buildTaskMetadata(context)));
         taskMapper.updateById(task);
+    }
+
+    /**
+     * 创建知识库文档记录及分块记录
+     * <p>
+     * 流水线任务执行完成后，在知识库中创建对应的文档记录和分块数据，
+     * 使处理结果在知识库文档列表中可见。
+     * </p>
+     * <p>
+     * 注意：独立任务入口已从前端移除，文档统一通过知识库管理上传并选择数据通道处理。
+     * 此方法仅作为 API 兼容保留，新流水线不再包含 collectionName 配置。
+     * </p>
+     */
+    private void createKnowledgeDocument(IngestionTaskDO task, PipelineDefinition pipeline,
+                                         IngestionContext context, DocumentSource source) {
+        // 从上下文向量空间 ID 获取集合名称（由知识库触发时设置）
+        String collectionName = null;
+        if (context.getVectorSpaceId() != null && StringUtils.hasText(context.getVectorSpaceId().getLogicalName())) {
+            collectionName = context.getVectorSpaceId().getLogicalName();
+        }
+        // 兼容旧流水线：尝试从 IndexerNode 配置中读取
+        if (!StringUtils.hasText(collectionName)) {
+            collectionName = extractIndexerCollectionName(pipeline);
+        }
+        if (!StringUtils.hasText(collectionName)) {
+            log.info("独立任务未关联知识库集合，跳过创建知识库文档（流水线任务 ID={}）", task.getId());
+            return;
+        }
+
+        // 2. 根据 collectionName 查找知识库
+        KnowledgeBaseDO kb = knowledgeBaseMapper.selectOne(
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
+                        .eq(KnowledgeBaseDO::getCollectionName, collectionName)
+                        .eq(KnowledgeBaseDO::getDeleted, 0)
+        );
+        if (kb == null) {
+            log.warn("未找到 collectionName 为 {} 的知识库，跳过创建知识库文档", collectionName);
+            return;
+        }
+
+        // 3. 创建文档记录
+        String docId = IdUtil.getSnowflakeNextIdStr();
+        String fileName = source != null ? source.getFileName() : task.getSourceFileName();
+        String sourceLocation = source != null ? source.getLocation() : task.getSourceLocation();
+        String sourceType = source != null && source.getType() != null
+                ? source.getType().getValue() : task.getSourceType();
+
+        // 从 mimeType 推断文件类型
+        String fileType = context.getMimeType() != null ? context.getMimeType() : (fileName != null ? MimeTypeDetector.detect(context.getRawBytes(), fileName) : null); // 使用 rawBytes 需要确保不为 null
+        // 简化处理：根据文件后缀推断
+        String simpleFileType = "other";
+        if (fileType != null) {
+            if (fileType.contains("pdf")) simpleFileType = "pdf";
+            else if (fileType.contains("markdown") || fileType.endsWith(".md")) simpleFileType = "markdown";
+            else if (fileType.contains("word") || fileType.contains("msword")) simpleFileType = "docx";
+            else if (fileType.contains("excel") || fileType.contains("spreadsheet")) simpleFileType = "xlsx";
+            else if (fileType.contains("text")) simpleFileType = "txt";
+            else if (fileType.contains("image")) simpleFileType = "image";
+        }
+        // 或者从 fileName 后缀推断
+        if ("other".equals(simpleFileType) && fileName != null) {
+            String lower = fileName.toLowerCase();
+            if (lower.endsWith(".pdf")) simpleFileType = "pdf";
+            else if (lower.endsWith(".md") || lower.endsWith(".markdown")) simpleFileType = "markdown";
+            else if (lower.endsWith(".doc") || lower.endsWith(".docx")) simpleFileType = "docx";
+            else if (lower.endsWith(".txt")) simpleFileType = "txt";
+        }
+
+        KnowledgeDocumentDO documentDO = KnowledgeDocumentDO.builder()
+                .id(docId)
+                .kbId(String.valueOf(kb.getId()))
+                .docName(fileName != null ? fileName : "未命名文档")
+                .sourceType(sourceType)
+                .sourceLocation(sourceLocation)
+                .enabled(1)
+                .chunkCount(context.getChunks().size())
+                .fileUrl(sourceLocation != null ? sourceLocation : "")
+                .fileType(simpleFileType)
+                .processMode("pipeline")
+                .pipelineId(task.getPipelineId())
+                .status("success")
+                .createdBy(UserContext.getUsername())
+                .updatedBy(UserContext.getUsername())
+                .build();
+        knowledgeDocumentMapper.insert(documentDO);
+
+        // 4. 创建分块记录
+        List<KnowledgeChunkCreateRequest> chunkRequests = context.getChunks().stream()
+                .map(vc -> {
+                    KnowledgeChunkCreateRequest req = new KnowledgeChunkCreateRequest();
+                    req.setChunkId(vc.getChunkId());
+                    req.setIndex(vc.getIndex());
+                    req.setContent(vc.getContent());
+                    return req;
+                })
+                .toList();
+        knowledgeChunkService.batchCreate(docId, chunkRequests);
+
+        log.info("流水线任务完成，已创建知识库文档 docId={}, kbName={}, chunkCount={}",
+                docId, kb.getName(), chunkRequests.size());
+    }
+
+    /**
+     * 从流水线定义中提取 IndexerNode 的 collectionName 配置
+     */
+    private String extractIndexerCollectionName(PipelineDefinition pipeline) {
+        if (pipeline == null || pipeline.getNodes() == null) {
+            return null;
+        }
+        return pipeline.getNodes().stream()
+                .filter(n -> n != null && "indexer".equals(n.getNodeType()))
+                .findFirst()
+                .map(n -> {
+                    if (n.getSettings() != null && !n.getSettings().isNull()
+                            && n.getSettings().has("collectionName")) {
+                        return n.getSettings().get("collectionName").asText();
+                    }
+                    return null;
+                })
+                .orElse(null);
     }
 
     private void saveNodeLogs(IngestionTaskDO task, PipelineDefinition pipeline, List<NodeLog> logs) {

@@ -109,6 +109,9 @@ public class IngestionEngine {
 
         log.info("流水线从节点开始执行: {}", startNodeId);
 
+        // 预扫描：从 Indexer 节点的 settings 中提取 embeddingModel，供 ChunkerNode 嵌入时使用
+        prePopulateContextFromPipeline(pipeline, context);
+
         // 从起始节点开始链式执行所有节点
         executeChain(startNodeId, nodeConfigMap, context);
 
@@ -116,6 +119,30 @@ public class IngestionEngine {
             context.setStatus(IngestionStatus.COMPLETED);
         }
         return context;
+    }
+
+    /**
+     * 预扫描流水线节点，将全局配置信息填充到上下文中
+     * <p>
+     * 目前从 IndexerNode 的 settings 中提取 embeddingModel，
+     * 以便 ChunkerNode 在执行嵌入时可以使用用户指定的模型而非系统默认模型。
+     * </p>
+     *
+     * @param pipeline 流水线定义
+     * @param context  摄入上下文
+     */
+    private void prePopulateContextFromPipeline(PipelineDefinition pipeline, IngestionContext context) {
+        if (pipeline.getNodes() == null) return;
+        for (NodeConfig node : pipeline.getNodes()) {
+            if ("indexer".equals(node.getNodeType()) && node.getSettings() != null) {
+                com.fasterxml.jackson.databind.JsonNode emNode = node.getSettings().get("embeddingModel");
+                if (emNode != null && emNode.isTextual() && StringUtils.hasText(emNode.asText())) {
+                    context.setEmbeddingModel(emNode.asText());
+                    log.info("从 IndexerNode 配置中读取 embeddingModel: {}", emNode.asText());
+                    break;
+                }
+            }
+        }
     }
 
     /**

@@ -87,7 +87,8 @@ public class ChunkerNode implements IngestionNode {
         List<VectorChunk> chunks = convertToVectorChunks(results);
 
         // 为切分后的每个文本块生成向量嵌入，用于后续的相似度检索
-        chunkEmbeddingService.embed(chunks, null);
+        // 优先使用 IndexerNode settings 中配置的 embeddingModel（通过 IngestionEngine 预扫描写入 context）
+        chunkEmbeddingService.embed(chunks, context.getEmbeddingModel());
 
         context.setChunks(chunks);
         return NodeResult.ok("已分块 " + chunks.size() + " 段");
