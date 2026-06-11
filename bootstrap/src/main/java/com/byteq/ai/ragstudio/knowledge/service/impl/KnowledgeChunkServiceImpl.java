@@ -197,7 +197,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         }
 
         // 批量写入数据库，向量索引由上层统一处理以避免重复计算
-        chunkMapper.insert(chunkDOList);
+        for (KnowledgeChunkDO chunkDO : chunkDOList) {
+            chunkMapper.insert(chunkDO);
+        }
 
         documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
                 .eq(KnowledgeDocumentDO::getId, docId)

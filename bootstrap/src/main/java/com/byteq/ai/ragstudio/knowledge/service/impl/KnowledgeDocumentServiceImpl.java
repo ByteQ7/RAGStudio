@@ -339,7 +339,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
 
         // 创建摄入任务记录，使其出现在“流水线任务”列表中
-        String fileName = documentDO.getFileName();
+        String fileName = documentDO.getDocName();
         IngestionTaskDO task = IngestionTaskDO.builder()
                 .pipelineId(pipelineId)
                 .sourceType(documentDO.getSourceType())
