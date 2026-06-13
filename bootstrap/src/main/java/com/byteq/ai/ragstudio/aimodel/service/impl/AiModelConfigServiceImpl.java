@@ -390,10 +390,6 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     private AiProviderVO toProviderVO(AiProviderDO provider) {
         AiProviderVO vo = BeanUtil.toBean(provider, AiProviderVO.class,
                 CopyOptions.create().setIgnoreProperties("endpoints"));
-        // 脱敏 API Key
-        if (StrUtil.isNotBlank(provider.getApiKey())) {
-            vo.setApiKey(maskApiKey(provider.getApiKey()));
-        }
         // 解析 endpoints JSON
         vo.setEndpoints(parseEndpoints(provider.getEndpoints()));
         return vo;
@@ -418,12 +414,6 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         return map;
     }
 
-    private String maskApiKey(String apiKey) {
-        if (apiKey == null || apiKey.length() <= 8) {
-            return "****";
-        }
-        return apiKey.substring(0, 4) + "****" + apiKey.substring(apiKey.length() - 4);
-    }
 
     private String serializeEndpoints(Map<String, String> endpoints) {
         if (endpoints == null || endpoints.isEmpty()) {

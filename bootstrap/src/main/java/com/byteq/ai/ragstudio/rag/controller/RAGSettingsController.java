@@ -15,7 +15,6 @@ import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.DefaultSettings
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.MemorySettings;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.util.StringUtils;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -154,7 +153,7 @@ public class RAGSettingsController {
         if (config.getProviders() != null) {
             config.getProviders().forEach((k, v) -> providers.put(k, AISettings.ProviderConfig.builder()
                     .url(v.getUrl())
-                    .apiKey(maskApiKey(v.getApiKey()))
+                    .apiKey(v.getApiKey())
                     .endpoints(v.getEndpoints())
                     .build()));
         }
@@ -204,23 +203,4 @@ public class RAGSettingsController {
                 .build();
     }
 
-    /**
-     * 对 API Key 进行脱敏处理，仅保留前 6 位和后 4 位字符，中间替换为 "***"
-     * <p>
-     * 用于在前端展示时隐藏敏感信息。
-     * </p>
-     *
-     * @param apiKey 原始 API Key
-     * @return 脱敏后的 API Key 字符串；如果为空则返回 null
-     */
-    private String maskApiKey(String apiKey) {
-        if (!StringUtils.hasText(apiKey)) {
-            return null;
-        }
-        String trimmed = apiKey.trim();
-        if (trimmed.length() <= 10) {
-            return "******";
-        }
-        return trimmed.substring(0, 6) + "***" + trimmed.substring(trimmed.length() - 4);
-    }
 }
