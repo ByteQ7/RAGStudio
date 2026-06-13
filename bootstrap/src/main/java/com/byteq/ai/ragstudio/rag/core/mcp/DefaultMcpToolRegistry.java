@@ -9,10 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * MCP 工具注册表默认实现
@@ -26,7 +26,7 @@ public class DefaultMcpToolRegistry implements McpToolRegistry {
      * 工具执行器存储
      * key: toolId, value: executor
      */
-    private final Map<String, McpToolExecutor> executorMap = new HashMap<>();
+    private final Map<String, McpToolExecutor> executorMap = new ConcurrentHashMap<>();
 
     /**
      * Spring 容器中的所有 McpToolExecutor Bean（自动注入）
@@ -40,6 +40,7 @@ public class DefaultMcpToolRegistry implements McpToolRegistry {
     public void init() {
         if (CollUtil.isEmpty(autoDiscoveredExecutors)) {
             log.info("MCP 工具注册跳过, 未发现任何工具执行器");
+            return;
         }
 
         for (McpToolExecutor executor : autoDiscoveredExecutors) {

@@ -2,7 +2,7 @@ package com.byteq.ai.ragstudio.infra.http;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
+import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import lombok.NoArgsConstructor;
 import okhttp3.ResponseBody;
@@ -75,7 +75,7 @@ public final class HttpResponseHelper {
      * @return 非空的提供商配置对象
      * @throws IllegalStateException 如果 target 为 null 或 provider() 为 null
      */
-    public static AIModelProperties.ProviderConfig requireProvider(ModelTarget target, String label) {
+    public static DynamicModelConfig.ProviderEntry requireProvider(ModelTarget target, String label) {
         if (target == null || target.provider() == null) {
             throw new IllegalStateException(label + " 提供商配置缺失");
         }
@@ -93,7 +93,7 @@ public final class HttpResponseHelper {
      * @param label    提供商或模型标签，用于在异常消息中标识来源
      * @throws IllegalStateException 如果 API 密钥为 null 或空白
      */
-    public static void requireApiKey(AIModelProperties.ProviderConfig provider, String label) {
+    public static void requireApiKey(DynamicModelConfig.ProviderEntry provider, String label) {
         if (provider.getApiKey() == null || provider.getApiKey().isBlank()) {
             throw new IllegalStateException(label + " API密钥缺失");
         }

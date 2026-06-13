@@ -16,6 +16,7 @@ import { SampleQuestionPage } from "@/pages/admin/sample-questions/SampleQuestio
 import { QueryTermMappingPage } from "@/pages/admin/query-term-mapping/QueryTermMappingPage";
 import { UserListPage } from "@/pages/admin/users/UserListPage";
 import { McpServerPage } from "@/pages/admin/mcp/McpServerPage";
+import { AiModelConfigPage } from "@/pages/admin/ai-models/AiModelConfigPage";
 import { useAuthStore } from "@/stores/authStore";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -142,6 +143,10 @@ export const router = createBrowserRouter([
       {
         path: "mcp-servers",
         element: <McpServerPage />
+      },
+      {
+        path: "ai-models",
+        element: <AiModelConfigPage />
       }
     ]
   },

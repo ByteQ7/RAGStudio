@@ -9,7 +9,7 @@ import java.util.List;
  * 文本嵌入客户端接口
  * <p>
  * 定义将文本转换为向量表示（Embedding）的标准化契约，是接入各类 AI 模型提供商的基础抽象层。
- * 实现类负责与具体的模型服务（如 SiliconFlow、Ollama、AIHubMix 等）通信，
+ * 实现类负责与具体的模型服务（如 SiliconFlow、百炼 等）通信，
  * 将文本转换为固定维度的浮点数向量，用于语义检索、相似度计算等 RAG 场景。
  * </p>
  * <p>
@@ -29,7 +29,7 @@ import java.util.List;
  * </p>
  *
  * @author byteq
- * @see AbstractOpenAIStyleEmbeddingClient
+ * @see com.byteq.ai.ragstudio.infra.springai.SpringAiChatModelFactory
  * @see ModelTarget
  */
 public interface EmbeddingClient {
@@ -38,7 +38,7 @@ public interface EmbeddingClient {
      * 获取当前嵌入客户端的模型提供商名称
      * <p>
      * 该名称用于在路由选择时匹配对应的模型配置，需要与配置中心定义的提供商 ID 保持一致。
-     * 例如：SiliconFlow 返回 "siliconflow"，Ollama 返回 "ollama"。
+     * 例如：SiliconFlow 返回 "siliconflow"，百炼返回 "bailian"。
      * </p>
      *
      * @return 提供商标识字符串，非 null

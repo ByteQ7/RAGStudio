@@ -10,12 +10,9 @@ import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.web.SseEmitterSender;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
 import com.byteq.ai.ragstudio.rag.core.memory.ConversationMemoryService;
 import lombok.extern.slf4j.Slf4j;
 import com.byteq.ai.ragstudio.rag.service.ConversationGroupService;
-
-import java.util.Optional;
 
 @Slf4j
 public class StreamChatEventHandler implements StreamCallback {
@@ -51,8 +48,8 @@ public class StreamChatEventHandler implements StreamCallback {
         this.taskManager = params.getTaskManager();
         this.userId = UserContext.getUserId();
 
-        // 计算配置
-        this.messageChunkSize = resolveMessageChunkSize(params.getModelProperties());
+        // 直接使用已计算好的消息块大小
+        this.messageChunkSize = params.getMessageChunkSize();
         this.sendTitleOnComplete = shouldSendTitle();
 
         // 初始化（发送初始事件、注册任务）
@@ -65,15 +62,6 @@ public class StreamChatEventHandler implements StreamCallback {
     private void initialize() {
         sender.sendEvent(SSEEventType.META.value(), new MetaPayload(conversationId, taskId));
         taskManager.register(taskId, sender, this::buildCompletionPayloadOnCancel);
-    }
-
-    /**
-     * 解析消息块大小
-     */
-    private int resolveMessageChunkSize(AIModelProperties modelProperties) {
-        return Math.max(1, Optional.ofNullable(modelProperties.getStream())
-                .map(AIModelProperties.Stream::getMessageChunkSize)
-                .orElse(5));
     }
 
     /**

@@ -6,6 +6,7 @@ import com.byteq.ai.ragstudio.ingestion.domain.enums.SourceType;
 import com.byteq.ai.ragstudio.ingestion.util.MimeTypeDetector;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -38,6 +39,13 @@ public class S3Fetcher implements DocumentFetcher {
      */
     private final FileStorageService fileStorageService;
 
+    /**
+     * S3 文件最大允许大小（字节），默认 100MB。
+     * 超过此限制的文件将被拒绝读取，以防止 OOM。
+     */
+    @Value("${ragstudio.fetcher.s3.max-file-size:104857600}")
+    private long maxFileSize;
+
     @Override
     public SourceType supportedType() {
         return SourceType.S3;
@@ -57,7 +65,12 @@ public class S3Fetcher implements DocumentFetcher {
         try {
             byte[] bytes;
             try (InputStream is = fileStorageService.openStream(location)) {
-                bytes = is.readAllBytes();
+                // 读取 maxSize + 1 字节以检测文件是否超限
+                bytes = is.readNBytes((int) maxFileSize + 1);
+            }
+            if (bytes.length > maxFileSize) {
+                throw new ServiceException(
+                        "S3文件大小超过限制: " + maxFileSize + " bytes (100MB), 来源: " + location);
             }
 
             String fileName = source.getFileName();
@@ -67,6 +80,8 @@ public class S3Fetcher implements DocumentFetcher {
 
             String mimeType = MimeTypeDetector.detect(bytes, fileName);
             return new FetchResult(bytes, mimeType, fileName);
+        } catch (ServiceException e) {
+            throw e;
         } catch (Exception e) {
             throw new ServiceException("从S3读取文件失败: " + location + ", 错误: " + e.getMessage());
         }

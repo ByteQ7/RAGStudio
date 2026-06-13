@@ -13,12 +13,16 @@ import com.byteq.ai.ragstudio.mcp.dao.entity.McpServerDO;
 import com.byteq.ai.ragstudio.mcp.dao.mapper.McpServerMapper;
 import com.byteq.ai.ragstudio.mcp.service.DynamicMcpConnectionManager;
 import com.byteq.ai.ragstudio.mcp.service.McpServerService;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -28,6 +32,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class McpServerServiceImpl implements McpServerService {
+
+    private static final Gson GSON = new Gson();
 
     private final McpServerMapper mcpServerMapper;
     private final DynamicMcpConnectionManager connectionManager;
@@ -237,6 +243,8 @@ public class McpServerServiceImpl implements McpServerService {
 
     private McpServerVO toVO(McpServerDO server) {
         McpServerVO vo = BeanUtil.copyProperties(server, McpServerVO.class);
+        // 脱敏 headers：保留 key 名称，将 value 替换为 "***"，避免 API Key/Token 泄露到前端
+        vo.setHeaders(maskHeaders(server.getHeaders()));
         // 运行时数据：从连接管理器获取工具数量和实时状态
         String serverId = server.getId();
         vo.setToolCount(connectionManager.getToolCount(serverId));
@@ -249,6 +257,27 @@ public class McpServerServiceImpl implements McpServerService {
             }
         }
         return vo;
+    }
+
+    /**
+     * 对 headers JSON 进行脱敏：保留 key 名称，将 value 替换为 "***"。
+     * 如果解析失败，返回 null 以避免泄露原始数据。
+     */
+    private String maskHeaders(String headersJson) {
+        if (StrUtil.isBlank(headersJson)) {
+            return headersJson;
+        }
+        try {
+            JsonObject jsonObject = JsonParser.parseString(headersJson).getAsJsonObject();
+            JsonObject masked = new JsonObject();
+            for (Map.Entry<String, com.google.gson.JsonElement> entry : jsonObject.entrySet()) {
+                masked.addProperty(entry.getKey(), "***");
+            }
+            return GSON.toJson(masked);
+        } catch (Exception e) {
+            log.warn("解析 headers JSON 失败，已脱敏为 null, 原因: {}", e.getMessage());
+            return null;
+        }
     }
 
     @Override

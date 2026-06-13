@@ -1,7 +1,7 @@
 package com.byteq.ai.ragstudio.rag.service.handler;
 
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
+import com.byteq.ai.ragstudio.infra.config.ModelRoutingProperties;
 import com.byteq.ai.ragstudio.rag.core.memory.ConversationMemoryService;
 import com.byteq.ai.ragstudio.rag.service.ConversationGroupService;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +16,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequiredArgsConstructor
 public class StreamCallbackFactory {
 
-    private final AIModelProperties modelProperties;
+    private final ModelRoutingProperties routingProperties;
     private final ConversationMemoryService memoryService;
     private final ConversationGroupService conversationGroupService;
     private final StreamTaskManager taskManager;
@@ -32,11 +32,13 @@ public class StreamCallbackFactory {
     public StreamCallback createChatEventHandler(SseEmitter emitter,
                                                  String conversationId,
                                                  String taskId) {
+        int chunkSize = Math.max(1, routingProperties.getStream().getMessageChunkSize());
+
         StreamChatHandlerParams params = StreamChatHandlerParams.builder()
                 .emitter(emitter)
                 .conversationId(conversationId)
                 .taskId(taskId)
-                .modelProperties(modelProperties)
+                .messageChunkSize(chunkSize)
                 .memoryService(memoryService)
                 .conversationGroupService(conversationGroupService)
                 .taskManager(taskManager)

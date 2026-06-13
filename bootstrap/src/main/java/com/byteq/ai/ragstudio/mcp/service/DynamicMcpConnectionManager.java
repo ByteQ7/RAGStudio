@@ -44,7 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DynamicMcpConnectionManager {
 
     private final McpToolRegistry toolRegistry;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     /**
      * 活跃连接池：serverId -> McpSyncClient
@@ -153,7 +153,7 @@ public class DynamicMcpConnectionManager {
      * @param serverId MCP Server ID
      * @return 健康状态
      */
-    public HealthStatus healthCheck(String serverId) {
+    public synchronized HealthStatus healthCheck(String serverId) {
         McpSyncClient client = activeClients.get(serverId);
         if (client == null) {
             return new HealthStatus(STATUS_DISCONNECTED, "未建立连接", 0);
@@ -195,7 +195,8 @@ public class DynamicMcpConnectionManager {
     @PreDestroy
     public void destroy() {
         log.info("正在关闭所有 MCP 客户端连接...");
-        for (String serverId : activeClients.keySet()) {
+        // 先拷贝 key 集合再遍历，避免 disconnectInternal 修改 map 导致跳过元素
+        for (String serverId : new ArrayList<>(activeClients.keySet())) {
             disconnectInternal(serverId);
         }
     }

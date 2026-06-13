@@ -34,12 +34,14 @@ public class HeuristicTokenCounterService implements TokenCounterService {
         int asciiCount = 0;
         int cjkCount = 0;
         int otherCount = 0;
+        int whitespaceCount = 0;
 
         // 逐字符遍历文本，按字符类型进行分类统计
         for (int i = 0; i < text.length(); i++) {
             char ch = text.charAt(i);
-            // 跳过空白字符，空白不影响 Token 计数的估算
             if (Character.isWhitespace(ch)) {
+                // 空白字符以较低比率计入：每 4 个空白字符折算 1 个 Token
+                whitespaceCount++;
                 continue;
             }
             if (ch <= 0x7F) {
@@ -58,8 +60,10 @@ public class HeuristicTokenCounterService implements TokenCounterService {
         int asciiTokens = (asciiCount + 3) / 4;
         // 其他非 CJK 字符按约 2 字符 = 1 Token 折算（向上取整）
         int otherTokens = (otherCount + 1) / 2;
+        // 空白字符按约 4 字符 = 1 Token 折算（向上取整）
+        int whitespaceTokens = (whitespaceCount + 3) / 4;
         // CJK 字符按 1 字符 = 1 Token 计算
-        int total = asciiTokens + cjkCount + otherTokens;
+        int total = asciiTokens + cjkCount + otherTokens + whitespaceTokens;
         // 确保即使所有计数都为 0，也至少返回 1（代表空文本的基本开销）
         return Math.max(total, 1);
     }

@@ -1,6 +1,6 @@
 package com.byteq.ai.ragstudio.infra.model;
 
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
+import com.byteq.ai.ragstudio.infra.config.ModelRoutingProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequiredArgsConstructor
 public class ModelHealthStore {
 
-    private final AIModelProperties properties;
+    private final ModelRoutingProperties routingProperties;
 
     /**
      * 模型健康状态缓存，key 为模型 ID，value 为健康状态对象
@@ -167,17 +167,18 @@ public class ModelHealthStore {
             // HALF_OPEN 状态下失败：探测失败，立即回到 OPEN 状态并重置冷却
             if (v.state == State.HALF_OPEN) {
                 v.state = State.OPEN;
-                v.openUntil = now + properties.getSelection().getOpenDurationMs();
+                v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
                 v.consecutiveFailures = 0;
                 v.halfOpenInFlight = false;
                 return v;
             }
             // CLOSED 状态下失败：累加失败次数，达到阈值时切换到 OPEN 状态
             v.consecutiveFailures++;
-            if (v.consecutiveFailures >= properties.getSelection().getFailureThreshold()) {
+            if (v.consecutiveFailures >= routingProperties.getSelection().getFailureThreshold()) {
                 v.state = State.OPEN;
-                v.openUntil = now + properties.getSelection().getOpenDurationMs();
+                v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
                 v.consecutiveFailures = 0;
+                v.halfOpenInFlight = false;
             }
             return v;
         });

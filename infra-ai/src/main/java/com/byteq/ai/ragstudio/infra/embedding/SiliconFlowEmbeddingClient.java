@@ -1,34 +1,30 @@
 package com.byteq.ai.ragstudio.infra.embedding;
 
 import com.byteq.ai.ragstudio.infra.enums.ModelProvider;
-import okhttp3.OkHttpClient;
+import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import com.byteq.ai.ragstudio.infra.springai.SpringAiChatModelFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.stereotype.Service;
 
-/**
- * SiliconFlow 嵌入客户端实现
- * <p>
- * 对接 SiliconFlow 平台的文本嵌入服务，通过 OpenAI 兼容协议将文本转换为向量表示。
- * 使用 SiliconFlow 提供的嵌入模型（如 BAAI/bge-large-zh-v1.5 等）进行向量化处理。
- * </p>
- * <p>
- * <b>特性：</b>
- * <ul>
- *   <li>支持批量嵌入，单次请求最大批处理量为 32 条文本</li>
- *   <li>通过 {@link AbstractOpenAIStyleEmbeddingClient} 复用 OpenAI 兼容协议的通用请求逻辑</li>
- *   <li>自动从配置中心读取 SiliconFlow 的 API Key 和 Endpoint 信息</li>
- * </ul>
- * </p>
- *
- * @author byteq
- * @see AbstractOpenAIStyleEmbeddingClient
- * @see ModelProvider#SILICON_FLOW
- */
-@Service
-public class SiliconFlowEmbeddingClient extends AbstractOpenAIStyleEmbeddingClient {
+import java.util.ArrayList;
+import java.util.List;
 
-    public SiliconFlowEmbeddingClient(OkHttpClient syncHttpClient) {
-        super(syncHttpClient);
-    }
+/**
+ * SiliconFlow EmbeddingClient —— 基于 Spring AI OpenAI 兼容模式
+ * <p>
+ * 通过 SiliconFlow API 调用 Qwen3-Embedding 等嵌入模型。
+ * 支持批量分片（maxBatchSize=32），超出时自动拆分请求。
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class SiliconFlowEmbeddingClient implements EmbeddingClient {
+
+    private static final int MAX_BATCH_SIZE = 32;
+
+    private final SpringAiChatModelFactory modelFactory;
 
     @Override
     public String provider() {
@@ -36,7 +32,33 @@ public class SiliconFlowEmbeddingClient extends AbstractOpenAIStyleEmbeddingClie
     }
 
     @Override
-    protected int maxBatchSize() {
-        return 32;
+    public List<Float> embed(String text, ModelTarget target) {
+        EmbeddingModel model = modelFactory.getOrCreateEmbeddingModel(target);
+        float[] embedding = model.embed(text);
+        return toFloatList(embedding);
+    }
+
+    @Override
+    public List<List<Float>> embedBatch(List<String> texts, ModelTarget target) {
+        EmbeddingModel model = modelFactory.getOrCreateEmbeddingModel(target);
+        List<List<Float>> results = new ArrayList<>(texts.size());
+
+        for (int i = 0; i < texts.size(); i += MAX_BATCH_SIZE) {
+            List<String> batch = texts.subList(i, Math.min(i + MAX_BATCH_SIZE, texts.size()));
+            List<float[]> embeddings = model.embed(batch);
+            for (float[] emb : embeddings) {
+                results.add(toFloatList(emb));
+            }
+        }
+
+        return results;
+    }
+
+    private static List<Float> toFloatList(float[] array) {
+        List<Float> list = new ArrayList<>(array.length);
+        for (float v : array) {
+            list.add(v);
+        }
+        return list;
     }
 }

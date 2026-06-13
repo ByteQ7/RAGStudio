@@ -10,7 +10,7 @@ package com.byteq.ai.ragstudio.infra.chat;
  * <p>
  * 使用场景：
  * - SSE / WebSocket 流式响应
- * - 后端对接本地大模型（如 Ollama、DeepSeek、Qwen）的流式推送
+ * - 后端对接大模型（如 DeepSeek、SiliconFlow、百炼）的流式推送
  * - 前端实时渲染消息、流式拼接回答
  * <p>
  * 注意事项：

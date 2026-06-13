@@ -138,25 +138,6 @@ public class ThreadPoolExecutorConfig {
     }
 
     /**
-     * 模型流式输出线程池
-     */
-    @Bean
-    public Executor modelStreamExecutor() {
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                Math.max(2, CPU_COUNT >> 1),
-                Math.max(4, CPU_COUNT),
-                60,
-                TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(200),
-                ThreadFactoryBuilder.create()
-                        .setNamePrefix("model_stream_executor_")
-                        .build(),
-                new ThreadPoolExecutor.CallerRunsPolicy()
-        );
-        return TtlExecutors.getTtlExecutor(executor);
-    }
-
-    /**
      * SSE 排队后执行入口线程池
      */
     @Bean
@@ -209,6 +190,30 @@ public class ThreadPoolExecutorConfig {
                 new LinkedBlockingQueue<>(200),
                 ThreadFactoryBuilder.create()
                         .setNamePrefix("memory_load_executor_")
+                        .build(),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+        return TtlExecutors.getTtlExecutor(executor);
+    }
+
+    /**
+     * 链路追踪记录线程池
+     * <p>
+     * 单线程 + 有界队列，保证 trace 写入按提交顺序执行（startNode 先于 finishNode）。
+     * 队列满时降级为调用线程同步执行（CallerRunsPolicy），最差情况退化为改动前的性能。
+     * trace 写入均为轻量 DB 操作，单线程足以应对正常负载。
+     * </p>
+     */
+    @Bean
+    public Executor traceRecordExecutor() {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                1,
+                1,
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(500),
+                ThreadFactoryBuilder.create()
+                        .setNamePrefix("trace_record_")
                         .build(),
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );

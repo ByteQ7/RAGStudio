@@ -19,7 +19,8 @@ import {
   Upload,
   Users,
   FolderKanban,
-  Workflow
+  Workflow,
+  BrainCircuit
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
@@ -130,6 +131,11 @@ const menuGroups: MenuGroup[] = [
         icon: Plug
       },
       {
+        path: "/admin/ai-models",
+        label: "模型管理",
+        icon: BrainCircuit
+      },
+      {
         path: "/admin/settings",
         label: "系统设置",
         icon: Settings
@@ -147,7 +153,8 @@ const breadcrumbMap: Record<string, string> = {
   mappings: "关键词映射",
   settings: "系统设置",
   users: "用户管理",
-  "mcp-servers": "MCP 服务"
+  "mcp-servers": "MCP 服务",
+  "ai-models": "模型管理"
 };
 
 export function AdminLayout() {

@@ -87,7 +87,10 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
         }
 
         // 2) 依据 min/target/max 打包成 chunk（只在块边界切分）
-        List<int[]> ranges = packBlocksToChunks(blocks, text.length(), effectiveMin, effectiveTarget, effectiveMax);
+        // 当 overlap > 0 时，为 overlap 预留容量，避免拼接后超出 maxChars
+        int packMax = effectiveOverlap > 0 ? effectiveMax - effectiveOverlap : effectiveMax;
+        int packTarget = effectiveOverlap > 0 ? effectiveTarget - effectiveOverlap : effectiveTarget;
+        List<int[]> ranges = packBlocksToChunks(blocks, text.length(), effectiveMin, packTarget, packMax);
 
         // 3)（可选）加入重叠：为保持“只在块边界切分”，这里不在中间加重叠，若开启 overlap，仅复制“上一 chunk 的尾部全文子串”到下一 chunk 的开头
         List<VectorChunk> out = materialize(text, ranges, effectiveOverlap);

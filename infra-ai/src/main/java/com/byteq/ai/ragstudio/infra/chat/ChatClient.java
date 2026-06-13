@@ -10,8 +10,8 @@ import com.byteq.ai.ragstudio.infra.model.ModelTarget;
  * 定义了与 AI 模型进行对话的核心方法，是 LLMService 与具体模型提供商之间的适配层。
  * <p>
  * 设计意图：
- * - 每个实现类对应一个模型提供商（如阿里云百炼、SiliconFlow、Ollama）
- * - 采用接口隔离 + 模板方法模式：AbstractOpenAIStyleChatClient 封装了 OpenAI 兼容协议的公共逻辑
+ * - 每个实现类对应一个模型提供商（如阿里云百炼、SiliconFlow、DeepSeek）
+ * - 采用接口隔离模式：每个实现类（BaiLianChatClient、SiliconFlowChatClient 等）基于 Spring AI 的 ChatModel 实现
  * - provider() 用于标识提供商，驱动路由层的客户端查找与匹配
  * <p>
  * 本接口与 {@link LLMService} 的区别：
@@ -26,7 +26,7 @@ public interface ChatClient {
      * 返回值用于路由层按提供商查找对应的 ChatClient 实例，
      * 取值来自 {@link ModelProvider} 枚举的各提供商 ID。
      *
-     * @return 服务提供商标识，如 "bailian"、"siliconflow"、"ollama"
+     * @return 服务提供商标识，如 "bailian"、"siliconflow"、"deepseek"
      */
     String provider();
 
@@ -37,7 +37,7 @@ public interface ChatClient {
      * 但需要完整上下文的场景（如离线批处理、摘要生成）。
      * <p>
      * 实现说明：
-     * - 由 AbstractOpenAIStyleChatClient.doChat() 提供模板实现
+     * - 由 Spring AI ChatModel.call() 提供底层实现，各 Client 负责 Prompt 转换
      * - 子类通过 @RagTraceNode 注解注入 trace 埋点
      *
      * @param request 聊天请求对象，包含用户消息和对话历史
@@ -53,7 +53,7 @@ public interface ChatClient {
      * 以流式方式接收模型响应，适用于实时展示场景（如类 ChatGPT 的逐字输出）。
      * <p>
      * 实现说明：
-     * - 由 AbstractOpenAIStyleChatClient.doStreamChat() 提供模板实现
+     * - 由 Spring AI ChatModel.stream() 返回 Flux&lt;ChatResponse&gt;，通过 FluxToStreamCallbackBridge 桥接
      * - 使用 SSE（Server-Sent Events）协议接收模型输出
      * - 响应内容通过 callback.onContent() 逐段回调
      * - 返回的 StreamCancellationHandle 使调用方可随时中断生成

@@ -5,6 +5,7 @@ import com.byteq.ai.ragstudio.ingestion.domain.context.DocumentSource;
 import com.byteq.ai.ragstudio.ingestion.domain.enums.SourceType;
 import com.byteq.ai.ragstudio.ingestion.util.HttpClientHelper;
 import com.byteq.ai.ragstudio.ingestion.util.MimeTypeDetector;
+import com.byteq.ai.ragstudio.ingestion.util.SsrfGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -49,6 +50,9 @@ public class HttpUrlFetcher implements DocumentFetcher {
         if (!StringUtils.hasText(location)) {
             throw new ServiceException("链接地址不能为空");
         }
+
+        // SSRF 防护：校验 URL 安全性，拒绝访问内网地址
+        SsrfGuard.validate(location);
 
         Map<String, String> headers = buildHeaders(source.getCredentials());
         HttpClientHelper.HttpFetchResponse resp = httpClientHelper.get(location, headers);

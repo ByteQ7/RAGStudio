@@ -11,7 +11,7 @@ import com.byteq.ai.ragstudio.framework.trace.RagStreamTraceSupport.StreamSpan;
  * - 提供 onCancel() 方法供取消路径调用，确保 span 不会因未 finish 而成为悬挂节点
  * <p>
  * 使用场景：
- * - AbstractOpenAIStyleChatClient.doStreamChat() 中创建 StreamSpan 并包装 callback
+ * - RoutingLLMService.streamChat() 中创建 StreamSpan 并包装 callback
  * - 路由层取消流式任务时通过 onCancel() 确保 trace 完整性
  */
 public final class StreamSpanCallback extends ForwardingStreamCallback {
