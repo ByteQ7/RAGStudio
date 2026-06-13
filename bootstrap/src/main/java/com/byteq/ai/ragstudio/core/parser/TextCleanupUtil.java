@@ -30,10 +30,10 @@ public final class TextCleanupUtil {
         return text
                 // 移除 BOM 标记
                 .replace("\uFEFF", "")
-                // 移除行尾的空格和制表符
-                .replaceAll("[ \\t]+\\n", "\n")
+                // 移除行尾的空格和制表符（兼容 Windows \r\n 和 Unix \n）
+                .replaceAll("[ \\t]+\\r?\\n", "\n")
                 // 压缩连续的空行（3个以上压缩为2个）
-                .replaceAll("\\n{3,}", "\n\n")
+                .replaceAll("\\r?\\n{3,}", "\n\n")
                 // 去除首尾空白
                 .trim();
     }
@@ -64,11 +64,11 @@ public final class TextCleanupUtil {
         }
 
         if (trimTrailingSpaces) {
-            result = result.replaceAll("[ \\t]+\\n", "\n");
+            result = result.replaceAll("[ \\t]+\\r?\\n", "\n");
         }
 
         if (compressEmptyLines && maxConsecutiveLines > 0) {
-            String pattern = "\\n{" + (maxConsecutiveLines + 1) + ",}";
+            String pattern = "\\r?\\n{" + (maxConsecutiveLines + 1) + ",}";
             String replacement = "\n".repeat(maxConsecutiveLines);
             result = result.replaceAll(pattern, replacement);
         }

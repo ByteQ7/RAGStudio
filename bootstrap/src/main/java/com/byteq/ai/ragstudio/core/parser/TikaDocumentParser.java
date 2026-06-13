@@ -3,7 +3,12 @@ package com.byteq.ai.ragstudio.core.parser;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
+import org.apache.tika.config.TikaConfig;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.pdf.PDFParserConfig;
+import org.apache.tika.sax.BodyContentHandler;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
@@ -42,10 +47,13 @@ public class TikaDocumentParser implements DocumentParser {
 
     private static final Tika TIKA = new Tika();
 
+    /**
+     * PDF 解析配置：禁用内联图片提取，减少不必要的内存开销
+     */
+    private static final PDFParserConfig PDF_CONFIG = new PDFParserConfig();
     static {
-        PDFParserConfig pdfConfig = new PDFParserConfig();
-        pdfConfig.setExtractInlineImages(false);
-        pdfConfig.setExtractUniqueInlineImagesOnly(true);
+        PDF_CONFIG.setExtractInlineImages(false);
+        PDF_CONFIG.setExtractUniqueInlineImagesOnly(true);
     }
 
     @Override
@@ -60,7 +68,13 @@ public class TikaDocumentParser implements DocumentParser {
         }
 
         try (ByteArrayInputStream is = new ByteArrayInputStream(content)) {
-            String text = TIKA.parseToString(is);
+            // 使用 AutoDetectParser + ParseContext 使 PDFParserConfig 真正生效
+            AutoDetectParser parser = new AutoDetectParser(TikaConfig.getDefaultConfig());
+            BodyContentHandler handler = new BodyContentHandler(-1);
+            ParseContext parseContext = new ParseContext();
+            parseContext.set(PDFParserConfig.class, PDF_CONFIG);
+            parser.parse(is, handler, new Metadata(), parseContext);
+            String text = handler.toString();
             String cleaned = TextCleanupUtil.cleanup(text);
             return ParseResult.ofText(cleaned);
         } catch (Exception e) {

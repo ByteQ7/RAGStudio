@@ -7,6 +7,7 @@ import com.byteq.ai.ragstudio.ingestion.domain.context.DocumentSource;
 import com.byteq.ai.ragstudio.ingestion.domain.enums.SourceType;
 import com.byteq.ai.ragstudio.ingestion.util.HttpClientHelper;
 import com.byteq.ai.ragstudio.ingestion.util.MimeTypeDetector;
+import com.byteq.ai.ragstudio.ingestion.util.SsrfGuard;
 import lombok.RequiredArgsConstructor;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -71,6 +72,9 @@ public class FeishuFetcher implements DocumentFetcher {
         if (!StringUtils.hasText(location)) {
             throw new ServiceException("飞书文档地址不能为空");
         }
+
+        // SSRF 防护：校验 URL 安全性，拒绝访问内网地址
+        SsrfGuard.validate(location);
 
         String accessToken = resolveAccessToken(source.getCredentials());
         Map<String, String> headers = new HashMap<>();

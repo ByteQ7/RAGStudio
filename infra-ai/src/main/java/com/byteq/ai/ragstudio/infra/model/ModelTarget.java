@@ -1,6 +1,6 @@
 package com.byteq.ai.ragstudio.infra.model;
 
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
+import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 
 /**
  * 模型目标配置记录
@@ -29,7 +29,7 @@ import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
  */
 public record ModelTarget(
         String id,
-        AIModelProperties.ModelCandidate candidate,
-        AIModelProperties.ProviderConfig provider
+        DynamicModelConfig.ModelEntry candidate,
+        DynamicModelConfig.ProviderEntry provider
 ) {
 }

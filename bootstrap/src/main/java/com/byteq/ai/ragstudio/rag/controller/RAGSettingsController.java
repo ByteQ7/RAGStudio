@@ -2,7 +2,9 @@ package com.byteq.ai.ragstudio.rag.controller;
 
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
+import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
+import com.byteq.ai.ragstudio.infra.config.ModelConfigProvider;
+import com.byteq.ai.ragstudio.infra.config.ModelRoutingProperties;
 import com.byteq.ai.ragstudio.rag.config.MemoryProperties;
 import com.byteq.ai.ragstudio.rag.config.RAGConfigProperties;
 import com.byteq.ai.ragstudio.rag.config.RAGDefaultProperties;
@@ -54,9 +56,14 @@ public class RAGSettingsController {
     private final MemoryProperties memoryProperties;
 
     /**
-     * AI 模型配置属性
+     * 模型路由运行时配置（用于 selection/stream 参数）
      */
-    private final AIModelProperties aiModelProperties;
+    private final ModelRoutingProperties routingProperties;
+
+    /**
+     * 动态模型配置提供者（从数据库读取供应商和模型配置）
+     */
+    private final ModelConfigProvider modelConfigProvider;
 
     @Value("${spring.servlet.multipart.max-file-size:50MB}")
     private DataSize maxFileSize;
@@ -96,7 +103,7 @@ public class RAGSettingsController {
                                 .build())
                         .memory(toMemorySettings(memoryProperties))
                         .build())
-                .ai(toAISettings(aiModelProperties))
+                .ai(toAISettings())
                 .build();
         return Results.success(response);
     }
@@ -133,14 +140,19 @@ public class RAGSettingsController {
 
     /**
      * 将 AI 模型配置属性转换为视图对象，并对 API Key 进行脱敏处理
+     * <p>
+     * 供应商和模型列表从数据库读取（通过 modelConfigProvider），
+     * 选择策略和流式配置从 ModelRoutingProperties 读取。
+     * </p>
      *
-     * @param props AI 模型配置属性
      * @return AI 配置视图对象，包含各模型提供商及聊天、嵌入、重排序等模型组
      */
-    private AISettings toAISettings(AIModelProperties props) {
+    private AISettings toAISettings() {
+        DynamicModelConfig config = modelConfigProvider.getConfig();
+
         Map<String, AISettings.ProviderConfig> providers = new HashMap<>();
-        if (props.getProviders() != null) {
-            props.getProviders().forEach((k, v) -> providers.put(k, AISettings.ProviderConfig.builder()
+        if (config.getProviders() != null) {
+            config.getProviders().forEach((k, v) -> providers.put(k, AISettings.ProviderConfig.builder()
                     .url(v.getUrl())
                     .apiKey(maskApiKey(v.getApiKey()))
                     .endpoints(v.getEndpoints())
@@ -149,19 +161,15 @@ public class RAGSettingsController {
 
         return AISettings.builder()
                 .providers(providers)
-                .chat(toModelGroup(props.getChat()))
-                .embedding(toModelGroup(props.getEmbedding()))
-                .rerank(toModelGroup(props.getRerank()))
-                .selection(props.getSelection() == null
-                        ? null
-                        : AISettings.Selection.builder()
-                          .failureThreshold(props.getSelection().getFailureThreshold())
-                          .openDurationMs(props.getSelection().getOpenDurationMs())
+                .chat(toModelGroup(config.getChatGroup()))
+                .embedding(toModelGroup(config.getEmbeddingGroup()))
+                .rerank(toModelGroup(config.getRerankGroup()))
+                .selection(AISettings.Selection.builder()
+                          .failureThreshold(routingProperties.getSelection().getFailureThreshold())
+                          .openDurationMs(routingProperties.getSelection().getOpenDurationMs())
                           .build())
-                .stream(props.getStream() == null
-                        ? null
-                        : AISettings.Stream.builder()
-                          .messageChunkSize(props.getStream().getMessageChunkSize())
+                .stream(AISettings.Stream.builder()
+                          .messageChunkSize(routingProperties.getStream().getMessageChunkSize())
                           .build())
                 .build();
     }
@@ -172,13 +180,13 @@ public class RAGSettingsController {
      * @param group AI 模型组配置
      * @return 模型组视图对象，包含默认模型、深度思考模型和候选模型列表
      */
-    private AISettings.ModelGroup toModelGroup(AIModelProperties.ModelGroup group) {
+    private AISettings.ModelGroup toModelGroup(DynamicModelConfig.ModelGroup group) {
         if (group == null) {
             return null;
         }
         return AISettings.ModelGroup.builder()
                 .defaultModel(group.getDefaultModel())
-                .deepThinkingModel(group.getDeepThinkingModel())
+                .deepThinkingModel(null)
                 .candidates(group.getCandidates() == null
                         ? null
                         : group.getCandidates().stream()

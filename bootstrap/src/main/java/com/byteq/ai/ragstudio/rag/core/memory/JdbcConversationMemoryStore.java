@@ -89,7 +89,9 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         }
         return new ChatMessage(
                 ChatMessage.Role.fromString(record.getRole()),
-                record.getContent()
+                record.getContent(),
+                record.getThinkingContent(),
+                record.getThinkingDuration()
         );
     }
 

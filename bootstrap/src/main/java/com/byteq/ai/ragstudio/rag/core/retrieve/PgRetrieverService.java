@@ -28,9 +28,9 @@ public class PgRetrieverService implements RetrieverService {
 
     @Override
     public List<RetrievedChunk> retrieveByVector(float[] vector, RetrieveRequest request) {
-        // 设置ef_search提升召回率
+        // 使用 SET LOCAL 限定作用域为当前事务，避免连接池复用时污染其他查询
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        jdbcTemplate.execute("SET hnsw.ef_search = 200");
+        jdbcTemplate.execute("SET LOCAL hnsw.ef_search = 200");
 
         String vectorLiteral = toVectorLiteral(vector);
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection

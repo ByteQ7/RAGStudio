@@ -219,7 +219,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
             long persistStart = System.currentTimeMillis();
             String collectionName = resolveCollectionName(documentDO.getKbId());
-            int savedCount = persistChunksAndVectorsAtomically(collectionName, docId, chunkResults);
+            int savedCount = persistChunksAndVectors(collectionName, docId, chunkResults);
             persistDuration = System.currentTimeMillis() - persistStart;
 
             long totalDuration = System.currentTimeMillis() - totalStartTime;
@@ -234,7 +234,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
-    private int persistChunksAndVectorsAtomically(String collectionName, String docId, List<VectorChunk> chunkResults) {
+    private int persistChunksAndVectors(String collectionName, String docId, List<VectorChunk> chunkResults) {
         List<KnowledgeChunkCreateRequest> chunks = chunkResults.stream()
                 .map(vc -> {
                     KnowledgeChunkCreateRequest req = new KnowledgeChunkCreateRequest();
@@ -244,11 +244,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     return req;
                 })
                 .toList();
+
+        // Phase 1: Commit DB changes in a transaction
         transactionOperations.executeWithoutResult(status -> {
             knowledgeChunkService.deleteByDocId(docId);
             knowledgeChunkService.batchCreate(docId, chunks);
-            vectorStoreService.deleteDocumentVectors(collectionName, docId);
-            vectorStoreService.indexDocumentChunks(collectionName, docId, chunkResults);
             KnowledgeDocumentDO updateDocumentDO = KnowledgeDocumentDO.builder()
                     .id(docId)
                     .chunkCount(chunks.size())
@@ -257,6 +257,17 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     .build();
             documentMapper.updateById(updateDocumentDO);
         });
+
+        // Phase 2: Vector store operations outside DB transaction.
+        // These cannot be rolled back by the DB transaction; if they fail, manual recovery is needed.
+        try {
+            vectorStoreService.deleteDocumentVectors(collectionName, docId);
+            vectorStoreService.indexDocumentChunks(collectionName, docId, chunkResults);
+        } catch (Exception e) {
+            log.warn("向量存储操作失败，DB已提交，需要手动恢复向量数据。collectionName={}, docId={}, chunkCount={}",
+                    collectionName, docId, chunks.size(), e);
+        }
+
         return chunks.size();
     }
 
@@ -514,11 +525,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
 
             // 验证：启用定时拉取时必须有 cron 和 sourceLocation
+            // 使用内存中已加载的 documentDO 构建"将变为"状态，避免读取 DB 中的陈旧数据
             if (scheduleChanged) {
-                KnowledgeDocumentDO willBe = documentMapper.selectById(docId);
-                Integer finalEnabled = newScheduleEnabled != null ? newScheduleEnabled : willBe.getScheduleEnabled();
-                String finalCron = StringUtils.hasText(newScheduleCron) ? newScheduleCron.trim() : willBe.getScheduleCron();
-                String finalLocation = StringUtils.hasText(newSourceLocation) ? newSourceLocation.trim() : willBe.getSourceLocation();
+                Integer finalEnabled = newScheduleEnabled != null ? newScheduleEnabled : documentDO.getScheduleEnabled();
+                String finalCron = StringUtils.hasText(newScheduleCron) ? newScheduleCron.trim() : documentDO.getScheduleCron();
+                String finalLocation = StringUtils.hasText(newSourceLocation) ? newSourceLocation.trim() : documentDO.getSourceLocation();
 
                 if (finalEnabled != null && finalEnabled == 1) {
                     if (!StringUtils.hasText(finalCron)) {

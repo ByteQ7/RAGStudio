@@ -16,15 +16,6 @@ import lombok.RequiredArgsConstructor;
 public enum ModelProvider {
 
     /**
-     * Ollama 本地模型服务
-     * <p>
-     * 用于本地部署的开源大模型运行框架，支持在本地运行和管理各种开源 LLM 模型。
-     * 适用于开发环境和数据隐私要求较高的场景。
-     * </p>
-     */
-    OLLAMA("ollama"),
-
-    /**
      * 阿里云百炼大模型平台
      * <p>
      * 阿里云推出的一站式大模型服务平台，提供通义千问系列模型的 API 访问。
@@ -43,14 +34,11 @@ public enum ModelProvider {
     SILICON_FLOW("siliconflow"),
 
     /**
-     * AI Hub Mix 推理服务
+     * DeepSeek 深度求索
      * <p>
-     * 聚合多模型推理服务提供商，提供统一的 API 接口访问多种模型。
-     * 适用于需要灵活切换和组合不同模型提供商的场景。
+     * 提供 DeepSeek 系列模型的 API 访问，支持深度思考等高级特性。
      * </p>
      */
-    AI_HUB_MIX("aihubmix"),
-
     DEEPSEEK("deepseek"),
 
     /**
@@ -66,7 +54,7 @@ public enum ModelProvider {
      * 提供商在配置文件中的唯一标识符
      * <p>
      * 对应配置文件中 providers 映射的 key 值，
-     * 以及 {@link AIModelProperties.ModelCandidate#provider} 字段的值。
+     * 以及 {@link com.byteq.ai.ragstudio.infra.config.DynamicModelConfig.ModelEntry#getProvider()} 字段的值。
      * 不区分大小写。
      * </p>
      */

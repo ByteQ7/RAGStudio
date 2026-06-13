@@ -2,71 +2,65 @@ package com.byteq.ai.ragstudio.infra.chat.client;
 
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
-import com.byteq.ai.ragstudio.infra.chat.AbstractOpenAIStyleChatClient;
+import com.byteq.ai.ragstudio.infra.chat.ChatClient;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
 import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
 import com.byteq.ai.ragstudio.infra.enums.ModelProvider;
+import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
+import com.byteq.ai.ragstudio.infra.http.ModelClientException;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import com.byteq.ai.ragstudio.infra.springai.FluxToStreamCallbackBridge;
+import com.byteq.ai.ragstudio.infra.springai.SpringAiChatModelFactory;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 /**
- * SiliconFlow（硅基流动）ChatClient 实现
+ * SiliconFlow ChatClient —— 基于 Spring AI OpenAI 兼容模式
  * <p>
- * SiliconFlow 提供多种开源模型（如 DeepSeek-V2、Qwen2、GLM-4 等）的 API 访问，
- * 兼容 OpenAI 协议格式，因此继承 {@link AbstractOpenAIStyleChatClient}。
- * <p>
- * 设计意图：
- * - 通过 provider() 返回 "siliconflow"，供路由层按提供商查找
- * - chat() 方法被 @RagTraceNode 增强，在链路追踪中记录为 "LLM_PROVIDER" 类型节点
- * - 同步调用委托给父类的 doChat() 模板方法
- * - 流式调用委托给父类的 doStreamChat() 模板方法
- * <p>
- * 使用场景：
- * - 通过 SiliconFlow 平台使用 DeepSeek、Qwen、GLM 等开源模型
- * - DeepSeek-R1 等推理模型的 reasoning_content 通过 isReasoningEnabledForStream 控制
+ * 通过 SiliconFlow 的 OpenAI 兼容 API 调用 DeepSeek / Qwen / GLM 等模型。
+ * 底层由 Spring AI 的 OpenAiChatModel 处理 HTTP 通信和 SSE 流式解析。
  */
 @Slf4j
 @Service
-public class SiliconFlowChatClient extends AbstractOpenAIStyleChatClient {
+@RequiredArgsConstructor
+public class SiliconFlowChatClient implements ChatClient {
 
-    /**
-     * 获取提供商名称
-     *
-     * @return "siliconflow"（对应 ModelProvider.SILICON_FLOW）
-     */
+    private final SpringAiChatModelFactory modelFactory;
+
     @Override
     public String provider() {
         return ModelProvider.SILICON_FLOW.getId();
     }
 
-    /**
-     * 同步聊天
-     * <p>
-     * 委托父类的 doChat 模板方法执行，被 @RagTraceNode 增强。
-     *
-     * @param request 聊天请求
-     * @param target  目标模型配置
-     * @return 模型回答文本
-     */
     @Override
     @RagTraceNode(name = "siliconflow-chat", type = "LLM_PROVIDER")
     public String chat(ChatRequest request, ModelTarget target) {
-        return doChat(request, target);
+        ChatModel model = modelFactory.getOrCreateChatModel(target);
+        Prompt prompt = modelFactory.toPrompt(request, target);
+        ChatResponse response = model.call(prompt);
+        return extractText(response, "siliconflow");
     }
 
-    /**
-     * 流式聊天
-     * <p>
-     * 委托父类的 doStreamChat 模板方法执行。
-     *
-     * @param request  聊天请求
-     * @param callback 流式回调
-     * @param target   目标模型配置
-     * @return 流式取消句柄
-     */
     @Override
+    @RagTraceNode(name = "siliconflow-stream-chat", type = "LLM_PROVIDER")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
-        return doStreamChat(request, callback, target);
+        ChatModel model = modelFactory.getOrCreateChatModel(target);
+        Prompt prompt = modelFactory.toPrompt(request, target);
+        Flux<ChatResponse> flux = model.stream(prompt);
+        return FluxToStreamCallbackBridge.subscribe(flux, callback);
+    }
+
+    private static String extractText(ChatResponse response, String provider) {
+        if (response.getResult() == null || response.getResult().getOutput() == null) {
+            throw new ModelClientException(
+                    provider + " 返回空响应", ModelClientErrorType.INVALID_RESPONSE, null);
+        }
+        String text = response.getResult().getOutput().getText();
+        return text != null ? text : "";
     }
 }

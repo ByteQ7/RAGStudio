@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -97,7 +98,15 @@ public class MultiChannelRetrievalEngine {
         int totalChunks = 0;
 
         List<SearchChannelResult> results = futures.stream()
-                .map(CompletableFuture::join)
+                .map(future -> {
+                    try {
+                        // 设置超时防止单个通道挂起导致整个检索阻塞
+                        return future.get(30, TimeUnit.SECONDS);
+                    } catch (Exception e) {
+                        log.warn("检索通道执行超时或失败: {}", e.getMessage());
+                        return null;
+                    }
+                })
                 .filter(Objects::nonNull)
                 .toList();
 

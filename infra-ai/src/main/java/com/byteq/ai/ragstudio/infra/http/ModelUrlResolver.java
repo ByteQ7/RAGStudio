@@ -1,6 +1,6 @@
 package com.byteq.ai.ragstudio.infra.http;
 
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
+import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.enums.ModelCapability;
 import lombok.NoArgsConstructor;
 
@@ -12,7 +12,7 @@ import java.util.Map;
  * 用于解析 AI 模型的完整 API 请求地址。支持两种 URL 获取方式，按优先级依次尝试：
  * </p>
  * <ol>
- *   <li><b>候选模型自定义 URL</b>：如果 {@link AIModelProperties.ModelCandidate#getUrl()} 已配置，则直接使用</li>
+ *   <li><b>候选模型自定义 URL</b>：如果 {@link DynamicModelConfig.ModelEntry#getUrl()} 已配置，则直接使用</li>
  *   <li><b>提供商基础 URL + 端点路径</b>：从提供商配置中获取基础 URL，并根据 {@link ModelCapability} 拼接对应的端点路径</li>
  * </ol>
  *
@@ -26,9 +26,9 @@ public class ModelUrlResolver {
      * <p>
      * URL 解析优先级：
      * <ol>
-     *   <li>优先使用候选模型配置中自定义的 URL（{@link AIModelProperties.ModelCandidate#getUrl()}）</li>
-     *   <li>回退使用提供商配置中的基础 URL（{@link AIModelProperties.ProviderConfig#getUrl()}）
-     *       拼接对应能力类型的端点路径（{@link AIModelProperties.ProviderConfig#getEndpoints()}）</li>
+     *   <li>优先使用候选模型配置中自定义的 URL（{@link DynamicModelConfig.ModelEntry#getUrl()}）</li>
+     *   <li>回退使用提供商配置中的基础 URL（{@link DynamicModelConfig.ProviderEntry#getUrl()}）
+     *       拼接对应能力类型的端点路径（{@link DynamicModelConfig.ProviderEntry#getEndpoints()}）</li>
      * </ol>
      * </p>
      *
@@ -39,8 +39,8 @@ public class ModelUrlResolver {
      * @throws IllegalStateException 当提供商基础 URL 缺失或对应能力的端点路径配置缺失时抛出
      */
     public static String resolveUrl(
-            AIModelProperties.ProviderConfig provider,
-            AIModelProperties.ModelCandidate candidate,
+            DynamicModelConfig.ProviderEntry provider,
+            DynamicModelConfig.ModelEntry candidate,
             ModelCapability capability) {
         // 优先级1：候选模型配置了自定义 URL，直接使用
         if (candidate != null && candidate.getUrl() != null && !candidate.getUrl().isBlank()) {

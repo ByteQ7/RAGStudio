@@ -704,3 +704,70 @@ COMMENT ON COLUMN t_mcp_server.updated_by IS '修改人';
 COMMENT ON COLUMN t_mcp_server.create_time IS '创建时间';
 COMMENT ON COLUMN t_mcp_server.update_time IS '更新时间';
 COMMENT ON COLUMN t_mcp_server.deleted IS '是否删除 0：正常 1：删除';
+
+-- ============================================
+-- AI Model Configuration
+-- ============================================
+
+-- Entity: AiProviderDO (@TableName="t_ai_provider", @TableId=ASSIGN_ID, @TableLogic)
+-- endpoints 使用 JsonbTypeHandler
+CREATE TABLE t_ai_provider (
+    id           VARCHAR(20)  NOT NULL PRIMARY KEY,
+    name         VARCHAR(50)  NOT NULL,
+    display_name VARCHAR(100),
+    base_url     VARCHAR(500) NOT NULL,
+    api_key      VARCHAR(500),
+    endpoints    JSONB,
+    enabled      SMALLINT     NOT NULL DEFAULT 1,
+    create_time  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted      SMALLINT     NOT NULL DEFAULT 0,
+    CONSTRAINT uk_ai_provider_name UNIQUE (name, deleted)
+);
+COMMENT ON TABLE t_ai_provider IS 'AI模型供应商表';
+COMMENT ON COLUMN t_ai_provider.id IS '主键ID';
+COMMENT ON COLUMN t_ai_provider.name IS '供应商标识';
+COMMENT ON COLUMN t_ai_provider.display_name IS '显示名称';
+COMMENT ON COLUMN t_ai_provider.base_url IS 'API基础地址';
+COMMENT ON COLUMN t_ai_provider.api_key IS 'API密钥';
+COMMENT ON COLUMN t_ai_provider.endpoints IS '端点映射JSON';
+COMMENT ON COLUMN t_ai_provider.enabled IS '是否启用 1：启用 0：禁用';
+COMMENT ON COLUMN t_ai_provider.create_time IS '创建时间';
+COMMENT ON COLUMN t_ai_provider.update_time IS '更新时间';
+COMMENT ON COLUMN t_ai_provider.deleted IS '是否删除 0：正常 1：删除';
+
+-- Entity: AiModelDO (@TableName="t_ai_model", @TableId=ASSIGN_ID, @TableLogic)
+CREATE TABLE t_ai_model (
+    id                VARCHAR(20)  NOT NULL PRIMARY KEY,
+    provider_id       VARCHAR(20)  NOT NULL,
+    model_id          VARCHAR(100) NOT NULL,
+    model_name        VARCHAR(200) NOT NULL,
+    capability        VARCHAR(20)  NOT NULL,
+    is_default        SMALLINT     NOT NULL DEFAULT 0,
+    priority          INTEGER      NOT NULL DEFAULT 100,
+    enabled           SMALLINT     NOT NULL DEFAULT 1,
+    supports_thinking SMALLINT     NOT NULL DEFAULT 0,
+    dimension         INTEGER,
+    custom_url        VARCHAR(500),
+    create_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted           SMALLINT     NOT NULL DEFAULT 0,
+    CONSTRAINT uk_ai_model_model_id UNIQUE (model_id, deleted)
+);
+CREATE INDEX idx_ai_model_provider ON t_ai_model (provider_id);
+CREATE INDEX idx_ai_model_capability ON t_ai_model (capability);
+COMMENT ON TABLE t_ai_model IS 'AI模型配置表';
+COMMENT ON COLUMN t_ai_model.id IS '主键ID';
+COMMENT ON COLUMN t_ai_model.provider_id IS '供应商ID';
+COMMENT ON COLUMN t_ai_model.model_id IS '模型唯一标识';
+COMMENT ON COLUMN t_ai_model.model_name IS '供应商侧实际模型名';
+COMMENT ON COLUMN t_ai_model.capability IS '能力类型：CHAT/EMBEDDING/RERANK';
+COMMENT ON COLUMN t_ai_model.is_default IS '是否为该capability的默认模型 1：是 0：否';
+COMMENT ON COLUMN t_ai_model.priority IS '优先级，数字越小优先级越高';
+COMMENT ON COLUMN t_ai_model.enabled IS '是否启用 1：启用 0：禁用';
+COMMENT ON COLUMN t_ai_model.supports_thinking IS '是否支持深度思考 1：是 0：否';
+COMMENT ON COLUMN t_ai_model.dimension IS '向量维度（仅embedding模型）';
+COMMENT ON COLUMN t_ai_model.custom_url IS '自定义URL（覆盖供应商地址）';
+COMMENT ON COLUMN t_ai_model.create_time IS '创建时间';
+COMMENT ON COLUMN t_ai_model.update_time IS '更新时间';
+COMMENT ON COLUMN t_ai_model.deleted IS '是否删除 0：正常 1：删除';

@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.rag.core.retrieve.postprocessor;
 
+import cn.hutool.crypto.digest.DigestUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannelResult;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannelType;
@@ -74,10 +75,10 @@ public class DeduplicationPostProcessor implements SearchResultPostProcessor {
      * 生成 Chunk 唯一键
      */
     private String generateChunkKey(RetrievedChunk chunk) {
-        // 基于 id 或内容哈希生成唯一键
+        // 基于 id 或内容 SHA-256 哈希生成唯一键（避免 String.hashCode() 32 位碰撞风险）
         return chunk.getId() != null
                 ? chunk.getId()
-                : String.valueOf(chunk.getText().hashCode());
+                : DigestUtil.sha256Hex(chunk.getText());
     }
 
     /**

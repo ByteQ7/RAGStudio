@@ -29,6 +29,11 @@ import org.springframework.util.StringUtils;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyExistsException;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 
 import java.util.HashMap;
 import java.util.List;
@@ -46,7 +51,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     private final VectorStoreAdmin vectorStoreAdmin;
     private final S3Client s3Client;
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public String create(KnowledgeBaseCreateRequest requestParam) {
         // 名称重复校验
@@ -176,6 +181,61 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         kbDO.setDeleted(1);
         kbDO.setUpdatedBy(UserContext.getUsername());
         knowledgeBaseMapper.deleteById(kbDO);
+
+        // 清理 S3 存储桶（先清空对象，再删除桶）
+        String bucketName = kbDO.getCollectionName();
+        cleanupS3Bucket(bucketName);
+
+        // 清理向量集合
+        cleanupVectorCollection(kbDO.getCollectionName());
+    }
+
+    /**
+     * 清理 S3 存储桶：先删除桶内所有对象，再删除桶本身。
+     * 清理失败不影响主流程（DB 已软删除），仅记录告警日志。
+     */
+    private void cleanupS3Bucket(String bucketName) {
+        try {
+            // 列出并删除桶内所有对象
+            ListObjectsV2Response listResponse = s3Client.listObjectsV2(
+                    ListObjectsV2Request.builder().bucket(bucketName).build());
+            if (listResponse.contents() != null && !listResponse.contents().isEmpty()) {
+                List<ObjectIdentifier> objectIds = listResponse.contents().stream()
+                        .map(obj -> ObjectIdentifier.builder().key(obj.key()).build())
+                        .collect(Collectors.toList());
+                DeleteObjectsResponse deleteResponse = s3Client.deleteObjects(
+                        DeleteObjectsRequest.builder()
+                                .bucket(bucketName)
+                                .delete(builder -> builder.objects(objectIds))
+                                .build());
+                if (deleteResponse.hasErrors() && !deleteResponse.errors().isEmpty()) {
+                    log.warn("清理 S3 存储桶部分对象失败, bucket={}, errors={}", bucketName, deleteResponse.errors());
+                }
+            }
+            // 删除空桶
+            s3Client.deleteBucket(builder -> builder.bucket(bucketName));
+            log.info("成功清理 S3 存储桶, bucket={}", bucketName);
+        } catch (Exception e) {
+            log.warn("清理 S3 存储桶失败, bucket={}, 原因: {}", bucketName, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 清理向量集合。
+     * 清理失败不影响主流程（DB 已软删除），仅记录告警日志。
+     */
+    private void cleanupVectorCollection(String collectionName) {
+        try {
+            VectorSpaceId spaceId = VectorSpaceId.builder()
+                    .logicalName(collectionName)
+                    .build();
+            if (vectorStoreAdmin.vectorSpaceExists(spaceId)) {
+                // 当前 VectorStoreAdmin 接口未提供删除方法，记录告警供运维人工处理
+                log.warn("向量集合需要清理但 VectorStoreAdmin 暂不支持删除, collectionName={}, 请人工清理", collectionName);
+            }
+        } catch (Exception e) {
+            log.warn("检查/清理向量集合失败, collectionName={}, 原因: {}", collectionName, e.getMessage(), e);
+        }
     }
 
     @Override

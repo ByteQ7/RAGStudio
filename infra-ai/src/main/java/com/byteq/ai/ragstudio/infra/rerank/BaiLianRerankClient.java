@@ -5,10 +5,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
+import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.enums.ModelCapability;
 import com.byteq.ai.ragstudio.infra.enums.ModelProvider;
-import com.byteq.ai.ragstudio.infra.http.HttpMediaTypes;
 import com.byteq.ai.ragstudio.infra.http.HttpResponseHelper;
 import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
 import com.byteq.ai.ragstudio.infra.http.ModelClientException;
@@ -115,7 +114,7 @@ public class BaiLianRerankClient implements RerankClient {
      * @throws ModelClientException 当请求失败、响应异常或解析错误时抛出
      */
     private List<RetrievedChunk> doRerank(String query, List<RetrievedChunk> candidates, int topN, ModelTarget target) {
-        AIModelProperties.ProviderConfig provider = HttpResponseHelper.requireProvider(target, provider());
+        DynamicModelConfig.ProviderEntry provider = HttpResponseHelper.requireProvider(target, provider());
 
         // 参数合法性校验，避免无效请求
         if (candidates == null || candidates.isEmpty() || topN <= 0) {
@@ -147,7 +146,7 @@ public class BaiLianRerankClient implements RerankClient {
         // 构建 HTTP 请求，携带 Bearer Token 认证头
         Request request = new Request.Builder()
                 .url(ModelUrlResolver.resolveUrl(provider, target.candidate(), ModelCapability.RERANK))
-                .post(RequestBody.create(reqBody.toString(), HttpMediaTypes.JSON))
+                .post(RequestBody.create(reqBody.toString(), okhttp3.MediaType.get("application/json; charset=utf-8")))
                 .addHeader("Authorization", "Bearer " + provider.getApiKey())
                 .build();
 

@@ -6,7 +6,7 @@ import com.byteq.ai.ragstudio.ingestion.domain.context.IngestionContext;
 import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -177,7 +177,12 @@ public class ConditionEvaluator {
 
     private boolean evalSpel(IngestionContext context, String expression) {
         try {
-            StandardEvaluationContext ctx = new StandardEvaluationContext(context);
+            // 使用 SimpleEvaluationContext 替代 StandardEvaluationContext，
+            // 防止 SpEL 注入导致远程代码执行（RCE）
+            SimpleEvaluationContext ctx = SimpleEvaluationContext
+                    .forReadOnlyDataBinding()
+                    .withRootObject(context)
+                    .build();
             ctx.setVariable("ctx", context);
             Boolean result = parser.parseExpression(expression).getValue(ctx, Boolean.class);
             return Boolean.TRUE.equals(result);

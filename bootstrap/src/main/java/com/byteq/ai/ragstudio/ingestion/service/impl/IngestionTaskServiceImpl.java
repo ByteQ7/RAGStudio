@@ -40,7 +40,6 @@ import com.byteq.ai.ragstudio.ingestion.service.IngestionTaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -71,7 +70,6 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
     private final ObjectMapper objectMapper;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public IngestionResult execute(IngestionTaskCreateRequest request) {
         Assert.notNull(request, () -> new ClientException("请求不能为空"));
         DocumentSource source = toSource(request.getSource());
@@ -79,7 +77,6 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public IngestionResult upload(String pipelineId, MultipartFile file) {
         Assert.notNull(file, () -> new ClientException("文件不能为空"));
         try {
@@ -244,7 +241,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         String simpleFileType = "other";
         if (fileType != null) {
             if (fileType.contains("pdf")) simpleFileType = "pdf";
-            else if (fileType.contains("markdown") || fileType.endsWith(".md")) simpleFileType = "markdown";
+            else if (fileType.contains("markdown") || fileType.contains("text/x-markdown")) simpleFileType = "markdown";
             else if (fileType.contains("word") || fileType.contains("msword")) simpleFileType = "docx";
             else if (fileType.contains("excel") || fileType.contains("spreadsheet")) simpleFileType = "xlsx";
             else if (fileType.contains("text")) simpleFileType = "txt";

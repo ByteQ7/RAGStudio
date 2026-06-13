@@ -5,7 +5,9 @@ import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.framework.errorcode.BaseErrorCode;
 import com.byteq.ai.ragstudio.framework.exception.RemoteException;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
+import com.byteq.ai.ragstudio.infra.config.ModelRoutingProperties;
 import com.byteq.ai.ragstudio.infra.enums.ModelCapability;
+import com.byteq.ai.ragstudio.infra.enums.ModelProvider;
 import com.byteq.ai.ragstudio.infra.model.ModelHealthStore;
 import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
@@ -38,7 +40,7 @@ import java.util.stream.Collectors;
  * <p>
  * 使用场景：
  * - 业务层通过 LLMService 接口注入，无需关心底层模型路由逻辑
- * - 支持多模型提供商混合部署（如阿里云百炼 + SiliconFlow + Ollama）
+ * - 支持多模型提供商混合部署（如阿里云百炼 + SiliconFlow + DeepSeek）
  * - 深度思考（deep thinking）场景下筛选支持 thinking 的模型
  */
 @Slf4j
@@ -46,16 +48,16 @@ import java.util.stream.Collectors;
 @Primary
 public class RoutingLLMService implements LLMService {
 
-    /** 首包超时时间：60 秒 */
-    private static final int FIRST_PACKET_TIMEOUT_SECONDS = 60;
-
     // === 错误消息常量 ===
     private static final String STREAM_INTERRUPTED_MESSAGE = "流式请求被中断";
-    private static final String STREAM_NO_PROVIDER_MESSAGE = "无可用大模型提供者";
+    private static final String NO_MODEL_OR_APIKEY_MESSAGE = "未设置模型或API KEY，请检查";
     private static final String STREAM_START_FAILED_MESSAGE = "流式请求启动失败";
     private static final String STREAM_TIMEOUT_MESSAGE = "流式首包超时";
     private static final String STREAM_NO_CONTENT_MESSAGE = "流式请求未返回内容";
     private static final String STREAM_ALL_FAILED_MESSAGE = "大模型调用失败，请稍后再试...";
+
+    /** 深度思考模式下的首包超时倍数 */
+    private static final int THINKING_TIMEOUT_MULTIPLIER = 2;
 
     /** 模型选择器：根据能力筛选候选模型 */
     private final ModelSelector selector;
@@ -67,6 +69,8 @@ public class RoutingLLMService implements LLMService {
     private final LlmFirstPacketProbe firstPacketProbe;
     /** 提供商 → ChatClient 实例映射 */
     private final Map<String, ChatClient> clientsByProvider;
+    /** 模型路由配置属性 */
+    private final ModelRoutingProperties routingProperties;
 
     /**
      * 构造 RoutingLLMService
@@ -76,20 +80,29 @@ public class RoutingLLMService implements LLMService {
      * @param executor         路由执行器
      * @param firstPacketProbe 首包探测组件
      * @param clients          所有 ChatClient 实现列表（按 provider 自动索引）
+     * @param routingProperties 模型路由配置属性
      */
     public RoutingLLMService(
             ModelSelector selector,
             ModelHealthStore healthStore,
             ModelRoutingExecutor executor,
             LlmFirstPacketProbe firstPacketProbe,
-            List<ChatClient> clients) {
+            List<ChatClient> clients,
+            ModelRoutingProperties routingProperties) {
         this.selector = selector;
         this.healthStore = healthStore;
         this.executor = executor;
         this.firstPacketProbe = firstPacketProbe;
+        this.routingProperties = routingProperties;
         // 按 provider 建立映射，供路由查找
         this.clientsByProvider = clients.stream()
-                .collect(Collectors.toMap(ChatClient::provider, Function.identity()));
+                .collect(Collectors.toMap(
+                        ChatClient::provider,
+                        Function.identity(),
+                        (existing, replacement) -> {
+                            log.warn("重复的 ChatClient provider '{}', 使用 {}", existing.provider(), replacement.getClass().getSimpleName());
+                            return replacement;
+                        }));
     }
 
     /**
@@ -107,9 +120,11 @@ public class RoutingLLMService implements LLMService {
     @Override
     @RagTraceNode(name = "llm-chat-routing", type = "LLM_ROUTING")
     public String chat(ChatRequest request) {
+        List<ModelTarget> targets = selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking()));
+        validateTargets(targets);
         return executor.executeWithFallback(
                 ModelCapability.CHAT,
-                selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking())),
+                targets,
                 target -> clientsByProvider.get(target.candidate().getProvider()),
                 (client, target) -> client.chat(request, target)
         );
@@ -132,9 +147,11 @@ public class RoutingLLMService implements LLMService {
         if (!StringUtils.hasText(modelId)) {
             return chat(request);
         }
+        List<ModelTarget> targets = List.of(resolveTarget(modelId, Boolean.TRUE.equals(request.getThinking())));
+        validateTargets(targets);
         return executor.executeWithFallback(
                 ModelCapability.CHAT,
-                List.of(resolveTarget(modelId, Boolean.TRUE.equals(request.getThinking()))),
+                targets,
                 target -> clientsByProvider.get(target.candidate().getProvider()),
                 (client, target) -> client.chat(request, target)
         );
@@ -168,14 +185,19 @@ public class RoutingLLMService implements LLMService {
     @RagTraceNode(name = "llm-stream-routing", type = "LLM_ROUTING")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback) {
         List<ModelTarget> targets = selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking()));
-        if (CollUtil.isEmpty(targets)) {
-            throw new RemoteException(STREAM_NO_PROVIDER_MESSAGE);
-        }
+        validateTargets(targets);
 
         String label = ModelCapability.CHAT.getDisplayName();
         Throwable lastError = null;
 
         for (ModelTarget target : targets) {
+            // 跳过未配置 API Key 的提供商（NOOP 除外）
+            if (!ModelProvider.NOOP.matches(target.candidate().getProvider())
+                    && (target.provider() == null || !StringUtils.hasText(target.provider().getApiKey()))) {
+                log.warn("{} 提供商未配置 API Key, 跳过: provider={}, modelId={}",
+                        label, target.candidate().getProvider(), target.id());
+                continue;
+            }
             ChatClient client = resolveClient(target, label);
             if (client == null) {
                 continue;
@@ -208,7 +230,7 @@ public class RoutingLLMService implements LLMService {
             }
 
             // 阻塞等待首包到达（TTFT 探测）
-            ProbeStreamBridge.ProbeResult result = awaitFirstPacket(bridge, handle, callback);
+            ProbeStreamBridge.ProbeResult result = awaitFirstPacket(bridge, handle, callback, request);
 
             if (result.isSuccess()) {
                 // 首包成功 → 标记健康，返回句柄（缓冲内容已放行）
@@ -225,6 +247,28 @@ public class RoutingLLMService implements LLMService {
 
         // 所有候选模型均失败 → 通知客户端
         throw notifyAllFailed(callback, lastError);
+    }
+
+    /**
+     * 校验候选模型列表是否为空，并过滤掉未配置 API Key 的模型
+     * <p>
+     * 如果过滤后无可用候选模型，抛出 RemoteException 提示用户检查配置。
+     *
+     * @param targets 候选模型列表
+     * @throws RemoteException 无可用模型或 API Key 未配置时抛出
+     */
+    private void validateTargets(List<ModelTarget> targets) {
+        if (CollUtil.isEmpty(targets)) {
+            throw new RemoteException(NO_MODEL_OR_APIKEY_MESSAGE);
+        }
+        // 过滤掉未配置 API Key 的提供商（NOOP 除外）
+        boolean hasValidTarget = targets.stream()
+                .anyMatch(t -> t.provider() != null
+                        && (ModelProvider.NOOP.matches(t.candidate().getProvider())
+                            || StringUtils.hasText(t.provider().getApiKey())));
+        if (!hasValidTarget) {
+            throw new RemoteException(NO_MODEL_OR_APIKEY_MESSAGE);
+        }
     }
 
     /**
@@ -247,7 +291,8 @@ public class RoutingLLMService implements LLMService {
      * 阻塞等待首包探测结果
      * <p>
      * 通过 LlmFirstPacketProbe 代理调用，确保 @RagTraceNode AOP 生效。
-     * 超时时间固定为 FIRST_PACKET_TIMEOUT_SECONDS（60 秒）。
+     * 超时时间从 {@link ModelRoutingProperties.Stream#getFirstPacketTimeoutSeconds()} 读取，
+     * 深度思考（thinking）模式下使用 2 倍超时。
      * <p>
      * 如果等待线程被中断，会：
      * 1. 恢复中断标志
@@ -258,14 +303,20 @@ public class RoutingLLMService implements LLMService {
      * @param bridge   ProbeStreamBridge 实例
      * @param handle   取消句柄（中断时用于取消）
      * @param callback 流式回调（中断时用于通知错误）
+     * @param request  聊天请求（用于判断 thinking 模式以调整超时）
      * @return 首包探测结果
      * @throws RemoteException 等待线程被中断时抛出
      */
     private ProbeStreamBridge.ProbeResult awaitFirstPacket(ProbeStreamBridge bridge,
                                                            StreamCancellationHandle handle,
-                                                           StreamCallback callback) {
+                                                           StreamCallback callback,
+                                                           ChatRequest request) {
+        int baseTimeout = routingProperties.getStream().getFirstPacketTimeoutSeconds();
+        int timeoutSeconds = Boolean.TRUE.equals(request.getThinking())
+                ? baseTimeout * THINKING_TIMEOUT_MULTIPLIER
+                : baseTimeout;
         try {
-            return firstPacketProbe.awaitFirstPacket(bridge, FIRST_PACKET_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return firstPacketProbe.awaitFirstPacket(bridge, timeoutSeconds, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             // 恢复中断标志
             Thread.currentThread().interrupt();

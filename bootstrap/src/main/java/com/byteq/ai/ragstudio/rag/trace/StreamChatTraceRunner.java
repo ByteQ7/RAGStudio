@@ -150,22 +150,19 @@ public class StreamChatTraceRunner {
         // 计算从请求开始到首次内容推送的总耗时
         long now = System.currentTimeMillis();
         long durationMs = Math.max(0, now - startMillis);
-        // 生成节点 ID，写入一条立即完成（start + finish 连续执行）的 TTFT 节点
+        // 生成节点 ID，写入一条立即完成（start + finish 连续提交）的 TTFT 节点
+        // trace DB 操作已异步化，不会阻塞模型流线程
         String nodeId = IdUtil.getSnowflakeNextIdStr();
-        try {
-            traceRecordService.startNode(RagTraceNodeDO.builder()
-                    .traceId(traceId)
-                    .nodeId(nodeId)
-                    .depth(0)
-                    .nodeType(USER_TTFT_NODE_TYPE)
-                    .nodeName(USER_TTFT_NODE_NAME)
-                    .status(STATUS_RUNNING)
-                    .startTime(runStartTime)
-                    .build());
-            traceRecordService.finishNode(traceId, nodeId, STATUS_SUCCESS, null, new Date(now), durationMs);
-        } catch (Exception e) {
-            log.warn("写入 user-first-packet 节点失败，traceId：{}", traceId, e);
-        }
+        traceRecordService.startNode(RagTraceNodeDO.builder()
+                .traceId(traceId)
+                .nodeId(nodeId)
+                .depth(0)
+                .nodeType(USER_TTFT_NODE_TYPE)
+                .nodeName(USER_TTFT_NODE_NAME)
+                .status(STATUS_RUNNING)
+                .startTime(runStartTime)
+                .build());
+        traceRecordService.finishNode(traceId, nodeId, STATUS_SUCCESS, null, new Date(now), durationMs);
     }
 
     /**
@@ -212,7 +209,11 @@ public class StreamChatTraceRunner {
             businessLogic.accept(callback);
         } catch (Throwable ex) {
             log.warn("执行流式对话失败，会话ID：{}，任务ID：{}", conversationId, taskId, ex);
-            callback.onError(ex);
+            try {
+                callback.onError(ex);
+            } catch (Throwable ignored) {
+                // 防止 callback.onError 自身异常导致静默丢失
+            }
         }
     }
 

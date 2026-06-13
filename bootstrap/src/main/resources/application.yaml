@@ -90,105 +90,12 @@ rag:
     enabled: true
     max-error-length: 1000
 
-ai:
-  providers:
-    ollama:
-      url: ${OLLAMA_URL}
-      endpoints:
-        chat: /v1/chat/completions
-        embedding: /v1/embeddings
-    bailian:
-      url: https://dashscope.aliyuncs.com
-      api-key: ${BAILIAN_API_KEY}
-      endpoints:
-        chat: /compatible-mode/v1/chat/completions
-        rerank: /api/v1/services/rerank/text-rerank/text-rerank
-    aihubmix:
-      url: https://aihubmix.com
-      api-key: ${AIHUBMIX_API_KEY:}
-      endpoints:
-        chat: /v1/chat/completions
-        embedding: /v1/embeddings
-    siliconflow:
-      url: https://api.siliconflow.cn
-      api-key: ${SILICONFLOW_API_KEY}
-      endpoints:
-        chat: /v1/chat/completions
-        embedding: /v1/embeddings
-    deepseek:
-      url: https://api.deepseek.com
-      api-key: ${DEEPSEEK_API_KEY}
-      endpoints:
-        chat: /v1/chat/completions
-
-  selection:
-    failure-threshold: 2
-    open-duration-ms: 30000
-
-  stream:
-    message-chunk-size: 1
-
-  chat:
-    default-model: deepseek-v4-flash
-    deep-thinking-model: deepseek-v4-flash
-    candidates:
-      - id: qwen-plus
-        provider: bailian
-        model: qwen-plus-latest
-        priority: 1
-      - id: qwen3-local
-        provider: ollama
-        model: qwen3:8b-fp16
-        priority: 2
-      - id: qwen3-max
-        provider: bailian
-        model: qwen3-max
-        supports-thinking: true
-        priority: 3
-      - id: glm-4.7
-        provider: siliconflow
-        model: Pro/zai-org/GLM-4.7
-        supports-thinking: true
-        priority: 4
-      - id: gpt-5-mini
-        provider: aihubmix
-        model: gpt-5-mini
-        priority: 5
-      - id: deepseek-v4-flash
-        provider: deepseek
-        model: deepseek-v4-flash
-        priority: 6
-
-  embedding:
-    default-model: qwen-emb-8b
-    candidates:
-      - id: qwen-emb-8b
-        provider: siliconflow
-        model: Qwen/Qwen3-Embedding-8B
-        dimension: ${rag.default.dimension}
-        priority: 1
-      - id: qwen-emb-local
-        provider: ollama
-        model: qwen3-embedding:8b-fp16
-        dimension: ${rag.default.dimension}
-        priority: 2
-      - id: text-embedding-3-large
-        provider: aihubmix
-        model: text-embedding-3-large
-        dimension: ${rag.default.dimension}
-        priority: 3
-
-  rerank:
-    default-model: qwen3-rerank
-    candidates:
-      - id: qwen3-rerank
-        provider: bailian
-        model: qwen3-rerank
-        priority: 1
-      - id: rerank-noop
-        provider: noop
-        model: noop
-        priority: 100
+  model-routing:
+    selection:
+      failure-threshold: 2
+      open-duration-ms: 30000
+    stream:
+      message-chunk-size: 1
 
 rustfs:
   url: ${RUSTFS_URL}

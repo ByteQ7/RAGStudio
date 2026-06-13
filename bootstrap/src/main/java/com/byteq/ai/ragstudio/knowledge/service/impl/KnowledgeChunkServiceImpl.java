@@ -371,7 +371,8 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         List<String> needUpdateIds = needUpdateChunks.stream().map(KnowledgeChunkDO::getId).collect(Collectors.toList());
 
         if (CollUtil.isEmpty(needUpdateIds)) {
-            throw new ClientException(enabled ? "所有 Chunk 已全部启用，无需重复操作" : "所有 Chunk 已全部禁用，无需重复操作");
+            // 所有 Chunk 已处于目标状态，静默返回（与单条 enableChunk 行为一致）
+            return;
         }
 
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());

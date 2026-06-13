@@ -1,6 +1,5 @@
 package com.byteq.ai.ragstudio.rag.service.handler;
 
-import com.byteq.ai.ragstudio.infra.config.AIModelProperties;
 import com.byteq.ai.ragstudio.rag.core.memory.ConversationMemoryService;
 import com.byteq.ai.ragstudio.rag.service.ConversationGroupService;
 import lombok.Builder;
@@ -31,9 +30,9 @@ public class StreamChatHandlerParams {
     private final String taskId;
 
     /**
-     * 模型配置
+     * 流式响应消息分块大小
      */
-    private final AIModelProperties modelProperties;
+    private final int messageChunkSize;
 
     /**
      * 记忆服务

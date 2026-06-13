@@ -5,6 +5,7 @@ import com.byteq.ai.ragstudio.framework.exception.RemoteException;
 import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
  * @see ModelRoutingExecutor
  * @see ModelSelector
  */
+@Slf4j
 @Service
 @Primary
 public class RoutingEmbeddingService implements EmbeddingService {
@@ -52,7 +54,13 @@ public class RoutingEmbeddingService implements EmbeddingService {
         this.executor = executor;
         // 将客户端列表转换为 provider -> client 的映射，便于路由时快速查找
         this.clientsByProvider = clients.stream()
-                .collect(Collectors.toMap(EmbeddingClient::provider, Function.identity()));
+                .collect(Collectors.toMap(
+                        EmbeddingClient::provider,
+                        Function.identity(),
+                        (existing, replacement) -> {
+                            log.warn("重复的 EmbeddingClient provider '{}', 使用 {}", existing.provider(), replacement.getClass().getSimpleName());
+                            return replacement;
+                        }));
     }
 
     /**
