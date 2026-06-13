@@ -15,7 +15,7 @@ public class AiProviderVO {
     private String name;
     private String displayName;
     private String baseUrl;
-    /** API 密钥（脱敏展示） */
+    /** API 密钥 */
     private String apiKey;
     private Map<String, String> endpoints;
     private Integer enabled;

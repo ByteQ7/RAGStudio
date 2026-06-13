@@ -194,7 +194,7 @@ export function AiModelConfigPage() {
       name: provider.name,
       displayName: provider.displayName || "",
       baseUrl: provider.baseUrl,
-      apiKey: "",
+      apiKey: provider.apiKey || "",
       endpoints: provider.endpoints || {},
       enabled: provider.enabled,
       endpointsJson
@@ -848,7 +848,7 @@ export function AiModelConfigPage() {
                 }
               />
               <p className="text-xs text-gray-400">
-                编辑时留空表示不修改原有密钥
+                编辑时直接修改即可，留空表示不修改原有密钥
               </p>
             </div>
             <div className="grid gap-2">
