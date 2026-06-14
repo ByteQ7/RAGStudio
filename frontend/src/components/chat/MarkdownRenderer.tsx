@@ -5,7 +5,7 @@ import * as React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import rehypeKatex from "rehype-katex";
 import { Check, Copy, Download, ImageIcon, ExternalLink } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -542,7 +542,7 @@ export function MarkdownRenderer({ content, compact = false }: MarkdownRendererP
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeRaw, rehypeKatex]}
+      rehypePlugins={[rehypeSanitize, rehypeKatex]}
       components={components}
       className={markdownClassName}
     >

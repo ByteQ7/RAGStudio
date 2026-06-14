@@ -7,8 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -22,11 +24,15 @@ public class PgRetrieverService implements RetrieverService {
     @Override
     public List<RetrievedChunk> retrieve(RetrieveRequest request) {
         List<Float> embedding = embeddingService.embed(request.getQuery());
+        if (embedding == null || embedding.isEmpty()) {
+            throw new IllegalStateException("Embedding 服务返回空向量，无法执行检索。请检查 Embedding 模型配置和服务状态。");
+        }
         float[] vector = normalize(toArray(embedding));
         return retrieveByVector(vector, request);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<RetrievedChunk> retrieveByVector(float[] vector, RetrieveRequest request) {
         // 使用 SET LOCAL 限定作用域为当前事务，避免连接池复用时污染其他查询
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection

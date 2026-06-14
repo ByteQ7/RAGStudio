@@ -8,6 +8,7 @@ import com.byteq.ai.ragstudio.user.controller.vo.LoginVO;
 import com.byteq.ai.ragstudio.user.dao.entity.UserDO;
 import com.byteq.ai.ragstudio.user.dao.mapper.UserMapper;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
+import com.byteq.ai.ragstudio.framework.security.PasswordHasher;
 import com.byteq.ai.ragstudio.user.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,7 +29,7 @@ public class AuthServiceImpl implements AuthService {
             throw new ClientException("用户名或密码不能为空");
         }
         UserDO user = findByUsername(username);
-        if (user == null || !passwordMatches(password, user.getPassword())) {
+        if (user == null || !PasswordHasher.matches(password, user.getPassword())) {
             throw new ClientException("用户名或密码错误");
         }
         if (user.getId() == null) {
@@ -54,12 +55,5 @@ public class AuthServiceImpl implements AuthService {
                         .eq(UserDO::getUsername, username)
                         .eq(UserDO::getDeleted, 0)
         );
-    }
-
-    private boolean passwordMatches(String input, String stored) {
-        if (stored == null) {
-            return input == null;
-        }
-        return stored.equals(input);
     }
 }

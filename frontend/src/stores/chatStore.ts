@@ -179,6 +179,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const data = await listMessages(sessionId);
       if (get().currentSessionId !== sessionId) {
+        set({ isLoading: false });
         return;
       }
       const mapped: Message[] = data.map((item) => ({
@@ -468,6 +469,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (streamTaskId) {
       stopTask(streamTaskId).catch(() => null);
     }
+    // 同时触发 AbortController 关闭客户端 HTTP 连接
+    get().streamAbort?.();
   },
   appendStreamContent: (delta) => {
     if (!delta) return;

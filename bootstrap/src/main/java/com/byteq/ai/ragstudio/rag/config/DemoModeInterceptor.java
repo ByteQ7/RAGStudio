@@ -55,23 +55,35 @@ public class DemoModeInterceptor implements HandlerInterceptor {
         return false;
     }
 
-    private void writeSseReject(HttpServletResponse response) throws Exception {
-        response.setStatus(HttpServletResponse.SC_OK);
-        response.setContentType("text/event-stream;charset=UTF-8");
-        response.setHeader("Cache-Control", "no-cache");
-        response.setHeader("Connection", "keep-alive");
-        PrintWriter writer = response.getWriter();
-        writer.write("event: reject\ndata: " + objectMapper.writeValueAsString(new MessageDelta("response", DEMO_REJECT_MESSAGE)) + "\n\n");
-        writer.write("event: done\ndata: \"[DONE]\"\n\n");
-        writer.flush();
+    private void writeSseReject(HttpServletResponse response) {
+        try {
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.setContentType("text/event-stream;charset=UTF-8");
+            response.setHeader("Cache-Control", "no-cache");
+            response.setHeader("Connection", "keep-alive");
+            PrintWriter writer = response.getWriter();
+            writer.write("event: reject\ndata: " + objectMapper.writeValueAsString(new MessageDelta("response", DEMO_REJECT_MESSAGE)) + "\n\n");
+            writer.write("event: done\ndata: \"[DONE]\"\n\n");
+            writer.flush();
+        } catch (Exception e) {
+            // 记录日志但不抛出异常，避免影响主流程
+            org.slf4j.LoggerFactory.getLogger(DemoModeInterceptor.class)
+                    .warn("写入SSE拒绝响应失败", e);
+        }
     }
 
-    private void writeJsonReject(HttpServletResponse response) throws Exception {
-        response.setStatus(HttpServletResponse.SC_OK);
-        response.setContentType("application/json;charset=UTF-8");
-        Result<Void> result = new Result<Void>()
-                .setCode(BaseErrorCode.CLIENT_ERROR.code())
-                .setMessage(DEMO_REJECT_MESSAGE);
-        response.getWriter().write(objectMapper.writeValueAsString(result));
+    private void writeJsonReject(HttpServletResponse response) {
+        try {
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.setContentType("application/json;charset=UTF-8");
+            Result<Void> result = new Result<Void>()
+                    .setCode(BaseErrorCode.CLIENT_ERROR.code())
+                    .setMessage(DEMO_REJECT_MESSAGE);
+            response.getWriter().write(objectMapper.writeValueAsString(result));
+        } catch (Exception e) {
+            // 记录日志但不抛出异常，避免影响主流程
+            org.slf4j.LoggerFactory.getLogger(DemoModeInterceptor.class)
+                    .warn("写入JSON拒绝响应失败", e);
+        }
     }
 }

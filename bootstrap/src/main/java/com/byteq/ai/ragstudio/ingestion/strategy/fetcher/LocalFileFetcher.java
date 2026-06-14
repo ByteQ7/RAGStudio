@@ -93,6 +93,16 @@ public class LocalFileFetcher implements DocumentFetcher {
                 // 解析为规范路径，确保不逃逸允许的基目录
                 Path realPath = path.toRealPath();
 
+                // 额外安全检查：确保文件不是符号链接（如果配置要求）
+                if (Files.isSymbolicLink(path)) {
+                    throw new ServiceException("不允许访问符号链接: " + location);
+                }
+
+                // 检查是否为普通文件
+                if (!Files.isRegularFile(realPath)) {
+                    throw new ServiceException("路径不是普通文件: " + realPath);
+                }
+
                 // 检查文件大小，防止 OOM
                 long fileSize = Files.size(realPath);
                 if (fileSize > maxFileSize) {
