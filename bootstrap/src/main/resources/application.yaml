@@ -113,5 +113,3 @@ sa-token:
 
 app:
   demo-mode: false
-  eval:
-    enabled: true
