@@ -520,6 +520,27 @@ public class StreamChatPipeline {
                 rewriteResult.rewrittenQuestion(),
                 rewriteResult.subQuestions()
         );
+
+        // 关键调试日志：记录发送给 LLM 的消息结构，帮助排查"检索到但回答没有"的问题
+        log.info("LLM 请求概览 - 消息数: {}, KB上下文: {} ({}字符), MCP上下文: {}, 历史消息数: {}, 子问题数: {}",
+                messages.size(),
+                ctx.hasKb() ? "有" : "无",
+                ctx.getKbContext() != null ? ctx.getKbContext().length() : 0,
+                ctx.hasMcp() ? "有" : "无",
+                history.size(),
+                rewriteResult.subQuestions() != null ? rewriteResult.subQuestions().size() : 0);
+        if (log.isDebugEnabled()) {
+            for (int i = 0; i < messages.size(); i++) {
+                ChatMessage msg = messages.get(i);
+                log.debug("  消息[{}] role={}, 内容长度={}, 前200字符: {}",
+                        i, msg.getRole(),
+                        msg.getContent() != null ? msg.getContent().length() : 0,
+                        msg.getContent() != null
+                                ? msg.getContent().substring(0, Math.min(200, msg.getContent().length()))
+                                : "null");
+            }
+        }
+
         ChatRequest chatRequest = ChatRequest.builder()
                 .messages(messages)
                 .thinking(deepThinking)

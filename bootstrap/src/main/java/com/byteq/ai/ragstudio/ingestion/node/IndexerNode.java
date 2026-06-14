@@ -210,6 +210,20 @@ public class IndexerNode implements IngestionNode {
         }
 
         List<VectorChunk> chunks = rows.stream().map(row -> {
+            // 添加空值检查防止NPE
+            if (!row.has("id") || row.get("id").isJsonNull()) {
+                log.warn("跳过无效行：缺少id字段");
+                return null;
+            }
+            if (!row.has("content") || row.get("content").isJsonNull()) {
+                log.warn("跳过无效行：缺少content字段");
+                return null;
+            }
+            if (!row.has("embedding") || !row.get("embedding").isJsonArray()) {
+                log.warn("跳过无效行：缺少或无效的embedding字段");
+                return null;
+            }
+
             String chunkId = row.get("id").getAsString();
             String content = row.get("content").getAsString();
             JsonArray embeddingArray = row.getAsJsonArray("embedding");
@@ -221,7 +235,7 @@ public class IndexerNode implements IngestionNode {
             Integer chunkIndex = null;
             if (row.has("metadata") && row.get("metadata").isJsonObject()) {
                 JsonObject metadata = row.getAsJsonObject("metadata");
-                if (metadata.has("chunk_index")) {
+                if (metadata.has("chunk_index") && !metadata.get("chunk_index").isJsonNull()) {
                     chunkIndex = metadata.get("chunk_index").getAsInt();
                 }
             }
@@ -232,7 +246,7 @@ public class IndexerNode implements IngestionNode {
                     .index(chunkIndex)
                     .embedding(embedding)
                     .build();
-        }).toList();
+        }).filter(chunk -> chunk != null).toList();
 
         vectorStoreService.indexDocumentChunks(collectionName, docId, chunks);
 

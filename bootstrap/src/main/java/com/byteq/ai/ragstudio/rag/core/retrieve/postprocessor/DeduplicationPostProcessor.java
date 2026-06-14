@@ -76,9 +76,11 @@ public class DeduplicationPostProcessor implements SearchResultPostProcessor {
      */
     private String generateChunkKey(RetrievedChunk chunk) {
         // 基于 id 或内容 SHA-256 哈希生成唯一键（避免 String.hashCode() 32 位碰撞风险）
-        return chunk.getId() != null
-                ? chunk.getId()
-                : DigestUtil.sha256Hex(chunk.getText());
+        if (chunk.getId() != null) {
+            return chunk.getId();
+        }
+        String text = chunk.getText() != null ? chunk.getText() : "";
+        return DigestUtil.sha256Hex(text);
     }
 
     /**

@@ -301,9 +301,9 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 .filter(n -> n != null && "indexer".equals(n.getNodeType()))
                 .findFirst()
                 .map(n -> {
-                    if (n.getSettings() != null && !n.getSettings().isNull()
-                            && n.getSettings().has("collectionName")) {
-                        return n.getSettings().get("collectionName").asText();
+                    if (n.getSettings() != null && !n.getSettings().isNull()) {
+                        // 使用path()方法安全获取，如果不存在会返回MissingNode而不是null
+                        return n.getSettings().path("collectionName").asText(null);
                     }
                     return null;
                 })
@@ -578,7 +578,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
 
     /**
      * 截断过大的输出 JSON，防止超过数据库的 max_allowed_packet 限制
-     * 默认限制为 1MB
+     * 默认限制为 1MB，截断后仍保持有效 JSON 格式
      */
     private String truncateOutputJson(Object output) {
         if (output == null) {
@@ -593,8 +593,41 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         if (json.length() <= maxSize) {
             return json;
         }
-        // 截断并添加提示信息
-        String truncated = json.substring(0, maxSize - 100);
-        return truncated + "... [输出过大，已截断，原始大小: " + json.length() + " 字节]";
+        // 截断后生成有效的 JSON 对象，包含截断标记和原始大小
+        // 预留空间给包裹结构：{"_truncated":true,"_originalSize":N,"_preview":"..."}
+        int previewMaxLen = maxSize - 120;
+        String preview = json.substring(0, Math.max(0, previewMaxLen));
+        // 确保 preview 不以未闭合的转义字符结尾
+        int backslashCount = 0;
+        for (int i = preview.length() - 1; i >= 0 && preview.charAt(i) == '\\'; i--) {
+            backslashCount++;
+        }
+        if (backslashCount % 2 != 0) {
+            preview = preview.substring(0, preview.length() - 1);
+        }
+        return "{\"_truncated\":true,\"_originalSize\":" + json.length()
+                + ",\"_preview\":\"" + escapeJsonString(preview) + "\"}";
+    }
+
+    private String escapeJsonString(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 }

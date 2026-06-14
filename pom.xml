@@ -35,7 +35,6 @@
         <module>bootstrap</module>
         <module>framework</module>
         <module>infra-ai</module>
-        <module>mcp-server</module>
     </modules>
 
     <dependencyManagement>

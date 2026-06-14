@@ -65,18 +65,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             throw new ServiceException("知识库名称已存在：" + requestParam.getName());
         }
 
-        KnowledgeBaseDO kbDO = KnowledgeBaseDO.builder()
-                .name(requestParam.getName())
-                .embeddingModel(requestParam.getEmbeddingModel())
-                .collectionName(requestParam.getCollectionName())
-                .createdBy(UserContext.getUsername())
-                .updatedBy(UserContext.getUsername())
-                .deleted(0)
-                .build();
-
-        knowledgeBaseMapper.insert(kbDO);
-
         String bucketName = requestParam.getCollectionName();
+
+        // 先创建 S3 桶，再插入 DB。若 S3 失败则 DB 事务不会提交，不产生孤儿记录。
         try {
             s3Client.createBucket(builder -> builder.bucket(bucketName));
             log.info("成功创建RestFS存储桶，Bucket名称: {}", bucketName);
@@ -89,15 +80,37 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             throw new ServiceException("存储桶名称已被占用：" + bucketName);
         }
 
-        VectorSpaceSpec spaceSpec = VectorSpaceSpec.builder()
-                .spaceId(VectorSpaceId.builder()
-                        .logicalName(requestParam.getCollectionName())
-                        .build())
-                .remark(requestParam.getName())
-                .build();
-        vectorStoreAdmin.ensureVectorSpace(spaceSpec);
+        try {
+            KnowledgeBaseDO kbDO = KnowledgeBaseDO.builder()
+                    .name(requestParam.getName())
+                    .embeddingModel(requestParam.getEmbeddingModel())
+                    .collectionName(requestParam.getCollectionName())
+                    .createdBy(UserContext.getUsername())
+                    .updatedBy(UserContext.getUsername())
+                    .deleted(0)
+                    .build();
 
-        return String.valueOf(kbDO.getId());
+            knowledgeBaseMapper.insert(kbDO);
+
+            VectorSpaceSpec spaceSpec = VectorSpaceSpec.builder()
+                    .spaceId(VectorSpaceId.builder()
+                            .logicalName(requestParam.getCollectionName())
+                            .build())
+                    .remark(requestParam.getName())
+                    .build();
+            vectorStoreAdmin.ensureVectorSpace(spaceSpec);
+
+            return String.valueOf(kbDO.getId());
+        } catch (Exception e) {
+            // DB 插入或向量空间创建失败，补偿删除已创建的 S3 桶，避免孤儿桶
+            log.warn("知识库创建失败，正在补偿删除 S3 存储桶, bucket={}", bucketName);
+            try {
+                s3Client.deleteBucket(builder -> builder.bucket(bucketName));
+            } catch (Exception s3Ex) {
+                log.error("补偿删除 S3 存储桶失败, bucket={}", bucketName, s3Ex);
+            }
+            throw e;
+        }
     }
 
     @Override
@@ -196,22 +209,29 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
      */
     private void cleanupS3Bucket(String bucketName) {
         try {
-            // 列出并删除桶内所有对象
-            ListObjectsV2Response listResponse = s3Client.listObjectsV2(
-                    ListObjectsV2Request.builder().bucket(bucketName).build());
-            if (listResponse.contents() != null && !listResponse.contents().isEmpty()) {
-                List<ObjectIdentifier> objectIds = listResponse.contents().stream()
-                        .map(obj -> ObjectIdentifier.builder().key(obj.key()).build())
-                        .collect(Collectors.toList());
-                DeleteObjectsResponse deleteResponse = s3Client.deleteObjects(
-                        DeleteObjectsRequest.builder()
-                                .bucket(bucketName)
-                                .delete(builder -> builder.objects(objectIds))
-                                .build());
-                if (deleteResponse.hasErrors() && !deleteResponse.errors().isEmpty()) {
-                    log.warn("清理 S3 存储桶部分对象失败, bucket={}, errors={}", bucketName, deleteResponse.errors());
+            // 分页列出并删除桶内所有对象（S3 每次最多返回 1000 个对象）
+            String continuationToken = null;
+            do {
+                ListObjectsV2Request.Builder listBuilder = ListObjectsV2Request.builder().bucket(bucketName);
+                if (continuationToken != null) {
+                    listBuilder.continuationToken(continuationToken);
                 }
-            }
+                ListObjectsV2Response listResponse = s3Client.listObjectsV2(listBuilder.build());
+                if (listResponse.contents() != null && !listResponse.contents().isEmpty()) {
+                    List<ObjectIdentifier> objectIds = listResponse.contents().stream()
+                            .map(obj -> ObjectIdentifier.builder().key(obj.key()).build())
+                            .collect(Collectors.toList());
+                    DeleteObjectsResponse deleteResponse = s3Client.deleteObjects(
+                            DeleteObjectsRequest.builder()
+                                    .bucket(bucketName)
+                                    .delete(builder -> builder.objects(objectIds))
+                                    .build());
+                    if (deleteResponse.hasErrors() && !deleteResponse.errors().isEmpty()) {
+                        log.warn("清理 S3 存储桶部分对象失败, bucket={}, errors={}", bucketName, deleteResponse.errors());
+                    }
+                }
+                continuationToken = Boolean.TRUE.equals(listResponse.isTruncated()) ? listResponse.nextContinuationToken() : null;
+            } while (continuationToken != null);
             // 删除空桶
             s3Client.deleteBucket(builder -> builder.bucket(bucketName));
             log.info("成功清理 S3 存储桶, bucket={}", bucketName);

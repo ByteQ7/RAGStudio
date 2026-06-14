@@ -40,6 +40,11 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class SpringAiChatModelFactory {
 
+    /**
+     * 缓存上限，超过后驱逐最早的条目，防止无界增长导致文件描述符和内存泄漏
+     */
+    private static final int MAX_CACHE_SIZE = 64;
+
     private final Map<String, ChatModel> chatModelCache = new ConcurrentHashMap<>();
     private final Map<String, EmbeddingModel> embeddingModelCache = new ConcurrentHashMap<>();
 
@@ -50,6 +55,7 @@ public class SpringAiChatModelFactory {
      * @return Spring AI ChatModel
      */
     public ChatModel getOrCreateChatModel(ModelTarget target) {
+        evictIfNecessary(chatModelCache);
         return chatModelCache.computeIfAbsent(target.id(), id -> createChatModel(target));
     }
 
@@ -60,6 +66,7 @@ public class SpringAiChatModelFactory {
      * @return Spring AI EmbeddingModel
      */
     public EmbeddingModel getOrCreateEmbeddingModel(ModelTarget target) {
+        evictIfNecessary(embeddingModelCache);
         return embeddingModelCache.computeIfAbsent(target.id(), id -> createEmbeddingModel(target));
     }
 
@@ -138,6 +145,40 @@ public class SpringAiChatModelFactory {
         return null;
     }
 
+    // ==================== 缓存驱逐 ====================
+
+    /**
+     * 当缓存超过上限时，逐出最早的条目（按迭代顺序），
+     * 将缓存大小降至 MAX_CACHE_SIZE / 2 以留出空间。
+     */
+    private <V> void evictIfNecessary(Map<String, V> cache) {
+        if (cache.size() <= MAX_CACHE_SIZE) return;
+        int toEvict = cache.size() - MAX_CACHE_SIZE / 2;
+        var it = cache.keySet().iterator();
+        while (it.hasNext() && toEvict > 0) {
+            String key = it.next();
+            it.remove();
+            if (cache == chatModelCache) {
+                closeQuietly(chatModelCache.remove(key), key);
+            } else if (cache == embeddingModelCache) {
+                closeQuietly(embeddingModelCache.remove(key), key);
+            }
+            toEvict--;
+        }
+        log.info("缓存驱逐完成，当前缓存大小: {}", cache.size());
+    }
+
+    /**
+     * 清除所有缓存（应用关闭或全局刷新时调用）
+     */
+    public void evictAll() {
+        chatModelCache.forEach((id, model) -> closeQuietly(model, id));
+        chatModelCache.clear();
+        embeddingModelCache.forEach((id, model) -> closeQuietly(model, id));
+        embeddingModelCache.clear();
+        log.info("已清除所有模型缓存");
+    }
+
     // ==================== ChatModel 创建 ====================
 
     private ChatModel createChatModel(ModelTarget target) {
@@ -164,20 +205,26 @@ public class SpringAiChatModelFactory {
         String baseUrl = resolveBaseUrl(target);
         String apiKey = resolveApiKey(target);
         String modelName = target.candidate().getModel();
+        Integer dimension = target.candidate().getDimension();
 
         OpenAiApi api = OpenAiApi.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey != null ? apiKey : "no-key")
                 .build();
-        log.info("创建 OpenAI-compatible EmbeddingModel: provider={}, model={}, baseUrl={}",
-                providerId, modelName, baseUrl);
+        log.info("创建 OpenAI-compatible EmbeddingModel: provider={}, model={}, dimension={}, baseUrl={}",
+                providerId, modelName, dimension, baseUrl);
+
+        OpenAiEmbeddingOptions.Builder optionsBuilder = OpenAiEmbeddingOptions.builder()
+                .model(modelName);
+        if (dimension != null && dimension > 0) {
+            optionsBuilder.dimensions(dimension);
+        }
+
         // OpenAiEmbeddingModel 没有 Builder，使用构造函数
         return new OpenAiEmbeddingModel(
                 api,
                 MetadataMode.EMBED,
-                OpenAiEmbeddingOptions.builder()
-                        .model(modelName)
-                        .build());
+                optionsBuilder.build());
     }
 
     // ==================== URL 解析 ====================

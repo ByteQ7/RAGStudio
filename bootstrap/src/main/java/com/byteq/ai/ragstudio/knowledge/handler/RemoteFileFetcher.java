@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.knowledge.handler;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.ingestion.util.HttpClientHelper;
+import com.byteq.ai.ragstudio.ingestion.util.SsrfGuard;
 import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class RemoteFileFetcher {
     public StoredFileDTO fetchAndStore(String bucketName, String url) {
         long maxBytes = maxFileSize.toBytes();
         url = url.trim();
+        SsrfGuard.validate(url);
         HttpClientHelper.HttpHeadResponse headResponse = tryHead(url);
         Long headContentLength = headResponse == null ? null : headResponse.contentLength();
         checkSizeLimit(maxBytes, headContentLength);
@@ -63,6 +65,7 @@ public class RemoteFileFetcher {
                                             String lastContentHash, String fallbackFileName) {
         long maxBytes = maxFileSize.toBytes();
         url = url.trim();
+        SsrfGuard.validate(url);
         HttpClientHelper.HttpHeadResponse headResponse = tryHead(url);
 
         if (headResponse != null) {

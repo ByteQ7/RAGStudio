@@ -34,39 +34,53 @@ public class HttpClientHelper {
         return doGet(url, headers, maxBytes);
     }
 
+    /**
+     * 打开HTTP流式响应。
+     * <p><b>重要：</b>调用者必须在使用完毕后关闭返回的HttpFetchStream（推荐使用try-with-resources），否则会导致资源泄漏。</p>
+     *
+     * @param url     请求URL
+     * @param headers 请求头
+     * @param maxBytes 最大字节数限制
+     * @return HttpFetchStream对象，调用者负责关闭
+     */
     public HttpFetchStream openStream(String url, Map<String, String> headers, long maxBytes) {
         Request.Builder builder = new Request.Builder().url(url);
         if (headers != null) {
             headers.forEach(builder::addHeader);
         }
+        Response response = null;
         try {
-            Response response = client.newCall(builder.get().build()).execute();
+            response = client.newCall(builder.get().build()).execute();
             if (!response.isSuccessful()) {
                 String body = response.body() != null ? response.body().string() : "";
                 response.close();
                 throw new ServiceException("网络请求失败: " + response.code() + " " + body);
             }
-            try {
-                ResponseBody responseBody = response.body();
-                String contentType = response.header("Content-Type");
-                String disposition = response.header("Content-Disposition");
-                String fileName = resolveFileName(disposition, url);
-                String etag = response.header("ETag");
-                String lastModified = response.header("Last-Modified");
-                Long contentLength = parseContentLength(response.header("Content-Length"));
-                if (maxBytes > 0 && contentLength != null && contentLength > maxBytes) {
-                    throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes");
-                }
-                InputStream bodyStream = responseBody == null
-                        ? InputStream.nullInputStream()
-                        : wrapWithLimit(responseBody.byteStream(), maxBytes);
-                return new HttpFetchStream(response, bodyStream, contentType, fileName, etag, lastModified, contentLength);
-            } catch (Exception e) {
+            ResponseBody responseBody = response.body();
+            String contentType = response.header("Content-Type");
+            String disposition = response.header("Content-Disposition");
+            String fileName = resolveFileName(disposition, url);
+            String etag = response.header("ETag");
+            String lastModified = response.header("Last-Modified");
+            Long contentLength = parseContentLength(response.header("Content-Length"));
+            if (maxBytes > 0 && contentLength != null && contentLength > maxBytes) {
                 response.close();
-                throw e;
+                throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes");
             }
+            InputStream bodyStream = responseBody == null
+                    ? InputStream.nullInputStream()
+                    : wrapWithLimit(responseBody.byteStream(), maxBytes);
+            return new HttpFetchStream(response, bodyStream, contentType, fileName, etag, lastModified, contentLength);
         } catch (IOException e) {
+            if (response != null) {
+                response.close();
+            }
             throw new ServiceException("网络请求失败: " + e.getMessage());
+        } catch (Exception e) {
+            if (response != null) {
+                response.close();
+            }
+            throw e;
         }
     }
 

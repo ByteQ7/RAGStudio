@@ -66,15 +66,24 @@ public class StreamTaskManager {
         StreamTaskInfo existing = tasks.asMap().putIfAbsent(taskId, taskInfo);
         if (existing != null) {
             synchronized (existing) {
+                // 在同步块内更新所有volatile字段，确保可见性和一致性
                 existing.sender = sender;
                 existing.onCancelSupplier = onCancelSupplier;
+                taskInfo = existing;
             }
-            taskInfo = existing;
         }
+        
+        Supplier<CompletionPayload> cancelSupplier;
+        SseEmitterSender taskSender;
+        synchronized (taskInfo) {
+            cancelSupplier = taskInfo.onCancelSupplier;
+            taskSender = taskInfo.sender;
+        }
+        
         if (isTaskCancelledInRedis(taskId, taskInfo)) {
-            CompletionPayload payload = taskInfo.onCancelSupplier.get();
-            sendCancelAndDone(sender, payload);
-            sender.complete();
+            CompletionPayload payload = cancelSupplier.get();
+            sendCancelAndDone(taskSender, payload);
+            taskSender.complete();
         }
     }
 

@@ -62,8 +62,17 @@ public class ModelHealthStore {
         if (health.state == State.OPEN && health.openUntil > System.currentTimeMillis()) {
             return true;
         }
-        // HALF_OPEN 状态下已有探测请求在执行，不再接受新请求
-        return health.state == State.HALF_OPEN && health.halfOpenInFlight;
+        // HALF_OPEN 状态下已有探测请求在执行，不再接受新请求；但若超时则视为探测已失效
+        return health.state == State.HALF_OPEN && health.halfOpenInFlight
+                && !isHalfOpenTimedOut(health);
+    }
+
+    private boolean isHalfOpenTimedOut(ModelHealth health) {
+        if (!health.halfOpenInFlight || health.halfOpenStartedAt == 0) {
+            return false;
+        }
+        long timeoutMs = routingProperties.getSelection().getOpenDurationMs();
+        return System.currentTimeMillis() - health.halfOpenStartedAt > timeoutMs;
     }
 
     /**
@@ -102,15 +111,17 @@ public class ModelHealthStore {
                 }
                 v.state = State.HALF_OPEN;
                 v.halfOpenInFlight = true;
+                v.halfOpenStartedAt = now;
                 allowed.set(true);
                 return v;
             }
-            // HALF_OPEN 状态下，如果没有正在执行的探测请求则允许通过
+            // HALF_OPEN 状态下，如果没有正在执行的探测请求（或已超时）则允许通过
             if (v.state == State.HALF_OPEN) {
-                if (v.halfOpenInFlight) {
+                if (v.halfOpenInFlight && !isHalfOpenTimedOut(v)) {
                     return v;
                 }
                 v.halfOpenInFlight = true;
+                v.halfOpenStartedAt = now;
                 allowed.set(true);
                 return v;
             }
@@ -201,6 +212,9 @@ public class ModelHealthStore {
         // 是否有探测请求正在探测
         private volatile boolean halfOpenInFlight;
 
+        // 探测请求开始时间戳，用于超时检测
+        private volatile long halfOpenStartedAt;
+
         // 当前状态
         private volatile State state;
 
@@ -208,6 +222,7 @@ public class ModelHealthStore {
             this.consecutiveFailures = 0;
             this.openUntil = 0L;
             this.halfOpenInFlight = false;
+            this.halfOpenStartedAt = 0L;
             this.state = State.CLOSED;
         }
     }

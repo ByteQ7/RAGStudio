@@ -342,7 +342,11 @@ public class DashboardServiceImpl implements DashboardService {
         if (maps == null || maps.isEmpty()) {
             return 0L;
         }
-        Object value = maps.get(0).get("cnt");
+        Map<String, Object> firstMap = maps.get(0);
+        if (firstMap == null) {
+            return 0L;
+        }
+        Object value = firstMap.get("cnt");
         if (value instanceof Number number) {
             return number.longValue();
         }

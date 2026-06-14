@@ -20,6 +20,12 @@ const BoolBadge = ({ value }: { value: boolean }) => (
   <Badge variant={value ? "default" : "outline"}>{value ? "启用" : "禁用"}</Badge>
 );
 
+function maskApiKey(key?: string | null): string {
+  if (!key) return "-";
+  if (key.length <= 8) return "****";
+  return `${key.slice(0, 4)}****${key.slice(-4)}`;
+}
+
 function InfoItem({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex flex-col gap-1 rounded-lg border border-gray-200/70 bg-white px-4 py-3">
@@ -151,7 +157,7 @@ export function SystemSettingsPage() {
                 <TableRow key={name}>
                   <TableCell className="font-medium">{name}</TableCell>
                   <TableCell>{provider.url}</TableCell>
-                  <TableCell>{provider.apiKey ? provider.apiKey : "-"}</TableCell>
+                  <TableCell>{maskApiKey(provider.apiKey)}</TableCell>
                   <TableCell>
                     <div className="space-y-1 text-xs text-muted-foreground">
                       {Object.entries(provider.endpoints).map(([key, value]) => (

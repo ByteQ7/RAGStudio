@@ -33,7 +33,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration.class,
         org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration.class,
         org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration.class,
-        org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration.class
+        org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration.class,
+        // 排除 Spring Security 自动配置，应用使用 Sa-Token 进行认证
+        org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration.class,
+        org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration.class
 })
 @EnableScheduling
 @MapperScan(basePackages = {
