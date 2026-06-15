@@ -186,15 +186,19 @@ public class SpringAiChatModelFactory {
         String baseUrl = resolveBaseUrl(target);
         String apiKey = resolveApiKey(target);
 
-        // 所有 OpenAI 兼容提供商统一使用 OpenAiChatModel
-        OpenAiApi api = OpenAiApi.builder()
+        OpenAiApi.Builder apiBuilder = OpenAiApi.builder()
                 .baseUrl(baseUrl)
-                .apiKey(apiKey != null ? apiKey : "no-key")
-                .build();
-        log.info("创建 OpenAI-compatible ChatModel: provider={}, model={}, baseUrl={}",
-                providerId, target.candidate().getModel(), baseUrl);
+                .apiKey(apiKey != null ? apiKey : "no-key");
+
+        String chatPath = resolveEndpointPath(target, "chat");
+        if (chatPath != null) {
+            apiBuilder.completionsPath(chatPath);
+        }
+
+        log.info("创建 OpenAI-compatible ChatModel: provider={}, model={}, baseUrl={}, completionsPath={}",
+                providerId, target.candidate().getModel(), baseUrl, chatPath != null ? chatPath : "/v1/chat/completions");
         return OpenAiChatModel.builder()
-                .openAiApi(api)
+                .openAiApi(apiBuilder.build())
                 .build();
     }
 
@@ -250,6 +254,13 @@ public class SpringAiChatModelFactory {
         return provider.getApiKey();
     }
 
+    private String resolveEndpointPath(ModelTarget target, String endpointKey) {
+        Map<String, String> endpoints = target.provider().getEndpoints();
+        if (endpoints == null || endpoints.isEmpty()) return null;
+        String path = endpoints.get(endpointKey);
+        return (path != null && !path.isBlank()) ? path : null;
+    }
+
     // ==================== Options 构建 ====================
 
     /**
@@ -268,6 +279,10 @@ public class SpringAiChatModelFactory {
         if (request.getTemperature() != null) builder.temperature(request.getTemperature());
         if (request.getTopP() != null) builder.topP(request.getTopP());
         if (request.getMaxTokens() != null) builder.maxTokens(request.getMaxTokens());
+
+        if (request.getThinking() != null) {
+            builder.extraBody(Map.of("enable_thinking", request.getThinking()));
+        }
 
         return builder.build();
     }
