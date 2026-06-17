@@ -487,13 +487,9 @@ export function RagTraceDetailPage() {
     const topSlowestId = sortedByDuration[0]?.nodeId;
 
     const userTtftNode = nodes.find(n => (n.nodeType || "").toUpperCase() === "USER_TTFT");
-    const llmTtftNode = nodes.find(n => (n.nodeType || "").toUpperCase() === "LLM_TTFT");
-    const ttftMs = userTtftNode
-        ? resolveNodeDuration(userTtftNode)
-        : (llmTtftNode ? resolveNodeDuration(llmTtftNode) : null);
-    const ttftKind: "user" | "llm" | null = userTtftNode ? "user" : (llmTtftNode ? "llm" : null);
+    const ttftMs = userTtftNode ? resolveNodeDuration(userTtftNode) : null;
 
-    return { total, failed, success, running, avgDuration, topSlowestId, ttftMs, ttftKind };
+    return { total, failed, success, running, avgDuration, topSlowestId, ttftMs };
   }, [detail?.nodes]);
 
   const activeNode = useMemo(() => {
@@ -639,9 +635,9 @@ export function RagTraceDetailPage() {
           {stats.ttftMs !== null && (
               <MetricItem
                   icon={Zap}
-                  label={stats.ttftKind === "user" ? "首包" : "LLM 首包"}
+                  label="首包"
                   value={formatDuration(stats.ttftMs)}
-                  variant={stats.ttftKind === "user" ? "primary" : "success"}
+                  variant="primary"
               />
           )}
           <MetricItem

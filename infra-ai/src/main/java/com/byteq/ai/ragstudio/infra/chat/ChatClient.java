@@ -59,7 +59,6 @@ public interface ChatClient {
      * - 返回的 StreamCancellationHandle 使调用方可随时中断生成
      * <p>
      * 超时处理：
-     * - 首包超时由路由层的 ProbeStreamBridge + LlmFirstPacketProbe 共同处理
      * - 流式传输过程中的网络超时由 OkHttpClient 的超时配置控制
      *
      * @param request  聊天请求对象，包含用户消息和对话历史
