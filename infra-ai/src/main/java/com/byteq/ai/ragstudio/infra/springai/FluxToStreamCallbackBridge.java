@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>
  * 线程安全说明：
  * Flux 的回调可能运行在 Reactor Netty 的事件循环线程上，
- * StreamCallback 的各实现（ProbeStreamBridge / ForwardingStreamCallback）已设计为线程安全。
+ * StreamCallback 的各实现（ForwardingStreamCallback 等）已设计为线程安全。
  */
 @Slf4j
 public class FluxToStreamCallbackBridge {

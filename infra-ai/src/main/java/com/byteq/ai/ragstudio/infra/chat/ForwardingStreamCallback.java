@@ -65,7 +65,7 @@ public abstract class ForwardingStreamCallback implements StreamCallback {
     /**
      * 接收思考过程增量内容（final）
      * <p>
-     * 直接透传 delegate，不参与首包探测逻辑。
+     * 直接透传 delegate。
      */
     @Override
     public final void onThinking(String content) {

@@ -21,7 +21,6 @@ import org.springframework.context.annotation.Configuration;
  *       open-duration-ms: 30000
  *     stream:
  *       message-chunk-size: 5
- *       first-packet-timeout-seconds: 60
  * </pre>
  */
 @Data
@@ -72,11 +71,5 @@ public class ModelRoutingProperties {
          * 消息分块大小：流式响应中每次向客户端发送的 Token 数量，默认 5
          */
         private Integer messageChunkSize = 5;
-
-        /**
-         * 首包超时时间（秒）：流式请求阻塞等待首个数据包到达的最大时间，默认 60。
-         * 深度思考（thinking）模式下实际超时时间为此值的 2 倍。
-         */
-        private Integer firstPacketTimeoutSeconds = 60;
     }
 }

@@ -135,8 +135,7 @@ public interface LLMService {
      * <p>
      * 设计意图：
      * - 流式模式的核心在于"首包延迟"（TTFT）和"吞吐量"（TPS）的平衡
-     * - 路由层实现了逐模型 fallback：当首个模型首包超时时自动切换下一个模型
-     * - ProbeStreamBridge 桥接了首包探测与流式回调的衔接问题
+     * - 路由层实现了逐模型 fallback：当模型启动失败时自动切换下一个模型
      *
      * @param request  ChatRequest 完整配置的请求
      * @param callback 流式回调接口

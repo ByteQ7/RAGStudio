@@ -95,7 +95,6 @@ export const nodeTypeChipClass = (type?: string | null): string => {
   const normalized = (type || "").trim().toUpperCase();
   if (normalized === "ROOT") return "bg-indigo-100 text-indigo-700";
   if (normalized === "USER_TTFT") return "bg-rose-100 text-rose-700";
-  if (normalized === "LLM_TTFT") return "bg-blue-100 text-blue-700";
   if (normalized === "LLM_PROVIDER") return "bg-orange-100 text-orange-700";
   if (normalized === "LLM_ROUTING") return "bg-amber-100 text-amber-700";
   if (normalized === "REWRITE") return "bg-teal-100 text-teal-700";
@@ -108,7 +107,6 @@ export const nodeTypeChipClass = (type?: string | null): string => {
 const NODE_NAME_DISPLAY: Record<string, string> = {
   "rag-stream-chat": "RAG 流式对话",
   "user-first-packet": "用户感知首包",
-  "llm-first-packet": "LLM 首包",
   "llm-chat-routing": "LLM 路由调度",
   "bailian-chat": "百炼 · 同步",
   "bailian-stream-chat": "百炼 · 流式",
