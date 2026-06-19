@@ -14,6 +14,13 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * 对话组服务实现类
+ * <p>
+ * 基于 MyBatis-Plus 实现对话消息、摘要和对话信息的查询功能，
+ * 提供按时间范围、ID 范围、数量限制等方式查询对话历史数据。
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 public class ConversationGroupServiceImpl implements ConversationGroupService {
@@ -22,6 +29,7 @@ public class ConversationGroupServiceImpl implements ConversationGroupService {
     private final ConversationSummaryMapper summaryMapper;
     private final ConversationMapper conversationMapper;
 
+    // 获取指定对话中最新的用户消息列表，按创建时间倒序，仅查 role='user'
     @Override
     public List<ConversationMessageDO> listLatestUserOnlyMessages(String conversationId, String userId, int limit) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId) || limit <= 0) {
@@ -38,6 +46,7 @@ public class ConversationGroupServiceImpl implements ConversationGroupService {
         );
     }
 
+    // 获取指定消息 ID 范围内的消息列表，支持 afterId/beforeId 边界，按 ID 升序
     @Override
     public List<ConversationMessageDO> listMessagesBetweenIds(String conversationId, String userId, String afterId, String beforeId) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId)) {
@@ -59,6 +68,7 @@ public class ConversationGroupServiceImpl implements ConversationGroupService {
         );
     }
 
+    // 查找指定时间点之前或当时的最大消息 ID，用于对话摘要定位
     @Override
     public String findMaxMessageIdAtOrBefore(String conversationId, String userId, java.util.Date at) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId) || at == null) {
@@ -76,6 +86,7 @@ public class ConversationGroupServiceImpl implements ConversationGroupService {
         return record == null ? null : record.getId();
     }
 
+    // 统计用户在指定对话中发送的消息数量，用于判断对话长度
     @Override
     public long countUserMessages(String conversationId, String userId) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId)) {
@@ -90,6 +101,7 @@ public class ConversationGroupServiceImpl implements ConversationGroupService {
         );
     }
 
+    // 获取指定对话的最新摘要信息，按 ID 倒序取第一条
     @Override
     public ConversationSummaryDO findLatestSummary(String conversationId, String userId) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId)) {
@@ -105,6 +117,7 @@ public class ConversationGroupServiceImpl implements ConversationGroupService {
         );
     }
 
+    // 根据会话 ID 和用户 ID 查询对话基本信息
     @Override
     public ConversationDO findConversation(String conversationId, String userId) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId)) {

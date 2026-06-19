@@ -63,6 +63,11 @@ public class ConversationMessageDO {
     private Integer thinkingDuration;
 
     /**
+     * Agent 推理步骤 JSON（ReACT 模式下记录中间思考/工具调用过程）
+     */
+    private String agentSteps;
+
+    /**
      * 创建时间，自动填充
      */
     @TableField(fill = FieldFill.INSERT)

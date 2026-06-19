@@ -24,13 +24,10 @@ export interface Message {
   id: string;
   role: Role;
   content: string;
-  thinking?: string;
-  thinkingDuration?: number;
-  isDeepThinking?: boolean;
-  isThinking?: boolean;
   createdAt?: string;
   feedback?: FeedbackValue;
   status?: MessageStatus;
+  agentSteps?: AgentStep[];
 }
 
 export interface StreamMetaPayload {
@@ -52,4 +49,26 @@ export interface McpCallPayload {
   toolId: string;
   status: "executing" | "completed" | "failed";
   error?: string;
+}
+
+export interface AgentStepPayload {
+  iteration: number;
+  action: "TOOL_CALL" | "FINISH" | "ERROR";
+  thought: string;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  observation?: string;
+  finalAnswer?: string;
+  durationMs: number;
+}
+
+export interface AgentStep {
+  iteration: number;
+  thought: string;
+  action: "TOOL_CALL" | "FINISH" | "ERROR";
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  observation?: string;
+  durationMs: number;
+  collapsed: boolean;
 }

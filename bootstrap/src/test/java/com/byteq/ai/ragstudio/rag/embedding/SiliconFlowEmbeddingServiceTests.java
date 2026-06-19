@@ -16,6 +16,7 @@ public class SiliconFlowEmbeddingServiceTests {
 
     private final EmbeddingService embeddingService;
 
+    // 验证 SiliconFlow Embedding 服务能否正常返回文本的向量表示
     @Test
     public void embeddingSiliconFlow() {
         List<Float> embedded = embeddingService.embed("测试向量描述");

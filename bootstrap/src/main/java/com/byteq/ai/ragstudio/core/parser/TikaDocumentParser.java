@@ -61,6 +61,16 @@ public class TikaDocumentParser implements DocumentParser {
         return ParserType.TIKA.getType();
     }
 
+    /**
+     * 解析文档内容为结构化文本
+     * <p>
+     * 解析流程:
+     * 1. 将字节数组包装为输入流
+     * 2. 使用 AutoDetectParser 自动检测文档格式并解析（通过 ParseContext 注入 PDF 配置）
+     * 3. 通过 BodyContentHandler 提取正文内容（不限制长度）
+     * 4. 调用 TextCleanupUtil 清理文本后返回解析结果
+     * </p>
+     */
     @Override
     public ParseResult parse(byte[] content, String mimeType, Map<String, Object> options) {
         if (content == null || content.length == 0) {
@@ -83,6 +93,7 @@ public class TikaDocumentParser implements DocumentParser {
         }
     }
 
+    // 从输入流中提取纯文本内容，使用 Tika 简洁 API 解析后清理文本
     @Override
     public String extractText(InputStream stream, String fileName) {
         try {

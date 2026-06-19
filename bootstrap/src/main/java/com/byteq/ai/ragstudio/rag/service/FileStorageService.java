@@ -40,7 +40,21 @@ public interface FileStorageService {
      */
     StoredFileDTO reliableUpload(String bucketName, InputStream content, long size, String originalFilename, String contentType);
 
+    /**
+     * 通过文件 URL 打开输入流
+     * <p>
+     * 根据文件的访问 URL 获取文件的输入流，用于读取已上传的文件内容。
+     * </p>
+     *
+     * @param url 文件的访问 URL
+     * @return 文件内容的输入流
+     */
     InputStream openStream(String url);
 
+    /**
+     * 根据文件 URL 删除已上传的文件
+     *
+     * @param url 文件的访问 URL
+     */
     void deleteByUrl(String url);
 }

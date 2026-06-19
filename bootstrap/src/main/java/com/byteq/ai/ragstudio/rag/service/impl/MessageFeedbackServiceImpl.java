@@ -24,6 +24,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 消息反馈服务实现类
+ * <p>
+ * 实现用户对 AI 回复消息的点赞/点踩反馈功能，支持同步提交、MQ 异步提交和批量查询反馈状态。
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 public class MessageFeedbackServiceImpl implements MessageFeedbackService {
@@ -35,6 +41,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
     @Value("${message-feedback.topic:message-feedback_topic}${unique-name:}")
     private String feedbackTopic;
 
+    // 异步提交消息反馈，构建反馈事件并发送到 MQ 由消费者处理
     @Override
     public void submitFeedbackAsync(String messageId, MessageFeedbackRequest request) {
         String userId = UserContext.getUserId();
@@ -56,6 +63,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
         messageQueueProducer.send(feedbackTopic, userId + ":" + messageId, "消息反馈", event);
     }
 
+    // 同步提交消息反馈，直接校验并持久化到数据库
     @Override
     public void submitFeedback(String messageId, MessageFeedbackRequest request) {
         String userId = UserContext.getUserId();
@@ -72,6 +80,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
                 vote, request.getReason(), request.getComment(), System.currentTimeMillis());
     }
 
+    // 批量查询用户对指定消息列表的反馈状态，返回 messageId -> vote 映射
     @Override
     public Map<String, Integer> getUserVotes(String userId, List<String> messageIds) {
         if (StrUtil.isBlank(userId) || CollUtil.isEmpty(messageIds)) {
@@ -94,6 +103,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
                 ));
     }
 
+    // 加载并校验助手消息，确保消息存在且角色为 assistant
     private ConversationMessageDO loadAssistantMessage(String messageId, String userId) {
         ConversationMessageDO message = conversationMessageMapper.selectOne(
                 Wrappers.lambdaQuery(ConversationMessageDO.class)
@@ -106,6 +116,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
         return message;
     }
 
+    // 执行反馈的 upsert 操作: 不存在则插入，已存在则按时间戳条件更新，避免多节点乱序覆盖
     private void doUpsertFeedback(String messageId, String userId, String conversationId,
                                   Integer vote, String reason, String comment, long submitTime) {
         MessageFeedbackDO existing = feedbackMapper.selectOne(
@@ -140,6 +151,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
         }
     }
 
+    // 通过 MQ 事件持久化反馈，由消费者调用执行实际的数据库写入
     @Override
     public void submitFeedbackByEvent(MessageFeedbackEvent event) {
         String messageId = event.getMessageId();

@@ -43,6 +43,18 @@ public class ChatQueueLimiter {
     private final ConversationGroupService conversationGroupService;
     private final MemoryProperties memoryProperties;
 
+    /**
+     * 将对话请求入队到全局并发限流器
+     * <p>
+     * 限流关闭时直接提交到线程池；限流开启时通过公平分布式限流器排队，
+     * 获取到 permit 后执行 onAcquire 回调，超时则走 reject 流程。
+     * </p>
+     *
+     * @param question       用户问题
+     * @param conversationId 会话 ID
+     * @param emitter        SSE 发射器
+     * @param onAcquire      获取到并发许可后执行的业务逻辑
+     */
     public void enqueue(String question, String conversationId, SseEmitter emitter, Runnable onAcquire) {
         if (!Boolean.TRUE.equals(rateLimitProperties.getGlobalEnabled())) {
             try {
@@ -69,6 +81,7 @@ public class ChatQueueLimiter {
 
     // ==================== Reject 业务 ====================
 
+    // 处理被限流拒绝的请求: 记录拒绝会话 -> 向前端发送拒绝事件
     private void handleReject(String question, String conversationId, SseEmitter emitter) {
         RejectedContext context = null;
         try {
@@ -80,6 +93,7 @@ public class ChatQueueLimiter {
         sendRejectEvents(emitter, context);
     }
 
+    // 记录被拒绝的对话: 保存用户问题和拒绝回复到消息记录，返回拒绝上下文
     private RejectedContext recordRejectedConversation(String question, String conversationId, String userId) {
         if (StrUtil.isBlank(question) || StrUtil.isBlank(userId)) {
             return null;
@@ -112,6 +126,7 @@ public class ChatQueueLimiter {
         return new RejectedContext(actualConversationId, taskId, messageId, title);
     }
 
+    // 根据用户问题截取生成兜底标题
     private String buildFallbackTitle(String question) {
         if (StrUtil.isBlank(question)) {
             return Strings.EMPTY;
@@ -121,6 +136,7 @@ public class ChatQueueLimiter {
         return cleaned.length() <= maxLen ? cleaned : cleaned.substring(0, maxLen);
     }
 
+    // 向前端发送拒绝相关的 SSE 事件序列（META -> REJECT -> FINISH -> DONE）
     private void sendRejectEvents(SseEmitter emitter, RejectedContext rejectedContext) {
         SseEmitterSender sender = new SseEmitterSender(emitter);
         if (rejectedContext != null) {
@@ -133,6 +149,7 @@ public class ChatQueueLimiter {
         sender.complete();
     }
 
+    // 解析当前用户 ID，优先从 UserContext 获取，回退到 Sa-Token 登录 ID
     private String resolveUserId() {
         String userId = UserContext.getUserId();
         if (StrUtil.isNotBlank(userId)) {

@@ -42,6 +42,7 @@ public class MarkdownDocumentParser implements DocumentParser {
         return ParseResult.ofText(text);
     }
 
+    // 以 UTF-8 编码读取 Markdown 输入流，逐行拼接为完整文本
     @Override
     public String extractText(InputStream stream, String fileName) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {

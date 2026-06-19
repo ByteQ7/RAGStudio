@@ -134,6 +134,7 @@ public class SpringAiChatModelFactory {
                 modelId, model.getClass().getSimpleName());
     }
 
+    // 在指定类中按名称列表查找第一个存在的字段，用于反射关闭底层资源
     private java.lang.reflect.Field findField(Class<?> clazz, String... fieldNames) {
         for (String name : fieldNames) {
             try {
@@ -181,6 +182,7 @@ public class SpringAiChatModelFactory {
 
     // ==================== ChatModel 创建 ====================
 
+    // 根据模型目标配置创建 OpenAI 兼容的 ChatModel 实例，设置基础 URL、API Key 和端点路径
     private ChatModel createChatModel(ModelTarget target) {
         String providerId = target.candidate().getProvider();
         String baseUrl = resolveBaseUrl(target);
@@ -204,6 +206,7 @@ public class SpringAiChatModelFactory {
 
     // ==================== EmbeddingModel 创建 ====================
 
+    // 根据模型目标配置创建 OpenAI 兼容的 EmbeddingModel 实例，支持自定义维度参数
     private EmbeddingModel createEmbeddingModel(ModelTarget target) {
         String providerId = target.candidate().getProvider();
         String baseUrl = resolveBaseUrl(target);
@@ -249,11 +252,13 @@ public class SpringAiChatModelFactory {
         return provider.getUrl().replaceAll("/+$", "");
     }
 
+    // 从模型目标的提供商配置中提取 API Key
     private String resolveApiKey(ModelTarget target) {
         DynamicModelConfig.ProviderEntry provider = target.provider();
         return provider.getApiKey();
     }
 
+    // 根据端点类型（如 chat、embedding）从提供商配置中解析对应的端点路径
     private String resolveEndpointPath(ModelTarget target, String endpointKey) {
         Map<String, String> endpoints = target.provider().getEndpoints();
         if (endpoints == null || endpoints.isEmpty()) return null;
@@ -311,6 +316,7 @@ public class SpringAiChatModelFactory {
         return new Prompt(messages, options);
     }
 
+    // 将项目内部的 ChatMessage 转换为 Spring AI 的 Message，支持 SYSTEM/USER/ASSISTANT 角色映射
     private Message convertMessage(ChatMessage msg) {
         return switch (msg.getRole()) {
             case SYSTEM -> new SystemMessage(msg.getContent());

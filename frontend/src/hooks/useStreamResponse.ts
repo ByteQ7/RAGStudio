@@ -1,10 +1,10 @@
-import type { CompletionPayload, McpCallPayload, MessageDeltaPayload, StreamMetaPayload } from "@/types";
+import type { AgentStepPayload, CompletionPayload, McpCallPayload, MessageDeltaPayload, StreamMetaPayload } from "@/types";
 
 export interface StreamHandlers {
   onMeta?: (payload: StreamMetaPayload) => void;
   onMcpCall?: (payload: McpCallPayload) => void;
   onMessage?: (payload: MessageDeltaPayload) => void;
-  onThinking?: (payload: MessageDeltaPayload) => void;
+  onAgentStep?: (payload: AgentStepPayload) => void;
   onFinish?: (payload: CompletionPayload) => void;
   onDone?: () => void;
   onCancel?: (payload: CompletionPayload) => void;
@@ -62,11 +62,7 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
         break;
       case "message":
         {
-          const messagePayload = payload as MessageDeltaPayload;
-          if (messagePayload?.type === "think") {
-            handlers.onThinking?.(messagePayload);
-          }
-          handlers.onMessage?.(messagePayload);
+          handlers.onMessage?.(payload as MessageDeltaPayload);
         }
         break;
       case "finish":
@@ -74,6 +70,9 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
         break;
       case "done":
         handlers.onDone?.();
+        break;
+      case "agent_step":
+        handlers.onAgentStep?.(payload as AgentStepPayload);
         break;
       case "cancel":
         handlers.onCancel?.(payload as CompletionPayload);

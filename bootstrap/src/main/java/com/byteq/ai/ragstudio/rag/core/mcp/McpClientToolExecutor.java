@@ -27,6 +27,9 @@ public class McpClientToolExecutor implements McpToolExecutor {
         return toolDefinition;
     }
 
+    /**
+     * 通过 McpSyncClient 调用远端 MCP 工具，记录耗时日志，异常时包装为错误结果返回
+     */
     @Override
     public CallToolResult execute(Map<String, Object> parameters) {
         long startMs = System.currentTimeMillis();

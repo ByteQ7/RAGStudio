@@ -15,9 +15,9 @@ import java.util.List;
 /**
  * MCP 客户端自动配置
  * <p>
- * 启动时从数据库加载所有已启用的 MCP Server 配置，
+ * 启动时从数据库异步加载所有已启用的 MCP Server 配置，
  * 委托 {@link DynamicMcpConnectionManager} 建立连接并注册远程工具。
- * MCP Server 的增删改查统一通过管理后台 API 操作，运行时即时生效。
+ * 异步设计确保 MCP Server 连接失败或超时不会阻塞应用启动。
  * </p>
  */
 @Slf4j
@@ -29,9 +29,18 @@ public class McpClientAutoConfiguration {
     private final DynamicMcpConnectionManager connectionManager;
     private final McpServerService mcpServerService;
 
+    /**
+     * 应用启动时异步加载 MCP Server 连接
+     * <p>
+     * MCP Server 可能不可达（网络故障、未部署等），
+     * 在独立线程中连接避免阻塞 Spring Boot 启动。
+     * </p>
+     */
     @PostConstruct
     public void init() {
-        loadFromDatabase();
+        Thread loader = new Thread(this::loadFromDatabase, "mcp-startup-loader");
+        loader.setDaemon(true);
+        loader.start();
     }
 
     /**
@@ -52,9 +61,11 @@ public class McpClientAutoConfiguration {
                     // 将连接结果同步到数据库，避免前端显示过期的错误状态
                     mcpServerService.updateConnectionStatus(server.getId(), result);
                 } catch (Exception e) {
-                    log.error("MCP Server [{}] 连接失败: {}", server.getName(), e.getMessage());
+                    log.warn("MCP Server [{}] 连接失败（不影响应用运行）: {}",
+                            server.getName(), e.getMessage());
                 }
             }
+            log.info("MCP Server 启动加载完成，共处理 {} 个配置", dbServers.size());
         } catch (Exception e) {
             log.error("从数据库加载 MCP Server 配置失败: {}", e.getMessage(), e);
         }

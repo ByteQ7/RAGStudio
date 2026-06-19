@@ -26,10 +26,28 @@ public class HttpClientHelper {
     @Qualifier("syncHttpClient")
     private final OkHttpClient client;
 
+    /**
+     * 发起 HTTP GET 请求获取资源内容（无大小限制）
+     *
+     * @param url     请求 URL
+     * @param headers 自定义请求头（可为 null）
+     * @return HTTP 响应结果，包含字节内容、Content-Type、文件名等元信息
+     */
     public HttpFetchResponse get(String url, Map<String, String> headers) {
         return doGet(url, headers, -1);
     }
 
+    /**
+     * 发起 HTTP GET 请求获取资源内容，带文件大小限制
+     * <p>
+     * 当响应内容超过 maxBytes 限制时抛出异常，防止 OOM。
+     * </p>
+     *
+     * @param url      请求 URL
+     * @param headers  自定义请求头（可为 null）
+     * @param maxBytes 最大允许字节数，小于等于 0 表示不限制
+     * @return HTTP 响应结果
+     */
     public HttpFetchResponse getWithLimit(String url, Map<String, String> headers, long maxBytes) {
         return doGet(url, headers, maxBytes);
     }
@@ -84,6 +102,12 @@ public class HttpClientHelper {
         }
     }
 
+    // 执行 HTTP GET 请求的核心方法，支持可选的字节数限制:
+    // 1. 构建请求并添加自定义头
+    // 2. 执行请求并校验响应状态码
+    // 3. 提取响应元信息（Content-Type、文件名、ETag 等）
+    // 4. 根据 maxBytes 参数决定是否限制读取大小
+    // 5. 读取响应体并封装为 HttpFetchResponse 返回
     private HttpFetchResponse doGet(String url, Map<String, String> headers, long maxBytes) {
         Request.Builder builder = new Request.Builder().url(url);
         if (headers != null) {
@@ -118,6 +142,17 @@ public class HttpClientHelper {
         }
     }
 
+    /**
+     * 发起 HTTP HEAD 请求获取资源元信息（不下载内容体）
+     * <p>
+     * 用于预检查资源的 Content-Type、Content-Length、ETag 等信息，
+     * 可在实际下载前判断资源是否满足条件。
+     * </p>
+     *
+     * @param url     请求 URL
+     * @param headers 自定义请求头（可为 null）
+     * @return HEAD 响应结果，包含 ETag、Last-Modified、Content-Type 等元信息
+     */
     public HttpHeadResponse head(String url, Map<String, String> headers) {
         Request.Builder builder = new Request.Builder().url(url);
         if (headers != null) {
@@ -139,6 +174,9 @@ public class HttpClientHelper {
         }
     }
 
+    // 从 Content-Disposition 响应头或 URL 路径中解析文件名:
+    // 1. 优先从 Content-Disposition 的 filename 参数中提取
+    // 2. 兜底从 URL 路径的最后一段提取
     private String resolveFileName(String disposition, String url) {
         if (disposition != null) {
             String[] parts = disposition.split(";");
@@ -170,6 +208,7 @@ public class HttpClientHelper {
         }
     }
 
+    // 对 URL 编码的字符串进行 UTF-8 解码，解码失败时返回原始字符串
     private String decode(String value) {
         try {
             return java.net.URLDecoder.decode(value, StandardCharsets.UTF_8);
@@ -178,6 +217,7 @@ public class HttpClientHelper {
         }
     }
 
+    // 将 Content-Length 响应头字符串解析为 Long 值，格式异常时返回 null
     private Long parseContentLength(String header) {
         if (header == null) {
             return null;
@@ -189,6 +229,7 @@ public class HttpClientHelper {
         }
     }
 
+    // 从输入流中读取全部数据到字节数组，累计字节数超过 maxBytes 时抛出异常防止 OOM
     private byte[] readWithLimit(InputStream inputStream, long maxBytes) throws IOException {
         try (InputStream in = inputStream; ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[8192];
@@ -205,6 +246,7 @@ public class HttpClientHelper {
         }
     }
 
+    // 将输入流包装为带大小限制的代理流，读取过程中累计字节数超过 maxBytes 时抛出异常
     private InputStream wrapWithLimit(InputStream inputStream, long maxBytes) {
         if (maxBytes <= 0) {
             return inputStream;

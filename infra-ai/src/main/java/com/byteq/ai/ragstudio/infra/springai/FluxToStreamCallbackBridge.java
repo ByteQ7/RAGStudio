@@ -25,6 +25,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class FluxToStreamCallbackBridge {
 
+    /** 是否启用思考内容回调（默认关闭，不再推送 type=think 事件） */
+    private static boolean thinkingEnabled = false;
+
+    public static void setThinkingEnabled(boolean enabled) {
+        thinkingEnabled = enabled;
+    }
+
     /**
      * 订阅 Flux 并桥接到 StreamCallback
      *
@@ -42,7 +49,7 @@ public class FluxToStreamCallbackBridge {
                     try {
                         // 提取思考/推理内容（DeepSeek-R1、Qwen3 等思考模型）
                         String thinking = extractThinkingContent(chunk);
-                        if (thinking != null && !thinking.isEmpty()) {
+                        if (thinking != null && !thinking.isEmpty() && thinkingEnabled) {
                             callback.onThinking(thinking);
                         }
                         // 提取正文内容

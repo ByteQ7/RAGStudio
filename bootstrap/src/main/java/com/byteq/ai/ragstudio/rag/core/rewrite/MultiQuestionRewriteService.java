@@ -37,23 +37,52 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
     private final QueryTermMappingService queryTermMappingService;
     private final PromptTemplateLoader promptTemplateLoader;
 
+    /**
+     * 将用户问题改写为适合检索的查询（不拆分多问句）
+     *
+     * @param userQuestion 原始用户问题
+     * @return 改写后的查询文本
+     */
     @Override
     @RagTraceNode(name = "query-rewrite", type = "REWRITE")
     public String rewrite(String userQuestion) {
         return rewriteAndSplit(userQuestion).rewrittenQuestion();
     }
 
+    /**
+     * 改写用户问题并拆分为多个子问题（无历史上下文）
+     *
+     * @param userQuestion 原始用户问题
+     * @return 改写结果，包含改写后的问题和子问题列表
+     */
     @Override
     public RewriteResult rewriteWithSplit(String userQuestion) {
         return rewriteAndSplit(userQuestion);
     }
 
+    /**
+     * 改写用户问题并拆分为多个子问题，结合会话历史理解上下文
+     *
+     * @param userQuestion 原始用户问题
+     * @param history      会话历史消息列表
+     * @return 改写结果，包含改写后的问题和子问题列表
+     */
     @Override
     @RagTraceNode(name = "query-rewrite-and-split", type = "REWRITE")
     public RewriteResult rewriteWithSplit(String userQuestion, List<ChatMessage> history) {
         return rewriteWithSplit(userQuestion, history, null);
     }
 
+    /**
+     * 改写用户问题并拆分子问题，支持会话历史和知识库 ID 过滤
+     * <p>
+     * 流程：术语归一化 -> LLM 改写+拆分（若开关开启）-> 失败时降级为归一化问题
+     *
+     * @param userQuestion     原始用户问题
+     * @param history          会话历史消息列表
+     * @param knowledgeBaseIds 用户选定的知识库 ID 列表，用于过滤术语映射规则
+     * @return 改写结果，包含改写后的问题和子问题列表
+     */
     @Override
     @RagTraceNode(name = "query-rewrite-and-split-with-kb", type = "REWRITE")
     public RewriteResult rewriteWithSplit(String userQuestion, List<ChatMessage> history, List<String> knowledgeBaseIds) {
@@ -86,6 +115,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
         // 兜底：使用归一化结果 + 规则拆分
     }
 
+    // 调用 LLM 执行查询改写和多问句拆分，失败时使用归一化问题作为兜底
     private RewriteResult callLLMRewriteAndSplit(String normalizedQuestion,
                                                  String originalQuestion,
                                                  List<ChatMessage> history) {
@@ -116,6 +146,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
         return new RewriteResult(normalizedQuestion, List.of(normalizedQuestion));
     }
 
+    // 构建查询改写的 LLM 请求，组装系统提示词、最近两轮对话历史和用户问题
     private ChatRequest buildRewriteRequest(String systemPrompt,
                                             String question,
                                             List<ChatMessage> history) {
@@ -146,6 +177,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
     }
 
 
+    // 解析 LLM 返回的 JSON 结果，提取改写后的问题和子问题列表
     private RewriteResult parseRewriteAndSplit(String raw) {
         try {
             // 移除可能存在的 Markdown 代码块标记
@@ -184,6 +216,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
         }
     }
 
+    // 基于规则的多问句拆分：按常见标点分隔符拆分，并为每个子句补全问号
     private List<String> ruleBasedSplit(String question) {
         // 兜底：按常见分隔符拆分
         List<String> parts = Arrays.stream(question.split("[?？。；;\\n]+"))

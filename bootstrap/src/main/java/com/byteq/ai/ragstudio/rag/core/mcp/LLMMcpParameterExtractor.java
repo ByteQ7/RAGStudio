@@ -42,11 +42,18 @@ public class LLMMcpParameterExtractor implements McpParameterExtractor {
     private final PromptTemplateLoader promptTemplateLoader;
     private final Gson gson = new Gson();
 
+    /**
+     * 从用户问题中提取工具参数（使用默认提示词模板）
+     */
     @Override
     public Map<String, Object> extractParameters(String userQuestion, Tool tool) {
         return extractParameters(userQuestion, tool, null);
     }
 
+    /**
+     * 基于 LLM 从用户问题中提取工具参数
+     * <p>流程：构建系统提示词和用户提示词 -> 调用 LLM -> 解析 JSON 响应 -> 填充默认值</p>
+     */
     @Override
     public Map<String, Object> extractParameters(String userQuestion, Tool tool, String customPromptTemplate) {
         if (tool == null || tool.inputSchema() == null || CollUtil.isEmpty(tool.inputSchema().properties())) {
@@ -97,6 +104,7 @@ public class LLMMcpParameterExtractor implements McpParameterExtractor {
         }
     }
 
+    // 构建工具的默认参数映射，遍历工具定义中的所有参数并填充其默认值
     private Map<String, Object> buildDefaultParameters(Tool tool) {
         Map<String, Object> defaultParams = new HashMap<>();
         fillDefaults(defaultParams, tool);

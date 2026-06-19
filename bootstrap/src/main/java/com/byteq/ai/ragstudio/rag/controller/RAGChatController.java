@@ -52,7 +52,7 @@ public class RAGChatController {
     @PostMapping(value = "/rag/v3/chat", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter chat(@Valid @RequestBody ChatRequest request) {
         SseEmitter emitter = new SseEmitter(ragDefaultProperties.getSseTimeoutMs());
-        ragChatService.streamChat(request.getQuestion(), request.getConversationId(), request.getDeepThinking(), request.getKnowledgeBaseIds(), emitter);
+        ragChatService.streamChat(request.getQuestion(), request.getConversationId(), null, request.getKnowledgeBaseIds(), emitter, request.getMode());
         return emitter;
     }
 

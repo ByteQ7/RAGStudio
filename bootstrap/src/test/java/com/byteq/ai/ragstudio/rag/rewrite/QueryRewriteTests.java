@@ -64,6 +64,7 @@ public class QueryRewriteTests {
             %s
             """;
 
+    // 参数化测试：验证多种典型用户问题（含实体查询、闲聊、多主题等）能被正确改写为非空查询
     @ParameterizedTest(name = "QueryRewrite 用例 {index}：{0}")
     @ValueSource(strings = {
             "请帮我查询下直快赔数据安全文档",
@@ -77,6 +78,7 @@ public class QueryRewriteTests {
         Assertions.assertFalse(rewritten.isBlank());
     }
 
+    // 验证查询改写服务能否正确处理术语映射场景（如"钉钉"等产品名）
     @Test
     public void testQueryTermMapping() {
         defaultQueryRewriteService.rewrite("阿里使用的是钉钉么？");

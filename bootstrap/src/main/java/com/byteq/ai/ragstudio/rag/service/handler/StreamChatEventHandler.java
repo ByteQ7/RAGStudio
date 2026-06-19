@@ -1,7 +1,9 @@
 package com.byteq.ai.ragstudio.rag.service.handler;
 
 import cn.hutool.core.util.StrUtil;
+import com.byteq.ai.ragstudio.rag.core.agent.AgentStep;
 import com.byteq.ai.ragstudio.rag.dao.entity.ConversationDO;
+import com.byteq.ai.ragstudio.rag.dto.AgentStepPayload;
 import com.byteq.ai.ragstudio.rag.dto.CompletionPayload;
 import com.byteq.ai.ragstudio.rag.dto.MessageDelta;
 import com.byteq.ai.ragstudio.rag.dto.MetaPayload;
@@ -33,6 +35,7 @@ public class StreamChatEventHandler implements StreamCallback {
     private final StringBuilder thinking = new StringBuilder();
     private long thinkingStartMs;
     private int thinkingDurationSeconds;
+    private String agentStepsJson;
 
     /**
      * 使用参数对象构造（推荐）
@@ -84,7 +87,8 @@ public class StreamChatEventHandler implements StreamCallback {
         if (StrUtil.isNotBlank(content)) {
             try {
                 String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-                ChatMessage message = ChatMessage.assistant(content, thinkingContent, resolveThinkingDuration());
+                ChatMessage message = ChatMessage.assistant(content, thinkingContent,
+                        resolveThinkingDuration(), agentStepsJson);
                 messageId = memoryService.append(conversationId, userId, message);
             } catch (Exception e) {
                 log.error("取消时持久化消息失败，conversationId：{}", conversationId, e);
@@ -125,6 +129,21 @@ public class StreamChatEventHandler implements StreamCallback {
     }
 
     @Override
+    public void onAgentStep(Object step) {
+        if (step instanceof AgentStep agentStep) {
+            AgentStepPayload payload = AgentStepPayload.from(agentStep);
+            sender.sendEvent(SSEEventType.AGENT_STEP.value(), payload);
+            log.debug("推送 Agent 步骤 SSE: iteration={}, action={}, toolName={}",
+                    agentStep.getIteration(), agentStep.getAction(), agentStep.getToolName());
+        }
+    }
+
+    @Override
+    public void onAgentStepsComplete(String agentStepsJson) {
+        this.agentStepsJson = agentStepsJson;
+    }
+
+    @Override
     public void onComplete() {
         if (taskManager.isCancelled(taskId)) {
             return;
@@ -132,7 +151,8 @@ public class StreamChatEventHandler implements StreamCallback {
         String messageId = null;
         try {
             String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-            ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent, resolveThinkingDuration());
+            ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent,
+                    resolveThinkingDuration(), agentStepsJson);
             messageId = memoryService.append(conversationId, userId, message);
         } catch (Exception e) {
             log.error("对话完成时持久化消息失败，conversationId：{}", conversationId, e);
@@ -154,6 +174,7 @@ public class StreamChatEventHandler implements StreamCallback {
         sender.fail(t);
     }
 
+    // 按 Unicode 码点将内容分块发送，确保多字节字符（如 emoji）不会被截断
     private void sendChunked(String type, String content) {
         int length = content.length();
         int idx = 0;
@@ -175,10 +196,12 @@ public class StreamChatEventHandler implements StreamCallback {
         }
     }
 
+    // 解析深度思考耗时，未记录则返回 null
     private Integer resolveThinkingDuration() {
         return thinkingDurationSeconds > 0 ? thinkingDurationSeconds : null;
     }
 
+    // 获取会话标题用于完成事件推送，新对话无标题时返回默认值
     private String resolveTitleForEvent() {
         if (!sendTitleOnComplete) {
             return null;

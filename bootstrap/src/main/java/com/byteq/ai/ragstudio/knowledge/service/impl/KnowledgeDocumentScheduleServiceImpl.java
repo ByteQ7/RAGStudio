@@ -40,6 +40,7 @@ public class KnowledgeDocumentScheduleServiceImpl implements KnowledgeDocumentSc
         syncSchedule(documentDO, false);
     }
 
+    // 同步定时调度记录：校验文档类型和调度参数 → 计算下次执行时间 → 创建或更新调度记录
     private void syncSchedule(KnowledgeDocumentDO documentDO, boolean allowCreate) {
         if (documentDO == null) {
             return;
@@ -101,6 +102,7 @@ public class KnowledgeDocumentScheduleServiceImpl implements KnowledgeDocumentSc
         }
     }
 
+    // 删除文档关联的所有定时调度记录和执行历史记录
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteByDocId(String docId) {

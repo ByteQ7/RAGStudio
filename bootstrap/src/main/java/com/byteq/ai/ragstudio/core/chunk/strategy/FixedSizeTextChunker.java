@@ -255,6 +255,7 @@ public class FixedSizeTextChunker implements ChunkingStrategy {
         return false;
     }
 
+    // 判断指定位置是否为列表项开头（如 "2." "10）" 等数字+标点格式），用于避免 URL 修复时吞掉列表项
     private boolean isListItemStart(String s, int i) {
         // 跳过可能存在的空格/制表符（一般是新行后的缩进）
         int p = i;
@@ -271,11 +272,13 @@ public class FixedSizeTextChunker implements ChunkingStrategy {
         return false;
     }
 
+    // 判断指定位置是否为 URL 起始（http:// 或 https://）
     private boolean looksLikeUrlStart(String s, int i) {
         if (i < 0 || i >= s.length()) return false;
         return s.startsWith("http://", i) || s.startsWith("https://", i);
     }
 
+    // 判断字符是否属于合法 URL 字符（字母、数字及 RFC 3986 规定的保留/非保留字符）
     private boolean isUrlChar(char c) {
         if (c >= 'a' && c <= 'z') return true;
         if (c >= 'A' && c <= 'Z') return true;
@@ -289,10 +292,12 @@ public class FixedSizeTextChunker implements ChunkingStrategy {
                 || c == ',' || c == ';' || c == '=' || c == '%';
     }
 
+    // 判断字符是否为 URL 中常见的标点符号（. / ? & = - _ %）
     private boolean isCommonUrlPunct(char c) {
         return c == '.' || c == '/' || c == '?' || c == '&' || c == '=' || c == '-' || c == '_' || c == '%';
     }
 
+    // 判断字符是否为 CJK（中日韩）文字字符（排除标点和空白）
     private boolean isCjkWordChar(char c) {
         if (c == 0) return false;
         if (Character.isWhitespace(c)) return false;
@@ -300,6 +305,7 @@ public class FixedSizeTextChunker implements ChunkingStrategy {
         return !isCjkPunctuation(c);
     }
 
+    // 判断字符是否属于 CJK 统一汉字或半角/全角字符区块
     private boolean isCjkOrFullWidthLetterOrDigit(char c) {
         if (c == 0) return false;
         Character.UnicodeBlock block = Character.UnicodeBlock.of(c);
@@ -310,6 +316,7 @@ public class FixedSizeTextChunker implements ChunkingStrategy {
                 || block == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS;
     }
 
+    // 判断字符是否为 CJK 标点符号（包括 Unicode 区块和常见中文标点字符）
     private boolean isCjkPunctuation(char c) {
         Character.UnicodeBlock block = Character.UnicodeBlock.of(c);
         return block == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION

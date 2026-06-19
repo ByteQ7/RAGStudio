@@ -72,6 +72,15 @@ public class RoutingLLMService implements LLMService {
                         }));
     }
 
+    /**
+     * 同步聊天（带路由 + 自动 fallback）
+     * <p>
+     * 通过 ModelSelector 选取候选模型列表，经 ModelRoutingExecutor 按优先级逐模型尝试，
+     * 失败时自动 fallback 到下一个候选模型。
+     *
+     * @param request 聊天请求
+     * @return 模型返回的完整回答
+     */
     @Override
     @RagTraceNode(name = "llm-chat-routing", type = "LLM_ROUTING")
     public String chat(ChatRequest request) {
@@ -85,6 +94,15 @@ public class RoutingLLMService implements LLMService {
         );
     }
 
+    /**
+     * 同步聊天（指定模型 ID）
+     * <p>
+     * modelId 为空时走默认路由；不为空时从候选列表中查找匹配模型，仍走健康检查与 fallback。
+     *
+     * @param request 聊天请求
+     * @param modelId 指定模型 ID，为空时走默认路由
+     * @return 模型返回的完整回答
+     */
     @Override
     public String chat(ChatRequest request, String modelId) {
         if (!StringUtils.hasText(modelId)) {
@@ -165,6 +183,7 @@ public class RoutingLLMService implements LLMService {
         throw notifyAllFailed(callback, lastError);
     }
 
+    // 校验候选模型列表是否非空且至少有一个配置了有效 API Key 的模型
     private void validateTargets(List<ModelTarget> targets) {
         if (CollUtil.isEmpty(targets)) {
             throw new RemoteException(NO_MODEL_OR_APIKEY_MESSAGE);
@@ -178,6 +197,7 @@ public class RoutingLLMService implements LLMService {
         }
     }
 
+    // 根据模型目标的提供商查找对应的 ChatClient，未找到时记录警告并返回 null
     private ChatClient resolveClient(ModelTarget target, String label) {
         ChatClient client = clientsByProvider.get(target.candidate().getProvider());
         if (client == null) {
@@ -187,6 +207,7 @@ public class RoutingLLMService implements LLMService {
         return client;
     }
 
+    // 所有候选模型均失败时，通过回调通知错误并构造统一的 RemoteException
     private RemoteException notifyAllFailed(StreamCallback callback, Throwable lastError) {
         RemoteException finalException = new RemoteException(
                 STREAM_ALL_FAILED_MESSAGE,
@@ -197,6 +218,7 @@ public class RoutingLLMService implements LLMService {
         return finalException;
     }
 
+    // 根据 modelId 从候选模型列表中查找匹配的模型目标，未找到时抛出异常
     private ModelTarget resolveTarget(String modelId, boolean deepThinking) {
         return selector.selectChatCandidates(deepThinking).stream()
                 .filter(target -> modelId.equals(target.id()))

@@ -27,6 +27,14 @@ public class VectorGlobalSearchChannel implements SearchChannel {
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final CollectionParallelRetriever parallelRetriever;
 
+    /**
+     * 构造向量全局检索通道
+     *
+     * @param retrieverService       向量检索服务
+     * @param properties             检索通道配置
+     * @param knowledgeBaseMapper    知识库 Mapper，用于查询所有知识库的 collection
+     * @param innerRetrievalExecutor 内部检索线程池
+     */
     public VectorGlobalSearchChannel(RetrieverService retrieverService,
                                      SearchChannelProperties properties,
                                      KnowledgeBaseMapper knowledgeBaseMapper,
@@ -36,22 +44,39 @@ public class VectorGlobalSearchChannel implements SearchChannel {
         this.parallelRetriever = new CollectionParallelRetriever(retrieverService, innerRetrievalExecutor);
     }
 
+    /**
+     * 获取通道名称
+     */
     @Override
     public String getName() {
         return "VectorGlobalSearch";
     }
 
+    /**
+     * 获取通道优先级，数值越小优先级越高
+     */
     @Override
     public int getPriority() {
         return 10;  // 较低优先级
     }
 
+    /**
+     * 判断该通道是否启用（当前全局检索已禁用）
+     */
     @Override
     public boolean isEnabled(SearchContext context) {
         // 已禁用全局检索，只检索用户选择的知识库
         return false;
     }
 
+    /**
+     * 执行向量全局检索
+     * <p>
+     * 流程：获取所有知识库 collection -> 并行检索 -> 封装结果
+     *
+     * @param context 检索上下文
+     * @return 检索通道结果
+     */
     @Override
     public SearchChannelResult search(SearchContext context) {
         long startTime = System.currentTimeMillis();
@@ -134,6 +159,9 @@ public class VectorGlobalSearchChannel implements SearchChannel {
         return parallelRetriever.executeParallelRetrieval(question, collections, topK);
     }
 
+    /**
+     * 获取通道类型
+     */
     @Override
     public SearchChannelType getType() {
         return SearchChannelType.VECTOR_GLOBAL;

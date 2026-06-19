@@ -12,6 +12,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 基于 pgvector 的向量存储服务实现
+ * 提供文档切片的向量写入、更新、删除等操作，使用 PostgreSQL + pgvector 扩展
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -79,6 +83,7 @@ public class PgVectorStoreService implements VectorStoreService {
         );
     }
 
+    // 构建向量记录的 metadata JSON，合并 chunk 原始元数据并补充 collectionName、docId、chunkIndex
     private String buildMetadataJson(String collectionName, String docId, VectorChunk chunk) {
         Map<String, Object> meta = new LinkedHashMap<>();
         if (chunk.getMetadata() != null) {
@@ -95,6 +100,7 @@ public class PgVectorStoreService implements VectorStoreService {
         }
     }
 
+    // 将 float 数组转换为 pgvector 可识别的字面量格式（如 [0.1,0.2,...]）
     private String toVectorLiteral(float[] embedding) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < embedding.length; i++) {

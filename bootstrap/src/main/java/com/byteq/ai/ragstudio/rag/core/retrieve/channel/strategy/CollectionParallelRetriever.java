@@ -18,11 +18,13 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Strin
 
     private final RetrieverService retrieverService;
 
+    // 初始化 Collection 并行检索器，指定检索服务和线程池
     public CollectionParallelRetriever(RetrieverService retrieverService, Executor executor) {
         super(executor);
         this.retrieverService = retrieverService;
     }
 
+    // 在指定 Collection 中执行向量检索，失败时返回空列表
     @Override
     protected List<RetrievedChunk> createRetrievalTask(String question, String collectionName, int topK) {
         try {
@@ -39,11 +41,13 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Strin
         }
     }
 
+    // 获取目标标识名称，用于日志和调试
     @Override
     protected String getTargetIdentifier(String collectionName) {
         return "Collection: " + collectionName;
     }
 
+    // 获取统计名称，用于日志输出
     @Override
     protected String getStatisticsName() {
         return "全局检索";

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowUpRight, BookOpen, Brain, Check, Lightbulb, Send, Square } from "lucide-react";
+import { ArrowUpRight, BookOpen, Check, Lightbulb, Send, Square } from "lucide-react";
 
 import { KnowledgeBaseSelector } from "@/components/chat/KnowledgeBaseSelector";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
@@ -46,7 +46,7 @@ export function WelcomeScreen() {
   const [knowledgeBaseIds, setKnowledgeBaseIds] = React.useState<string[]>([]);
   const isComposingRef = React.useRef(false);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const { sendMessage, isStreaming, cancelGeneration, deepThinkingEnabled, setDeepThinkingEnabled } =
+  const { sendMessage, isStreaming, cancelGeneration } =
     useChatStore();
 
   const focusInput = React.useCallback(() => {
@@ -202,7 +202,7 @@ export function WelcomeScreen() {
             ref={textareaRef}
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            placeholder={deepThinkingEnabled ? "输入需要深度分析的问题..." : "输入你的问题..."}
+            placeholder={"输入你的问题..."}
             className="max-h-40 min-h-[64px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none"
             rows={2}
             onFocus={() => setIsFocused(true)}
@@ -226,26 +226,7 @@ export function WelcomeScreen() {
             aria-label="发送消息"
           />
           <div className="flex items-center gap-3 border-t border-gray-100 pt-3 mt-1">
-            <button
-              type="button"
-              onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-              disabled={isStreaming}
-              aria-pressed={deepThinkingEnabled}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150",
-                deepThinkingEnabled
-                  ? "bg-indigo-50 text-indigo-600"
-                  : "text-gray-400 hover:bg-gray-50 hover:text-gray-600",
-                isStreaming && "cursor-not-allowed opacity-50"
-              )}
-            >
-              <Brain className="h-3.5 w-3.5" />
-              <span>深度思考</span>
-              {deepThinkingEnabled ? (
-                <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-              ) : null}
-            </button>
-            <div className="flex-1" />
+              <div className="flex-1" />
             <p className="hidden text-[11px] text-gray-300 sm:block">
               <kbd className="text-gray-500">Enter</kbd> 发送 · <kbd className="text-gray-500">Shift+Enter</kbd> 换行
             </p>
@@ -272,14 +253,7 @@ export function WelcomeScreen() {
           </div>
         </div>
 
-        {deepThinkingEnabled ? (
-          <p className="mt-3 text-xs text-indigo-500">
-            <span className="inline-flex items-center gap-1.5">
-              <Lightbulb className="h-3.5 w-3.5" />
-              深度思考模式已开启，AI 将进行更深入的分析推理
-            </span>
-          </p>
-        ) : null}
+
         {isStreaming ? (
           <p className="mt-2 text-xs text-gray-400 animate-pulse-soft">生成中...</p>
         ) : null}

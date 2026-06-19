@@ -24,6 +24,10 @@ import java.util.stream.Collectors;
 
 /**
  * MCP Server 管理服务实现
+ * <p>
+ * 实现外部 MCP Server 配置的完整生命周期管理，包括 CRUD 操作、启用/禁用切换、
+ * 连接测试和重新加载。所有配置变更都会同步触发连接管理器的连接/断开操作。
+ * </p>
  */
 @Slf4j
 @Service
@@ -236,6 +240,7 @@ public class McpServerServiceImpl implements McpServerService {
 
     // ==================== 内部方法 ====================
 
+    // 将 DO 转换为 VO，填充运行时的工具数量和实时连接状态
     private McpServerVO toVO(McpServerDO server) {
         McpServerVO vo = BeanUtil.copyProperties(server, McpServerVO.class);
         vo.setHeaders(server.getHeaders());
@@ -270,6 +275,7 @@ public class McpServerServiceImpl implements McpServerService {
         mcpServerMapper.updateById(server);
     }
 
+    // 将指定 MCP Server 的连接状态更新为已断开
     private void updateDisconnectedStatus(String serverId) {
         McpServerDO server = mcpServerMapper.selectById(serverId);
         if (server == null) return;

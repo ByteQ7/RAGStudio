@@ -120,6 +120,12 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
     }
 
     // ----------- 1) 线性扫描生成块 -----------
+    // 块扫描流程:
+    // 1. 逐行扫描文本，识别行类型（代码围栏、标题、原子行、空行、普通文本）
+    // 2. 代码围栏（```）进入/退出 CODE 状态，整块保持完整
+    // 3. 标题行和原子行（图片/链接）作为独立块
+    // 4. 连续非空行合并为段落块，空行作为段落边界
+    // 5. 最后合并尾部空白，避免产生空白块
     private List<Block> segmentToBlocks(String text) {
         List<Block> blocks = new ArrayList<>();
         int n = text.length();
@@ -232,6 +238,10 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
     }
 
     // ----------- 2) 打包成 chunk（仅在块边界切） -----------
+    // 块打包流程:
+    // 1. 贪心地将连续的块累加到当前 chunk，直到超过 max 上限
+    // 2. 若当前 chunk 小于 min 下限，则强制吸收下一个块（允许超限）
+    // 3. 末尾 chunk 过小时尝试向前合并，避免产生孤立短块
     private List<int[]> packBlocksToChunks(List<Block> blocks, int textLen, int min, int target, int max) {
         List<int[]> ranges = new ArrayList<>();
         int i = 0;
@@ -280,6 +290,7 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
     }
 
     // ----------- 3) 物化为 Chunk，必要时追加 overlap（复制原文尾部） -----------
+    // 将范围列表转为 VectorChunk 对象，若开启 overlap 则将上一块尾部文本拼接到当前块开头
     private List<VectorChunk> materialize(String text, List<int[]> ranges, int overlap) {
         if (ranges.isEmpty()) return List.of();
         List<VectorChunk> out = new ArrayList<>();
@@ -309,11 +320,13 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
     }
 
     // ----------- 小工具 -----------
+    // 从指定位置查找下一个换行符的位置，未找到则返回字符串长度
     private int indexOfNl(String s, int from) {
         int p = s.indexOf('\n', from);
         return p < 0 ? s.length() : p;
     }
 
+    // 去除字符串右侧空白字符，保留左侧空白（避免改变段落缩进结构）
     private String trimRightKeepLeft(String s) {
         int r = s.length();
         while (r > 0 && Character.isWhitespace(s.charAt(r - 1)) && s.charAt(r - 1) != '\n' && s.charAt(r - 1) != '\r') {
@@ -322,6 +335,7 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
         return s.substring(0, r);
     }
 
+    // 判断指定范围 [from, to) 内是否全部为空白字符（空格、制表符、换行）
     private boolean isAllBlank(String s, int from, int to) {
         for (int i = from; i < to; i++) {
             char c = s.charAt(i);
@@ -330,6 +344,7 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
         return true;
     }
 
+    // 取字符串末尾指定字符数的子串，用于生成 overlap 尾部
     private String tailByChars(String s, int n) {
         if (n <= 0) return "";
         int len = s.length();

@@ -40,6 +40,7 @@ public class ChunkEmbeddingService {
         applyEmbeddings(chunks, vectors);
     }
 
+    // 将嵌入向量结果填充到对应的文本块中，校验结果数量一致性后将 List<Float> 转为 float[] 并原地赋值
     private void applyEmbeddings(List<VectorChunk> chunks, List<List<Float>> vectors) {
         if (vectors == null || vectors.size() != chunks.size()) {
             throw new ClientException("Embedding result size mismatch");

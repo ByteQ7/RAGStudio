@@ -33,8 +33,17 @@ public class RAGChatServiceImpl implements RAGChatService {
     private final StreamChatTraceRunner traceRunner;
     private final StreamTaskManager taskManager;
 
+    // 发起 SSE 流式对话:
+    // 1. 生成会话 ID 和任务 ID
+    // 2. 创建 SSE 回调处理器
+    // 3. 通过限流器入队，在链路追踪中构建上下文并执行对话管线
     @Override
     public void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, SseEmitter emitter) {
+        streamChat(question, conversationId, deepThinking, knowledgeBaseIds, emitter, "rag");
+    }
+
+    @Override
+    public void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, SseEmitter emitter, String mode) {
         String actualConversationId = StrUtil.isBlank(conversationId) ? IdUtil.getSnowflakeNextIdStr() : conversationId;
         String taskId = IdUtil.getSnowflakeNextIdStr();
         StreamCallback callback = callbackFactory.createChatEventHandler(emitter, actualConversationId, taskId);
@@ -49,11 +58,13 @@ public class RAGChatServiceImpl implements RAGChatService {
                             .userId(UserContext.getUserId())
                             .callback(traceAware)
                             .knowledgeBaseIds(CollUtil.isEmpty(knowledgeBaseIds) ? List.of() : knowledgeBaseIds)
+                            .mode(mode)
                             .build();
                     chatPipeline.execute(ctx);
                 }));
     }
 
+    // 根据任务 ID 停止正在进行的流式对话
     @Override
     public void stopTask(String taskId) {
         taskManager.cancel(taskId);

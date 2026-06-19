@@ -187,6 +187,7 @@ public class MultiChannelRetrievalEngine {
         return chunks;
     }
 
+    // 构建指定通道的空结果对象，用于通道执行异常时的降级返回
     private SearchChannelResult emptyResult(SearchChannel channel) {
         return SearchChannelResult.builder()
                 .channelType(channel.getType())

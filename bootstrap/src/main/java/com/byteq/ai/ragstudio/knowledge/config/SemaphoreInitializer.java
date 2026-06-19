@@ -18,6 +18,7 @@ public class SemaphoreInitializer {
     private final RedissonClient redissonClient;
     private final RagSemaphoreProperties semaphoreProperties;
 
+    // 初始化文档上传并发控制信号量，从配置中读取最大并发数并尝试设置许可数量
     @PostConstruct
     public void documentUploadSemaphoreInitialize() {
         RagSemaphoreProperties.PermitExpirableConfig config = semaphoreProperties.getDocumentUpload();

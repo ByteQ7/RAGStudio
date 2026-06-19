@@ -42,11 +42,17 @@ public class KnowledgeBaseSelectionChannel implements SearchChannel {
         return 1;
     }
 
+    /**
+     * 当用户选择了至少一个知识库集合时启用该通道
+     */
     @Override
     public boolean isEnabled(SearchContext context) {
         return CollUtil.isNotEmpty(context.getSelectedCollectionNames());
     }
 
+    /**
+     * 对用户选定的知识库集合执行并行向量检索，topK 按配置的倍数放大后传入
+     */
     @Override
     public SearchChannelResult search(SearchContext context) {
         long startTime = System.currentTimeMillis();

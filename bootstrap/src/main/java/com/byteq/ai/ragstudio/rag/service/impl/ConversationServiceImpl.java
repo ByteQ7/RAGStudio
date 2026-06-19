@@ -38,6 +38,7 @@ public class ConversationServiceImpl implements ConversationService {
     private final MemoryProperties memoryProperties;
     private final ConversationTitleGenerator titleGenerator;
 
+    // 根据用户 ID 查询会话列表，按最后活动时间倒序排列
     @Override
     public List<ConversationVO> listByUserId(String userId) {
         if (StrUtil.isBlank(userId)) {

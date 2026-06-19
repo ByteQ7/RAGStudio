@@ -51,6 +51,16 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     private final VectorStoreAdmin vectorStoreAdmin;
     private final S3Client s3Client;
 
+    /**
+     * 创建知识库
+     * <p>
+     * 处理流程：
+     * 1. 名称重复校验
+     * 2. 创建 S3 存储桶
+     * 3. 插入数据库记录并初始化向量空间
+     * 4. 若 DB 或向量空间创建失败，补偿删除 S3 桶
+     * </p>
+     */
     @Transactional(rollbackFor = Exception.class)
     @Override
     public String create(KnowledgeBaseCreateRequest requestParam) {
@@ -113,6 +123,10 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         }
     }
 
+    /**
+     * 更新知识库
+     * <p>若修改了嵌入模型，需校验知识库下不存在已向量化文档，否则拒绝修改。</p>
+     */
     @Override
     public void update(KnowledgeBaseUpdateRequest requestParam) {
         KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(requestParam.getId());
@@ -144,6 +158,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         knowledgeBaseMapper.updateById(kb);
     }
 
+    /**
+     * 重命名知识库，包含名称重复校验（排除当前知识库自身）
+     */
     @Override
     public void rename(String kbId, KnowledgeBaseUpdateRequest requestParam) {
         KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(kbId);
@@ -174,6 +191,15 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         log.info("成功重命名知识库, kbId={}, newName={}", kbId, requestParam.getName());
     }
 
+    /**
+     * 删除知识库
+     * <p>
+     * 处理流程：
+     * 1. 校验知识库存在且无文档
+     * 2. 逻辑删除数据库记录
+     * 3. 清理 S3 存储桶和向量集合
+     * </p>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(String kbId) {
@@ -258,6 +284,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         }
     }
 
+    // 根据 ID 查询知识库详情，不存在或已删除时抛出异常
     @Override
     public KnowledgeBaseVO queryById(String kbId) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
@@ -267,6 +294,15 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         return BeanUtil.toBean(kbDO, KnowledgeBaseVO.class);
     }
 
+    /**
+     * 分页查询知识库列表
+     * <p>
+     * 处理流程：
+     * 1. 按名称模糊搜索分页查询知识库
+     * 2. 批量统计每个知识库下的文档数量
+     * 3. 将文档数量填充到返回结果中
+     * </p>
+     */
     @Override
     public IPage<KnowledgeBaseVO> pageQuery(KnowledgeBasePageRequest requestParam) {
         LambdaQueryWrapper<KnowledgeBaseDO> queryWrapper = Wrappers.lambdaQuery(KnowledgeBaseDO.class)

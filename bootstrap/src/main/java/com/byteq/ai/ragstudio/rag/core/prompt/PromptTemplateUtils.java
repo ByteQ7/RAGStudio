@@ -7,11 +7,24 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 提示词模板工具类
+ * <p>
+ * 提供模板占位符填充、连续空行清理、section 分隔解析等文本处理能力，
+ * 被 {@link PromptTemplateLoader} 和 {@link RAGPromptService} 调用。
+ * </p>
+ */
 public final class PromptTemplateUtils {
 
     private static final Pattern MULTI_BLANK_LINES = Pattern.compile("(\\n){3,}");
     private static final Pattern SECTION_HEADER = Pattern.compile("^---\\s*section:\\s*(\\S+)\\s*---$", Pattern.MULTILINE);
 
+    /**
+     * 清理提示词文本，将连续三个及以上的换行缩减为两个，并去除首尾空白
+     *
+     * @param prompt 原始提示词文本
+     * @return 清理后的提示词文本
+     */
     public static String cleanupPrompt(String prompt) {
         if (prompt == null) {
             return "";
@@ -19,6 +32,13 @@ public final class PromptTemplateUtils {
         return MULTI_BLANK_LINES.matcher(prompt).replaceAll("\n\n").trim();
     }
 
+    /**
+     * 将模板中的 {key} 占位符替换为对应的值
+     *
+     * @param template 模板字符串
+     * @param slots    占位符名称到替换值的映射
+     * @return 替换后的字符串
+     */
     public static String fillSlots(String template, Map<String, String> slots) {
         if (template == null) {
             return "";

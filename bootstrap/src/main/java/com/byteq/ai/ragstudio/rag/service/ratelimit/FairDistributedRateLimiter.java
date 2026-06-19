@@ -33,6 +33,11 @@ import java.util.function.IntSupplier;
 
 /**
  * 分布式公平限流器
+ * <p>
+ * 基于 Redis 分布式信号量 + 公平排队队列实现的全局限流器。
+ * 核心机制：请求入队后通过定时轮询或跨实例通知（RTopic）驱动抢占，
+ * 确保按 FIFO 顺序公平分配并发许可（permit），支持超时取消和外部取消。
+ * </p>
  */
 @Slf4j
 public final class FairDistributedRateLimiter {
@@ -91,6 +96,9 @@ public final class FairDistributedRateLimiter {
         this.pollNotifier = new PollNotifier(this::availablePermits, scheduler);
     }
 
+    /**
+     * 启动限流器，初始化信号量许可数并订阅队列通知主题
+     */
     public void start() {
         if (!started.compareAndSet(false, true)) {
             return;
@@ -102,6 +110,9 @@ public final class FairDistributedRateLimiter {
         notifyListenerId = topic.addListener(String.class, (channel, msg) -> pollNotifier.fire());
     }
 
+    /**
+     * 停止限流器，取消订阅通知主题并关闭调度线程池
+     */
     public void stop() {
         if (!started.compareAndSet(true, false)) {
             return;
@@ -281,6 +292,7 @@ public final class FairDistributedRateLimiter {
 
     // ==================== 抢占核心 ====================
 
+    // 尝试抢占 permit: 检查 ticket 状态 -> Lua 原子 claim -> 获取 permit -> grant ticket
     private boolean tryAcquireIfReady(Ticket ticket) {
         if (!ticket.isPending()) {
             return false;
@@ -318,6 +330,7 @@ public final class FairDistributedRateLimiter {
         return ticket.grant(permitId);
     }
 
+    // 为 ticket 注册定时轮询任务，周期性检查是否可抢占 permit 或已超时
     private void scheduleQueuePoll(Ticket ticket) {
         int interval = Math.max(50, pollIntervalMsSupplier.getAsInt());
         Runnable poller = () -> {
@@ -338,6 +351,7 @@ public final class FairDistributedRateLimiter {
 
     // ==================== Redis 操作 ====================
 
+    // 尝试从分布式信号量获取一个带租期的 permit
     private String tryAcquirePermit() {
         RPermitExpirableSemaphore sem = redissonClient.getPermitExpirableSemaphore(semaphoreKey);
         try {
@@ -348,10 +362,12 @@ public final class FairDistributedRateLimiter {
         }
     }
 
+    // 查询当前可用的 permit 数量
     private int availablePermits() {
         return redissonClient.getPermitExpirableSemaphore(semaphoreKey).availablePermits();
     }
 
+    // 静默释放 permit，失败仅记录日志不抛异常
     private void releasePermitQuietly(String permitId) {
         try {
             redissonClient.getPermitExpirableSemaphore(semaphoreKey).release(permitId);
@@ -374,6 +390,7 @@ public final class FairDistributedRateLimiter {
         }
     }
 
+    // 删除 entry 存活标记
     private void deleteEntryMarker(String requestId) {
         try {
             redissonClient.getBucket(entryKeyPrefix + requestId, StringCodec.INSTANCE).delete();
@@ -402,11 +419,13 @@ public final class FairDistributedRateLimiter {
         return result.size() >= 2 ? parseLong(result.get(1)) : nextQueueSeq();
     }
 
+    // 生成队列递增序号，用于保持排队的公平顺序
     private long nextQueueSeq() {
         RAtomicLong seq = redissonClient.getAtomicLong(queueSeqKey);
         return seq.incrementAndGet();
     }
 
+    // 通过 Redis Topic 发布队列变更通知，唤醒所有实例的等待 poller
     private void publishQueueNotify() {
         redissonClient.getTopic(notifyTopicKey).publish("permit_changed");
     }

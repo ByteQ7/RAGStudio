@@ -217,6 +217,7 @@ public class StreamChatTraceRunner {
         }
     }
 
+    // 截断异常信息：格式化为"异常类名: 异常消息"并按配置的最大长度截断，防止落库过大
     private String truncateError(Throwable throwable) {
         if (throwable == null) {
             return null;

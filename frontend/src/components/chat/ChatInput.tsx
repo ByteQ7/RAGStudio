@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Brain, Lightbulb, Send, Square } from "lucide-react";
+import { Send, Square } from "lucide-react";
 
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -18,8 +18,6 @@ export function ChatInput({ knowledgeBaseIds }: ChatInputProps) {
     sendMessage,
     isStreaming,
     cancelGeneration,
-    deepThinkingEnabled,
-    setDeepThinkingEnabled,
     inputFocusKey
   } = useChatStore();
 
@@ -76,7 +74,7 @@ export function ChatInput({ knowledgeBaseIds }: ChatInputProps) {
           ref={textareaRef}
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder={deepThinkingEnabled ? "输入需要深度分析的问题..." : "输入你的问题..."}
+          placeholder={"输入你的问题..."}
           className="max-h-40 min-h-[40px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] text-gray-900 shadow-none placeholder:text-gray-400 focus-visible:ring-0"
           rows={1}
           onFocus={() => setIsFocused(true)}
@@ -100,31 +98,7 @@ export function ChatInput({ knowledgeBaseIds }: ChatInputProps) {
           aria-label="聊天输入框"
         />
         <div className="flex items-center gap-2 border-t border-gray-100 pt-2 mt-1.5">
-          <button
-            type="button"
-            onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-            disabled={isStreaming}
-            aria-pressed={deepThinkingEnabled}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150",
-              deepThinkingEnabled
-                ? "bg-indigo-50 text-indigo-600"
-                : "text-gray-400 hover:bg-gray-50 hover:text-gray-600",
-              isStreaming && "cursor-not-allowed opacity-50"
-            )}
-          >
-            <Brain className="h-3.5 w-3.5" />
-            <span>深度思考</span>
-            {deepThinkingEnabled ? (
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-            ) : null}
-          </button>
-          {deepThinkingEnabled ? (
-            <span className="text-[11px] text-indigo-400 flex items-center gap-1">
-              <Lightbulb className="h-3 w-3" />
-              深度分析模式
-            </span>
-          ) : null}
+
           <div className="ml-auto flex items-center gap-3">
             <span className="hidden text-[11px] text-gray-300 sm:inline">
               <kbd className="font-sans">Enter</kbd> 发送 · <kbd className="font-sans">Shift+Enter</kbd> 换行

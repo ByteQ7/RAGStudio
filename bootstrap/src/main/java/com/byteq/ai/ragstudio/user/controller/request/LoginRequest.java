@@ -2,10 +2,19 @@ package com.byteq.ai.ragstudio.user.controller.request;
 
 import lombok.Data;
 
+/**
+ * 用户登录请求
+ */
 @Data
 public class LoginRequest {
 
+    /**
+     * 用户名
+     */
     private String username;
 
+    /**
+     * 密码
+     */
     private String password;
 }

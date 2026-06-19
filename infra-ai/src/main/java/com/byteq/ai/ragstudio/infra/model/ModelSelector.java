@@ -69,12 +69,14 @@ public class ModelSelector {
         return selectCandidates(group, group.getDefaultModel(), false, config.getProviders());
     }
 
+    // 确定首选模型 ID，深度思考模式下直接返回默认模型（后续由 filterAndSortCandidates 按 supportsThinking 过滤）
     private String resolveFirstChoiceModel(DynamicModelConfig.ModelGroup group, boolean deepThinking) {
         // 深度思考模式暂无独立的"deepThinkingModel"配置，
         // 直接返回 defaultModel，filterAndSortCandidates 会按 supportsThinking 过滤
         return group.getDefaultModel();
     }
 
+    // 从模型分组中筛选并排序候选模型，构建可用的 ModelTarget 列表
     private List<ModelTarget> selectCandidates(
             DynamicModelConfig.ModelGroup group,
             String firstChoiceModelId,
@@ -91,6 +93,10 @@ public class ModelSelector {
         return buildAvailableTargets(orderedCandidates, providers);
     }
 
+    // 候选模型筛选与排序:
+    // 1. 过滤掉已禁用的模型
+    // 2. 深度思考模式下过滤不支持 thinking 的模型
+    // 3. 按首选模型优先、优先级升序、ID 字典序排列
     private List<DynamicModelConfig.ModelEntry> filterAndSortCandidates(
             List<DynamicModelConfig.ModelEntry> candidates,
             String firstChoiceModelId,
@@ -114,6 +120,7 @@ public class ModelSelector {
         return enabled;
     }
 
+    // 将筛选后的候选模型列表转换为 ModelTarget，过滤掉不可用的条目
     private List<ModelTarget> buildAvailableTargets(
             List<DynamicModelConfig.ModelEntry> candidates,
             Map<String, DynamicModelConfig.ProviderEntry> providers) {
@@ -124,6 +131,7 @@ public class ModelSelector {
                 .collect(Collectors.toList());
     }
 
+    // 为单个候选模型构建 ModelTarget，检查健康状态和 Provider 配置是否可用
     private ModelTarget buildModelTarget(
             DynamicModelConfig.ModelEntry candidate,
             Map<String, DynamicModelConfig.ProviderEntry> providers) {
@@ -142,6 +150,7 @@ public class ModelSelector {
         return new ModelTarget(modelId, candidate, provider);
     }
 
+    // 解析模型唯一标识：优先使用配置的 ID，否则用 "provider::model" 格式生成
     private String resolveId(DynamicModelConfig.ModelEntry candidate) {
         if (StrUtil.isNotBlank(candidate.getId())) {
             return candidate.getId();

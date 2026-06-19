@@ -47,6 +47,11 @@ public class ConversationMessageVO {
     private Integer thinkingDuration;
 
     /**
+     * Agent 推理步骤 JSON（ReACT 模式下记录中间思考/工具调用过程）
+     */
+    private String agentSteps;
+
+    /**
      * 反馈值：1=点赞，-1=点踩，null=未反馈
      */
     private Integer vote;

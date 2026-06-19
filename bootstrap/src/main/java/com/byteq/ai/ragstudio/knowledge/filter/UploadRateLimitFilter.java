@@ -31,6 +31,15 @@ public class UploadRateLimitFilter extends OncePerRequestFilter {
     private final RedissonClient redissonClient;
     private final RagSemaphoreProperties semaphoreProperties;
 
+    /**
+     * 文档上传请求的限流过滤
+     * <p>
+     * 处理流程：
+     * 1. 判断是否为上传请求，非上传请求直接放行
+     * 2. 通过 Redisson 分布式信号量尝试获取上传许可
+     * 3. 获取失败返回 429（请求过多），成功则继续处理并在 finally 中释放许可
+     * </p>
+     */
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,

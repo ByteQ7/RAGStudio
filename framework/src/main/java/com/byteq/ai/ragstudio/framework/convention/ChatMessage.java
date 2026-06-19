@@ -78,6 +78,9 @@ public class ChatMessage {
      */
     private Integer thinkingDuration;
 
+    /** Agent 推理步骤 JSON */
+    private String agentSteps;
+
     public ChatMessage(Role role, String content) {
         this.role = role;
         this.content = content;
@@ -136,6 +139,14 @@ public class ChatMessage {
         ChatMessage message = new ChatMessage(Role.ASSISTANT, content);
         message.setThinkingContent(thinkingContent);
         message.setThinkingDuration(thinkingDuration);
+        return message;
+    }
+
+    public static ChatMessage assistant(String content, String thinkingContent, Integer thinkingDuration, String agentSteps) {
+        ChatMessage message = new ChatMessage(Role.ASSISTANT, content);
+        message.setThinkingContent(thinkingContent);
+        message.setThinkingDuration(thinkingDuration);
+        message.setAgentSteps(agentSteps);
         return message;
     }
 }
