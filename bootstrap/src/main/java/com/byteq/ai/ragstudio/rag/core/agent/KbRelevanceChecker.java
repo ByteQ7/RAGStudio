@@ -76,7 +76,7 @@ public class KbRelevanceChecker {
             ChatRequest request = ChatRequest.builder()
                     .messages(List.of(ChatMessage.user(prompt)))
                     .temperature(0.0)
-                    .maxTokens(100)
+                    .maxTokens(200)
                     .thinking(false)
                     .build();
             raw = llmService.chat(request);
@@ -86,9 +86,15 @@ public class KbRelevanceChecker {
                 return RelevanceResult.relevant("LLM 返回空，默认检索");
             }
 
-            // 解析 JSON 响应
+            // 解析 JSON 响应（含断尾修复）
             String json = LLMResponseCleaner.stripMarkdownCodeFence(raw.trim());
-            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+            JsonObject obj = parseJsonWithRepair(json);
+            if (obj == null) {
+                log.warn("相关性判断 JSON 修复失败，原始响应: {}，默认判定为相关",
+                        truncate(raw, 100));
+                return RelevanceResult.relevant("JSON 解析失败，默认检索");
+            }
+
             boolean relevant = obj.has("relevant") && obj.get("relevant").getAsBoolean();
             String reasoning = obj.has("reasoning") ? obj.get("reasoning").getAsString() : "";
 
@@ -98,10 +104,6 @@ public class KbRelevanceChecker {
                     ? RelevanceResult.relevant(reasoning)
                     : RelevanceResult.irrelevant(reasoning);
 
-        } catch (JsonSyntaxException e) {
-            log.warn("相关性判断 JSON 解析失败: {}，原始响应: {}，默认判定为相关",
-                    e.getMessage(), truncate(raw, 100));
-            return RelevanceResult.relevant("JSON 解析失败，默认检索");
         } catch (Exception e) {
             log.error("相关性判断异常: {}", e.getMessage());
             return RelevanceResult.relevant("判断异常，默认检索");
@@ -129,6 +131,73 @@ public class KbRelevanceChecker {
             sb.append("\n");
         }
         return sb.toString().trim();
+    }
+
+    /**
+     * 尝试解析 JSON，若因 LLM 截断导致 JSON 不完整则尝试修复
+     * <p>
+     * 修复策略：
+     * <ol>
+     *   <li>直接解析 Gson JsonObject</li>
+     *   <li>失败时尝试补全字符串值（在 reasoning 字段后补 `"}`）</li>
+     *   <li>再次失败则返回 null，由调用方兜底</li>
+     * </ol>
+     */
+    private JsonObject parseJsonWithRepair(String json) {
+        // 策略 1：直接解析
+        try {
+            return JsonParser.parseString(json).getAsJsonObject();
+        } catch (JsonSyntaxException e) {
+            log.debug("JSON 直接解析失败，尝试修复: {}", e.getMessage());
+        }
+
+        // 策略 2：尝试修复断尾 JSON - 文本可能被截断导致 reasoning 值未闭合
+        String repaired = json;
+        // 如果字符串以双引号结尾但不完整的 JSON 对象（如 {"key": "value），补全
+        int relevantIdx = repaired.indexOf("\"relevant\"");
+        int reasoningIdx = repaired.indexOf("\"reasoning\"");
+
+        // 尝试找到最后一个未闭合的字符串值并补全
+        if (repaired.endsWith("\"") && !repaired.endsWith("\"}")) {
+            repaired = repaired + "}";
+        }
+        // 如果 reasoning 值未闭合（没有结尾的 "）
+        if (reasoningIdx > 0) {
+            int lastQuoteBeforeEnd = repaired.lastIndexOf('"');
+            if (lastQuoteBeforeEnd > reasoningIdx && lastQuoteBeforeEnd < repaired.length() - 1) {
+                // 最后一个 " 后面还有字符，说明字符串可能被截断
+                // 检查是否有闭合的 "}
+                if (!repaired.contains("\"}") && !repaired.endsWith("\"")) {
+                    // 补全多余的字符，确保 reasoning 值闭合
+                    repaired = repaired.substring(0, lastQuoteBeforeEnd + 1) + "\"}";
+                }
+            }
+        }
+
+        // 确保以 "} 结尾
+        if (!repaired.endsWith("\"}")) {
+            // 如果以 " 结尾，补 }
+            if (repaired.endsWith("\"")) {
+                repaired = repaired + "}";
+            } else {
+                // 否则去掉结尾多余的非 JSON 字符
+                repaired = repaired.replaceAll("[^}\"]+$", "") + "}";
+                if (!repaired.endsWith("\"}")) {
+                    repaired = repaired + "\"}";
+                }
+            }
+        }
+        // 去掉末尾多余的 }
+        while (repaired.endsWith("}}")) {
+            repaired = repaired.substring(0, repaired.length() - 1);
+        }
+
+        try {
+            return JsonParser.parseString(repaired).getAsJsonObject();
+        } catch (JsonSyntaxException e) {
+            log.debug("JSON 修复后仍解析失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     private static String truncate(String s, int maxLen) {

@@ -13,3 +13,5 @@
 # 输出格式
 只输出一行 JSON，不要任何其他内容：
 {"relevant": true/false, "reasoning": "一句话说明判断依据"}
+
+注意：reasoning 必须用双引号包裹，整段 JSON 必须严格合法，不要换行，不要截断。
