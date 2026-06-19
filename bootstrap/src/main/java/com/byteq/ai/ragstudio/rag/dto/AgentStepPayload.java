@@ -20,6 +20,7 @@ import java.util.Map;
 public record AgentStepPayload(
         int iteration,
         String action,
+        String plan,
         String thought,
         String toolName,
         Map<String, Object> toolInput,
@@ -35,6 +36,7 @@ public record AgentStepPayload(
         return new AgentStepPayload(
                 step.getIteration(),
                 step.getAction().name(),
+                step.getPlan(),
                 step.getThought(),
                 step.getToolName(),
                 step.getToolInput(),

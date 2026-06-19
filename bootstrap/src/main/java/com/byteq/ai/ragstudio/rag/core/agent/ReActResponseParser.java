@@ -35,6 +35,9 @@ public class ReActResponseParser {
     private static final Pattern THOUGHT_PATTERN = Pattern.compile(
             "Thought\\s*[:：]\\s*(.*?)(?=\\n\\s*(?:Action|Observation|Final|$))",
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+    private static final Pattern PLAN_PATTERN = Pattern.compile(
+            "Plan\\s*[:：]\\s*(.*?)(?=\\n\\s*(?:Thought|Action|Observation|Final|$))",
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private static final Pattern ACTION_PATTERN = Pattern.compile(
             "Action\\s*[:：]\\s*(\\S+)",
             Pattern.CASE_INSENSITIVE);
@@ -107,6 +110,13 @@ public class ReActResponseParser {
         }
         String actionName = actionMatcher.group(1).trim();
 
+        // 提取 Plan（可选，仅在首次迭代时携带）
+        String plan = "";
+        Matcher planMatcher = PLAN_PATTERN.matcher(text);
+        if (planMatcher.find()) {
+            plan = planMatcher.group(1).trim();
+        }
+
         // 提取 Thought
         String thought = "";
         Matcher thoughtMatcher = THOUGHT_PATTERN.matcher(text);
@@ -122,7 +132,11 @@ public class ReActResponseParser {
             if (faMatcher.find()) {
                 finalAnswer = faMatcher.group(1).trim();
             }
-            return AgentStep.finish(iteration, thought, finalAnswer);
+            // 无 plan 时用普通 finish
+            if (plan.isEmpty()) {
+                return AgentStep.finish(iteration, thought, finalAnswer);
+            }
+            return new AgentStep(iteration, plan, thought, AgentAction.FINISH, null, null, finalAnswer);
         }
 
         // TOOL_CALL 分支
@@ -139,6 +153,9 @@ public class ReActResponseParser {
             toolInput = extractJsonFromText(afterAction, actionName);
         }
 
+        if (!plan.isEmpty()) {
+            return AgentStep.toolCallWithPlan(iteration, plan, thought, actionName, toolInput);
+        }
         return AgentStep.toolCall(iteration, thought, actionName, toolInput);
     }
 

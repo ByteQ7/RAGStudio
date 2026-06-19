@@ -122,10 +122,17 @@ public class AgentLoop {
                 // 追加 LLM 响应到消息列表（下一轮 LLM 能看到之前的对话）
                 ctx.addMessage(ChatMessage.assistant(llmResponse));
 
-                // 2c. 推送步骤到前端
+                // 2c. 如有 Plan，注入计划到上下文（后续迭代可参照执行）
+                String plan = step.getPlan();
+                if (StrUtil.isNotBlank(plan)) {
+                    ctx.addMessage(ChatMessage.system("【当前执行计划】\n" + plan
+                            + "\n\n请严格按照此计划逐条执行，每完成一步检查下一步。"));
+                }
+
+                // 2d. 推送步骤到前端
                 pushStep(step, callback);
 
-                // 2d. 根据动作分支
+                // 2e. 根据动作分支
                 if (step.getAction() == AgentAction.FINISH) {
                     log.info("Agent 完成 - iteration={}, finalAnswerLength={}",
                             iteration,
