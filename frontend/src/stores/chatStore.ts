@@ -282,6 +282,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const idx = existing.findIndex((s) => s.iteration === payload.iteration);
             const step: AgentStep = {
               iteration: payload.iteration,
+              plan: payload.plan,
               thought: payload.thought,
               action: payload.action,
               toolName: payload.toolName,

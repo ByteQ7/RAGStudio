@@ -18,6 +18,9 @@ public class AgentStep {
     /** 迭代轮次（从 0 开始） */
     private final int iteration;
 
+    /** 多步规划（仅在首次迭代时携带） */
+    private final String plan;
+
     /** 推理内容（Thought） */
     private final String thought;
 
@@ -39,10 +42,11 @@ public class AgentStep {
     /** 本步骤耗时（ms） */
     private long durationMs;
 
-    public AgentStep(int iteration, String thought, AgentAction action,
+    public AgentStep(int iteration, String plan, String thought, AgentAction action,
                      String toolName, Map<String, Object> toolInput,
                      String finalAnswer) {
         this.iteration = iteration;
+        this.plan = plan;
         this.thought = thought;
         this.action = action;
         this.toolName = toolName;
@@ -50,22 +54,29 @@ public class AgentStep {
         this.finalAnswer = finalAnswer;
     }
 
-    /** 创建 TOOL_CALL 步骤 */
+    /** 创建 TOOL_CALL 步骤（无 plan） */
     public static AgentStep toolCall(int iteration, String thought,
                                      String toolName, Map<String, Object> toolInput) {
-        return new AgentStep(iteration, thought, AgentAction.TOOL_CALL,
+        return new AgentStep(iteration, null, thought, AgentAction.TOOL_CALL,
                 toolName, toolInput, null);
     }
 
-    /** 创建 FINISH 步骤 */
+    /** 创建 FINISH 步骤（无 plan） */
     public static AgentStep finish(int iteration, String thought, String finalAnswer) {
-        return new AgentStep(iteration, thought, AgentAction.FINISH,
+        return new AgentStep(iteration, null, thought, AgentAction.FINISH,
                 null, null, finalAnswer);
+    }
+
+    /** 创建 TOOL_CALL 步骤（带 plan） */
+    public static AgentStep toolCallWithPlan(int iteration, String plan, String thought,
+                                             String toolName, Map<String, Object> toolInput) {
+        return new AgentStep(iteration, plan, thought, AgentAction.TOOL_CALL,
+                toolName, toolInput, null);
     }
 
     /** 创建 ERROR 步骤 */
     public static AgentStep error(int iteration, String thought, String errorMsg) {
-        AgentStep step = new AgentStep(iteration, thought, AgentAction.ERROR,
+        AgentStep step = new AgentStep(iteration, null, thought, AgentAction.ERROR,
                 null, null, null);
         step.observation = errorMsg;
         return step;
@@ -74,6 +85,7 @@ public class AgentStep {
     // ==================== getters / setters ====================
 
     public int getIteration() { return iteration; }
+    public String getPlan() { return plan; }
     public String getThought() { return thought; }
     public AgentAction getAction() { return action; }
     public String getToolName() { return toolName; }

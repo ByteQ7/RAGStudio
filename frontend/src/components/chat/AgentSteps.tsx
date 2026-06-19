@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Brain, ChevronDown, Cog, Eye, Zap } from "lucide-react";
+import { Brain, ChevronDown, Cog, Eye, ListOrdered, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AgentStep } from "@/types";
 
@@ -118,6 +118,9 @@ export const AgentSteps = React.memo(function AgentSteps({ steps }: AgentStepsPr
     });
   };
 
+  // 提取 Plan（取自第一个携带 plan 的 step）
+  const plan = steps.find((s) => s.plan)?.plan;
+
   return (
     <div className="mb-3 overflow-hidden rounded-lg border border-indigo-100 bg-white">
       <div className="flex items-center gap-1.5 border-b border-indigo-50 px-3 py-2">
@@ -127,6 +130,14 @@ export const AgentSteps = React.memo(function AgentSteps({ steps }: AgentStepsPr
           {steps.length} 步
         </span>
       </div>
+      {plan ? (
+        <div className="border-b border-indigo-50 bg-indigo-50/30 px-3 py-2">
+          <div className="flex items-start gap-1.5">
+            <ListOrdered className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
+            <p className="text-[12px] leading-relaxed text-indigo-700 whitespace-pre-wrap">{plan}</p>
+          </div>
+        </div>
+      ) : null}
       <div className="divide-y divide-gray-50">
         {steps.map((step) => (
           <div key={step.iteration}>
