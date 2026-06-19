@@ -9,6 +9,10 @@ import lombok.Data;
 
 import java.util.Date;
 
+/**
+ * 查询术语映射实体类
+ * 用于存储用户原始短语与归一化目标短语之间的映射关系，支持多种匹配类型和优先级配置
+ */
 @Data
 @TableName(value = "t_query_term_mapping", autoResultMap = true)
 public class QueryTermMappingDO {

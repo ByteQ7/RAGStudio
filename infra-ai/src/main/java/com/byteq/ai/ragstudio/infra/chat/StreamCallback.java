@@ -55,6 +55,28 @@ public interface StreamCallback {
     void onComplete();
 
     /**
+     * ReACT Agent 推理步骤回调
+     * <p>
+     * 当 Agent 循环中产生新的推理步骤（Thought / Action / Observation / FinalAnswer）时触发。
+     * 默认空实现，非 Agent 场景可忽略。
+     *
+     * @param step Agent 单步记录
+     */
+    default void onAgentStep(Object step) {
+    }
+
+    /**
+     * Agent 推理步骤完成回调，推送完整的 JSON 序列化步骤列表
+     * <p>
+     * 在 {@link #onComplete()} 之前调用，用于步骤持久化。
+     * Agent 模式下包含完整推理链，RAG 模式下为空。
+     *
+     * @param agentStepsJson Agent 步骤的 JSON 数组字符串
+     */
+    default void onAgentStepsComplete(String agentStepsJson) {
+    }
+
+    /**
      * 流式推送过程中出现异常
      * <p>
      * 常见场景：

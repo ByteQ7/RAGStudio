@@ -264,24 +264,28 @@ public class DashboardServiceImpl implements DashboardService {
                 .build();
     }
 
+    // 统计指定时间范围内新注册的用户数量
     private long countUsers(Date start, Date end) {
         return userMapper.selectCount(Wrappers.lambdaQuery(UserDO.class)
                 .ge(UserDO::getCreateTime, start)
                 .lt(UserDO::getCreateTime, end));
     }
 
+    // 统计指定时间范围内创建的会话数量
     private long countConversations(Date start, Date end) {
         return conversationMapper.selectCount(Wrappers.lambdaQuery(ConversationDO.class)
                 .ge(ConversationDO::getCreateTime, start)
                 .lt(ConversationDO::getCreateTime, end));
     }
 
+    // 统计指定时间范围内创建的消息数量
     private long countMessages(Date start, Date end) {
         return messageMapper.selectCount(Wrappers.lambdaQuery(ConversationMessageDO.class)
                 .ge(ConversationMessageDO::getCreateTime, start)
                 .lt(ConversationMessageDO::getCreateTime, end));
     }
 
+    // 统计指定时间范围内有消息活动的去重用户数
     private long countActiveUsers(Date start, Date end) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("count(distinct user_id) as cnt")
@@ -290,6 +294,7 @@ public class DashboardServiceImpl implements DashboardService {
         return extractCount(messageMapper.selectMaps(wrapper));
     }
 
+    // 统计指定时间范围内指定状态的 RAG 追踪运行次数
     private long countTraceRuns(Date start, Date end, String status) {
         QueryWrapper<RagTraceRunDO> wrapper = new QueryWrapper<>();
         wrapper.ge("start_time", start).lt("start_time", end);
@@ -299,6 +304,7 @@ public class DashboardServiceImpl implements DashboardService {
         return traceRunMapper.selectCount(wrapper);
     }
 
+    // 统计指定时间范围内 assistant 角色的消息数量
     private long countAssistantMessages(Date start, Date end) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.ge("create_time", start)
@@ -307,6 +313,7 @@ public class DashboardServiceImpl implements DashboardService {
         return messageMapper.selectCount(wrapper);
     }
 
+    // 统计指定时间范围内无文档命中回复的消息数量
     private long countNoDocMessages(Date start, Date end) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.ge("create_time", start)
@@ -316,6 +323,7 @@ public class DashboardServiceImpl implements DashboardService {
         return messageMapper.selectCount(wrapper);
     }
 
+    // 获取指定时间范围内所有成功运行的耗时列表（毫秒），过滤掉无效值
     private List<Long> listDurations(Date start, Date end) {
         QueryWrapper<RagTraceRunDO> wrapper = new QueryWrapper<>();
         wrapper.select("duration_ms")
@@ -338,6 +346,7 @@ public class DashboardServiceImpl implements DashboardService {
         return durations;
     }
 
+    // 从 selectMaps 查询结果中提取 count 聚合值
     private long extractCount(List<Map<String, Object>> maps) {
         if (maps == null || maps.isEmpty()) {
             return 0L;
@@ -353,6 +362,7 @@ public class DashboardServiceImpl implements DashboardService {
         return 0L;
     }
 
+    // 计算当前值相对于上一时段的百分比变化
     private Double calcPct(long current, long prev) {
         if (prev <= 0) {
             return null;
@@ -360,6 +370,7 @@ public class DashboardServiceImpl implements DashboardService {
         return round1(((current - prev) * 100.0) / prev);
     }
 
+    // 构建单个 KPI 指标对象，包含数值、变化量和变化百分比
     private DashboardOverviewKpiVO buildKpi(long value, long delta, Double deltaPct) {
         return DashboardOverviewKpiVO.builder()
                 .value(value)
@@ -368,6 +379,7 @@ public class DashboardServiceImpl implements DashboardService {
                 .build();
     }
 
+    // 按天聚合统计会话数量
     private Map<LocalDate, Long> countConversationsByDay(LocalDate start, LocalDate endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD') as d", "count(*) as cnt")
@@ -377,6 +389,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResults(conversationMapper.selectMaps(wrapper));
     }
 
+    // 按天聚合统计消息数量
     private Map<LocalDate, Long> countMessagesByDay(LocalDate start, LocalDate endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD') as d", "count(*) as cnt")
@@ -386,6 +399,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResults(messageMapper.selectMaps(wrapper));
     }
 
+    // 按天聚合统计 assistant 角色的消息数量
     private Map<LocalDate, Long> countAssistantMessagesByDay(LocalDate start, LocalDate endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD') as d", "count(*) as cnt")
@@ -396,6 +410,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResults(messageMapper.selectMaps(wrapper));
     }
 
+    // 按天聚合统计无文档命中回复的消息数量
     private Map<LocalDate, Long> countNoDocMessagesByDay(LocalDate start, LocalDate endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD') as d", "count(*) as cnt")
@@ -407,6 +422,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResults(messageMapper.selectMaps(wrapper));
     }
 
+    // 按天聚合统计活跃用户数（去重）
     private Map<LocalDate, Long> countActiveUsersByDay(LocalDate start, LocalDate endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD') as d", "count(distinct user_id) as cnt")
@@ -416,6 +432,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResults(messageMapper.selectMaps(wrapper));
     }
 
+    // 按天聚合计算成功运行的平均延迟（毫秒）
     private Map<LocalDate, Double> averageLatencyByDay(LocalDate start, LocalDate endExclusive, ZoneId zoneId) {
         QueryWrapper<RagTraceRunDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(start_time,'YYYY-MM-DD') as d", "avg(duration_ms) as avg")
@@ -440,6 +457,7 @@ public class DashboardServiceImpl implements DashboardService {
         return result;
     }
 
+    // 按天聚合统计指定状态的追踪运行次数
     private Map<LocalDate, Long> countTraceRunsByDay(LocalDate start, LocalDate endExclusive, ZoneId zoneId, String status) {
         QueryWrapper<RagTraceRunDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(start_time,'YYYY-MM-DD') as d", "count(*) as cnt")
@@ -452,6 +470,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResults(traceRunMapper.selectMaps(wrapper));
     }
 
+    // 按小时聚合统计会话数量
     private Map<LocalDateTime, Long> countConversationsByHour(LocalDateTime start, LocalDateTime endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD HH24:00:00') as h", "count(*) as cnt")
@@ -461,6 +480,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResultsByHour(conversationMapper.selectMaps(wrapper));
     }
 
+    // 按小时聚合统计消息数量
     private Map<LocalDateTime, Long> countMessagesByHour(LocalDateTime start, LocalDateTime endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD HH24:00:00') as h", "count(*) as cnt")
@@ -470,6 +490,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResultsByHour(messageMapper.selectMaps(wrapper));
     }
 
+    // 按小时聚合统计 assistant 角色的消息数量
     private Map<LocalDateTime, Long> countAssistantMessagesByHour(LocalDateTime start, LocalDateTime endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD HH24:00:00') as h", "count(*) as cnt")
@@ -480,6 +501,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResultsByHour(messageMapper.selectMaps(wrapper));
     }
 
+    // 按小时聚合统计无文档命中回复的消息数量
     private Map<LocalDateTime, Long> countNoDocMessagesByHour(LocalDateTime start, LocalDateTime endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD HH24:00:00') as h", "count(*) as cnt")
@@ -491,6 +513,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResultsByHour(messageMapper.selectMaps(wrapper));
     }
 
+    // 按小时聚合统计活跃用户数（去重）
     private Map<LocalDateTime, Long> countActiveUsersByHour(LocalDateTime start, LocalDateTime endExclusive, ZoneId zoneId) {
         QueryWrapper<ConversationMessageDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(create_time,'YYYY-MM-DD HH24:00:00') as h", "count(distinct user_id) as cnt")
@@ -500,6 +523,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResultsByHour(messageMapper.selectMaps(wrapper));
     }
 
+    // 按小时聚合计算成功运行的平均延迟（毫秒）
     private Map<LocalDateTime, Double> averageLatencyByHour(LocalDateTime start, LocalDateTime endExclusive, ZoneId zoneId) {
         QueryWrapper<RagTraceRunDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(start_time,'YYYY-MM-DD HH24:00:00') as h", "avg(duration_ms) as avg")
@@ -510,6 +534,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapDoubleResultsByHour(traceRunMapper.selectMaps(wrapper));
     }
 
+    // 按小时聚合统计指定状态的追踪运行次数
     private Map<LocalDateTime, Long> countTraceRunsByHour(LocalDateTime start, LocalDateTime endExclusive, ZoneId zoneId, String status) {
         QueryWrapper<RagTraceRunDO> wrapper = new QueryWrapper<>();
         wrapper.select("to_char(start_time,'YYYY-MM-DD HH24:00:00') as h", "count(*) as cnt")
@@ -522,6 +547,7 @@ public class DashboardServiceImpl implements DashboardService {
         return mapLongResultsByHour(traceRunMapper.selectMaps(wrapper));
     }
 
+    // 将按天聚合的 selectMaps 结果转换为 LocalDate -> Long 映射
     private Map<LocalDate, Long> mapLongResults(List<Map<String, Object>> maps) {
         Map<LocalDate, Long> result = new HashMap<>();
         if (maps == null) {
@@ -540,6 +566,7 @@ public class DashboardServiceImpl implements DashboardService {
         return result;
     }
 
+    // 将按小时聚合的 selectMaps 结果转换为 LocalDateTime -> Long 映射
     private Map<LocalDateTime, Long> mapLongResultsByHour(List<Map<String, Object>> maps) {
         Map<LocalDateTime, Long> result = new HashMap<>();
         if (maps == null) {
@@ -558,6 +585,7 @@ public class DashboardServiceImpl implements DashboardService {
         return result;
     }
 
+    // 将按小时聚合的平均值结果转换为 LocalDateTime -> Double 映射
     private Map<LocalDateTime, Double> mapDoubleResultsByHour(List<Map<String, Object>> maps) {
         Map<LocalDateTime, Double> result = new HashMap<>();
         if (maps == null) {
@@ -575,6 +603,7 @@ public class DashboardServiceImpl implements DashboardService {
         return result;
     }
 
+    // 按天填充生成趋势数据点序列，缺失日期补零
     private List<DashboardTrendPointVO> buildPoints(LocalDate start, LocalDate endExclusive, ZoneId zoneId, Map<LocalDate, Long> values) {
         List<DashboardTrendPointVO> points = new ArrayList<>();
         LocalDate cursor = start;
@@ -589,6 +618,7 @@ public class DashboardServiceImpl implements DashboardService {
         return points;
     }
 
+    // 按天填充生成 Double 类型趋势数据点序列，缺失日期补零
     private List<DashboardTrendPointVO> buildPointsDouble(LocalDate start, LocalDate endExclusive, ZoneId zoneId, Map<LocalDate, Double> values) {
         List<DashboardTrendPointVO> points = new ArrayList<>();
         LocalDate cursor = start;
@@ -603,6 +633,7 @@ public class DashboardServiceImpl implements DashboardService {
         return points;
     }
 
+    // 按小时填充生成趋势数据点序列，缺失小时补零
     private List<DashboardTrendPointVO> buildPointsByHour(
             LocalDateTime start,
             LocalDateTime endExclusive,
@@ -621,6 +652,7 @@ public class DashboardServiceImpl implements DashboardService {
         return points;
     }
 
+    // 按小时填充生成 Double 类型趋势数据点序列，缺失小时补零
     private List<DashboardTrendPointVO> buildPointsDoubleByHour(
             LocalDateTime start,
             LocalDateTime endExclusive,
@@ -639,6 +671,7 @@ public class DashboardServiceImpl implements DashboardService {
         return points;
     }
 
+    // 计算数值列表的平均值，四舍五入到整数
     private long average(List<Long> values) {
         if (values == null || values.isEmpty()) {
             return 0L;
@@ -650,6 +683,7 @@ public class DashboardServiceImpl implements DashboardService {
         return Math.round(sum / (double) values.size());
     }
 
+    // 计算数值列表的 P95 百分位值
     private long percentile(List<Long> values) {
         if (values == null || values.isEmpty()) {
             return 0L;
@@ -661,10 +695,12 @@ public class DashboardServiceImpl implements DashboardService {
         return sorted.get(index);
     }
 
+    // 将数值四舍五入保留一位小数
     private double round1(double value) {
         return Math.round(value * 10.0) / 10.0;
     }
 
+    // 将对象解析为 LocalDate，null 安全
     private LocalDate parseLocalDate(Object value) {
         if (value == null) {
             return null;
@@ -672,6 +708,7 @@ public class DashboardServiceImpl implements DashboardService {
         return LocalDate.parse(String.valueOf(value));
     }
 
+    // 将对象解析为 LocalDateTime（按小时格式化），null 安全
     private LocalDateTime parseLocalDateTime(Object value) {
         if (value == null) {
             return null;
@@ -679,6 +716,7 @@ public class DashboardServiceImpl implements DashboardService {
         return LocalDateTime.parse(String.valueOf(value), HOUR_FORMATTER);
     }
 
+    // 将对象安全转换为 Long 值，转换失败返回 null
     private Long toLongValue(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -693,22 +731,27 @@ public class DashboardServiceImpl implements DashboardService {
         }
     }
 
+    // 将 LocalDate 转换为指定时区的 Date（当天零点）
     private Date toDate(LocalDate date, ZoneId zoneId) {
         return Date.from(date.atStartOfDay(zoneId).toInstant());
     }
 
+    // 将 LocalDateTime 转换为指定时区的 Date
     private Date toDate(LocalDateTime time, ZoneId zoneId) {
         return Date.from(time.atZone(zoneId).toInstant());
     }
 
+    // 将 Date 转换为指定时区的 LocalDate
     private LocalDate toLocalDate(Date date, ZoneId zoneId) {
         return date.toInstant().atZone(zoneId).toLocalDate();
     }
 
+    // 将 Date 转换为指定时区的 LocalDateTime
     private LocalDateTime toLocalDateTime(Date date, ZoneId zoneId) {
         return date.toInstant().atZone(zoneId).toLocalDateTime();
     }
 
+    // 解析时间窗口字符串，计算当前窗口和上一窗口的起止时间
     private WindowRange resolveWindowRange(String window, Duration fallback) {
         Duration duration = parseWindow(window, fallback);
         Instant now = Instant.now();
@@ -718,6 +761,7 @@ public class DashboardServiceImpl implements DashboardService {
                 window == null ? formatDuration(fallback) : window, "prev_" + (window == null ? formatDuration(fallback) : window));
     }
 
+    // 解析时间窗口字符串（如 "24h"、"7d"）为 Duration，解析失败使用默认值
     private Duration parseWindow(String window, Duration fallback) {
         if (window == null || window.isBlank()) {
             return fallback;
@@ -734,6 +778,7 @@ public class DashboardServiceImpl implements DashboardService {
         return fallback;
     }
 
+    // 确定趋势数据的聚合粒度，窗口 <=48 小时用小时粒度，否则用天粒度
     private String resolveTrendGranularity(String granularity, Duration windowDuration) {
         if (granularity != null && !granularity.isBlank()) {
             String normalized = granularity.trim().toLowerCase();
@@ -744,6 +789,7 @@ public class DashboardServiceImpl implements DashboardService {
         return windowDuration.toHours() <= 48 ? GRANULARITY_HOUR : GRANULARITY_DAY;
     }
 
+    // 安全解析字符串为 long 数值，解析失败返回默认值
     private long parseNumber(String value, long fallback) {
         try {
             return Long.parseLong(value);
@@ -752,6 +798,7 @@ public class DashboardServiceImpl implements DashboardService {
         }
     }
 
+    // 将 Duration 格式化为可读字符串（如 "24h" 或 "7d"）
     private String formatDuration(Duration duration) {
         long hours = duration.toHours();
         if (hours % 24 == 0) {
@@ -760,6 +807,7 @@ public class DashboardServiceImpl implements DashboardService {
         return hours + "h";
     }
 
+    // 时间窗口范围数据，包含当前窗口和对比窗口的起止时间及标签
     private static class WindowRange {
         private final Date start;
         private final Date end;

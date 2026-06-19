@@ -41,6 +41,15 @@ public interface RAGChatService {
     void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, SseEmitter emitter);
 
     /**
+     * 发起一次 SSE 流式问答（带模式参数）
+     *
+     * @param mode 对话模式："rag"（默认）或 "agent"（ReACT Agent）
+     */
+    default void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, SseEmitter emitter, String mode) {
+        streamChat(question, conversationId, deepThinking, knowledgeBaseIds, emitter);
+    }
+
+    /**
      * 停止指定任务 ID 的流式会话
      * <p>
      * 通过任务 ID 查找并中断正在进行的流式对话任务，

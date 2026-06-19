@@ -10,10 +10,20 @@ import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
 import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
+import com.byteq.ai.ragstudio.rag.core.agent.AgentContext;
+import com.byteq.ai.ragstudio.rag.core.agent.AgentLoop;
+import com.byteq.ai.ragstudio.rag.core.agent.KbRelevanceChecker;
+import com.byteq.ai.ragstudio.rag.core.agent.McpToolAdapter;
+import com.byteq.ai.ragstudio.rag.core.agent.RagSearchTool;
+import com.byteq.ai.ragstudio.rag.core.agent.ReActPromptBuilder;
+import com.byteq.ai.ragstudio.rag.core.agent.ReActResponseParser;
+import com.byteq.ai.ragstudio.rag.core.agent.ToolRegistry;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolExecutor;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
 import com.byteq.ai.ragstudio.rag.core.memory.ConversationMemoryService;
+import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeBaseDO;
+import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeBaseMapper;
 import com.byteq.ai.ragstudio.rag.core.prompt.PromptContext;
 import com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader;
 import com.byteq.ai.ragstudio.rag.core.prompt.RAGPromptService;
@@ -101,6 +111,21 @@ public class StreamChatPipeline {
     /** 链路追踪配置，用于判断是否启用追踪 */
     private final RagTraceProperties traceProperties;
 
+    /** 知识库相关性判断器，Agent 模式下用于判断问题是否与所选知识库相关 */
+    private final KbRelevanceChecker kbRelevanceChecker;
+
+    /** 知识库 DAO，用于查询知识库名称和描述 */
+    private final KnowledgeBaseMapper knowledgeBaseMapper;
+
+    /** ReACT 响应解析器（无状态单例） */
+    private final ReActResponseParser reactResponseParser;
+
+    /** ReACT Prompt 构建器（无状态单例） */
+    private final ReActPromptBuilder reactPromptBuilder;
+
+    /** Agent 模式标识 */
+    private static final String MODE_AGENT = "agent";
+
     private static final String MCP_CALL_PREFIX = "__MCP_CALL__:";
 
     /** 取消异常前缀标识，用于在 catch 中区分用户取消 vs 其他 IllegalStateException */
@@ -131,6 +156,130 @@ public class StreamChatPipeline {
     }
 
     private void doExecute(StreamChatContext ctx) {
+        String mode = ctx.getMode();
+        if (MODE_AGENT.equalsIgnoreCase(mode) || StrUtil.isBlank(mode)) {
+            // Agent 模式为默认：前端不传 mode 时走 Agent 管线
+            doExecuteAgent(ctx);
+            return;
+        }
+        // ===== 原有 RAG 管线（显式指定 mode=rag 时使用） =====
+        doExecuteRag(ctx);
+    }
+
+    // ==================== Agent 模式 ====================
+
+    /**
+     * Agent 模式执行流程：记忆加载 → 相关性判断 → 条件检索 → AgentLoop
+     */
+    private void doExecuteAgent(StreamChatContext ctx) {
+        traceNode("记忆加载", "MEMORY", () -> {
+            loadMemory(ctx);
+            return null;
+        });
+        checkCancellation(ctx);
+
+        // 1. 构建 ToolRegistry（MCP 工具 + RAG 检索工具）
+        ToolRegistry toolRegistry = traceNode("工具注册", "TOOL_REGISTRY", () -> buildAgentToolRegistry(ctx));
+        checkCancellation(ctx);
+
+        // 2. 相关性判断 + 条件检索
+        String kbContext = "";
+        boolean kbRelevant = false;
+        if (CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds())) {
+            // 构建 KbInfoProvider
+            KbRelevanceChecker.KbInfoProvider infoProvider = kbIds -> {
+                if (CollUtil.isEmpty(kbIds)) return List.of();
+                List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
+                        com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
+                                .in(KnowledgeBaseDO::getId, kbIds)
+                                .eq(KnowledgeBaseDO::getDeleted, 0));
+                return kbList.stream()
+                        .map(kb -> new KbRelevanceChecker.KbInfo(
+                                kb.getId(), kb.getName(), kb.getCollectionName()))
+                        .toList();
+            };
+
+            KbRelevanceChecker.RelevanceResult relevance = traceNode("相关性判断", "KB_RELEVANCE", () ->
+                    kbRelevanceChecker.check(ctx.getQuestion(), ctx.getKnowledgeBaseIds(), infoProvider));
+            checkCancellation(ctx);
+
+            if (relevance.relevant()) {
+                log.info("问题与知识库相关，执行检索。reasoning: {}", relevance.reasoning());
+                RetrievalContext retrievalCtx = traceNode("知识检索", "RETRIEVE", () -> {
+                    // 使用 RewriteResult 兼容现有检索 API
+                    var rewriteResult = new com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult(
+                            ctx.getQuestion(), List.of(ctx.getQuestion()));
+                    return retrievalEngine.retrieveByKnowledgeBases(
+                            ctx.getKnowledgeBaseIds(), rewriteResult, searchProperties.getDefaultTopK());
+                });
+                checkCancellation(ctx);
+                kbContext = retrievalCtx != null ? retrievalCtx.getKbContext() : "";
+                kbRelevant = true;
+            } else {
+                log.info("问题与知识库不相关，跳过检索。reasoning: {}", relevance.reasoning());
+                kbContext = "";
+                kbRelevant = false;
+            }
+        } else {
+            log.info("未选择知识库，跳过检索");
+        }
+
+        // 3. 构建 AgentContext 并执行 AgentLoop
+        AgentContext agentCtx = new AgentContext(
+                ctx.getQuestion(),
+                ctx.getHistory(),
+                kbContext,
+                kbRelevant,
+                toolRegistry.listAll(),
+                10,        // maxIterations
+                120_000L   // timeoutMs
+        );
+
+        // 构建 AgentLoop（per-request 实例，因为 ToolRegistry 是 per-request 的）
+        AgentLoop agentLoop = new AgentLoop(llmService, toolRegistry,
+                reactResponseParser, reactPromptBuilder);
+
+        traceNode("Agent循环", "AGENT_LOOP", () -> {
+            agentLoop.run(agentCtx, ctx.getCallback());
+            return null;
+        });
+        logPipelineComplete(ctx);
+    }
+
+    /**
+     * 构建 Agent 模式下的 ToolRegistry
+     * <p>
+     * 包含两类工具：
+     * <ol>
+     *   <li>MCP 工具：通过 {@link McpToolAdapter} 包装现有 {@link McpToolExecutor}</li>
+     *   <li>RAG 检索工具：{@link RagSearchTool}，允许 Agent 在循环中主动检索知识库</li>
+     * </ol>
+     */
+    private ToolRegistry buildAgentToolRegistry(StreamChatContext ctx) {
+        ToolRegistry registry = new ToolRegistry();
+
+        // 1. MCP 工具
+        for (McpToolExecutor executor : mcpToolRegistry.listAllExecutors()) {
+            registry.register(new McpToolAdapter(executor));
+        }
+
+        // 2. RAG 检索工具（仅当用户选择了知识库时添加）
+        if (CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds())) {
+            RagSearchTool ragTool = new RagSearchTool(
+                    retrievalEngine, searchProperties, ctx.getKnowledgeBaseIds());
+            registry.register(ragTool);
+        }
+
+        log.info("Agent 工具注册完成 - MCP: {}, RAG: {}, 总计: {}",
+                mcpToolRegistry.size(),
+                CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds()) ? 1 : 0,
+                registry.size());
+        return registry;
+    }
+
+    // ==================== 原有 RAG 管线 ====================
+
+    private void doExecuteRag(StreamChatContext ctx) {
         traceNode("记忆加载", "MEMORY", () -> {
             loadMemory(ctx);
             return null;
@@ -174,6 +323,7 @@ public class StreamChatPipeline {
 
     // ==================== 流水线阶段 ====================
 
+    // 加载对话历史记忆并将当前用户问题追加到上下文中
     private void loadMemory(StreamChatContext ctx) {
         List<ChatMessage> history = memoryService.loadAndAppend(
                 ctx.getConversationId(),
@@ -326,6 +476,7 @@ public class StreamChatPipeline {
         return node.isNull() ? null : node.asText();
     }
 
+    // 根据改写后的查询从指定知识库检索相关文档
     private RetrievalContext retrieve(StreamChatContext ctx) {
         return retrievalEngine.retrieveByKnowledgeBases(
                 ctx.getKnowledgeBaseIds(), ctx.getRewriteResult(), searchProperties.getDefaultTopK());
@@ -336,62 +487,19 @@ public class StreamChatPipeline {
     /**
      * 构建 MCP 工具列表文本
      * <p>
-     * 包含工具名称、描述和完整的参数定义（含类型、必填标记、描述、默认值、枚举值），
-     * 确保 LLM 在决策时能充分了解每个工具的能力与参数要求。
+     * 委托 {@link ToolRegistry#formatForSystemPrompt()} 格式化，
+     * 避免与 ToolRegistry 中的格式化逻辑重复。
      * </p>
-     *
-     * @param executors 已注册的 MCP 工具执行器列表（由调用方提供，避免重复查询注册表）
      */
-    @SuppressWarnings("unchecked")
     private String buildMcpToolList(List<McpToolExecutor> executors) {
         if (CollUtil.isEmpty(executors)) {
             return "当前无可用的实时数据工具。";
         }
-        StringBuilder sb = new StringBuilder();
+        ToolRegistry registry = new ToolRegistry();
         for (McpToolExecutor executor : executors) {
-            Tool tool = executor.getToolDefinition();
-            sb.append("### 工具: ").append(tool.name()).append("\n");
-            if (StrUtil.isNotBlank(tool.description())) {
-                sb.append("描述: ").append(tool.description()).append("\n");
-            }
-
-            if (tool.inputSchema() != null && tool.inputSchema().properties() != null
-                    && !tool.inputSchema().properties().isEmpty()) {
-                List<String> requiredList = tool.inputSchema().required() != null
-                        ? tool.inputSchema().required() : List.of();
-                sb.append("参数:\n");
-                for (Map.Entry<String, Object> entry : tool.inputSchema().properties().entrySet()) {
-                    String paramName = entry.getKey();
-                    Map<String, Object> propDef = (Map<String, Object>) entry.getValue();
-
-                    String type = propDef.getOrDefault("type", "string").toString();
-                    boolean required = requiredList.contains(paramName);
-                    String description = propDef.getOrDefault("description", "").toString();
-
-                    sb.append("  - ").append(paramName)
-                            .append(" (").append(type)
-                            .append(required ? ", 必填" : ", 可选").append(")");
-                    if (StrUtil.isNotBlank(description)) {
-                        sb.append(": ").append(description);
-                    }
-                    Object defaultValue = propDef.get("default");
-                    if (defaultValue != null) {
-                        sb.append(" [默认值: ").append(defaultValue).append("]");
-                    }
-                    Object enumValues = propDef.get("enum");
-                    if (enumValues instanceof List<?> enumList && !enumList.isEmpty()) {
-                        String enumStr = enumList.stream().map(Object::toString)
-                                .collect(java.util.stream.Collectors.joining(", "));
-                        sb.append(" [可选值: ").append(enumStr).append("]");
-                    }
-                    sb.append("\n");
-                }
-            } else {
-                sb.append("参数: 无\n");
-            }
-            sb.append("\n");
+            registry.register(new com.byteq.ai.ragstudio.rag.core.agent.McpToolAdapter(executor));
         }
-        return sb.toString().trim();
+        return registry.formatForSystemPrompt();
     }
 
     /**
@@ -439,6 +547,7 @@ public class StreamChatPipeline {
         taskManager.bindHandle(ctx.getTaskId(), handle);
     }
 
+    // 将 MCP 工具调用结果格式化为 Markdown 文本（支持文本和图片内容）
     private String formatMcpToolResult(String toolId, CallToolResult result) {
         if (result == null || CollUtil.isEmpty(result.content())) {
             return "";
@@ -459,6 +568,7 @@ public class StreamChatPipeline {
 
     // ==================== 流式输出 ====================
 
+    // 无知识库上下文时，直接用系统 Prompt 流式回答用户问题
     private void streamDirectResponse(StreamChatContext ctx) {
         StreamCancellationHandle handle = streamSystemResponse(
                 ctx.getRewriteResult().rewrittenQuestion(),
@@ -470,6 +580,7 @@ public class StreamChatPipeline {
         taskManager.bindHandle(ctx.getTaskId(), handle);
     }
 
+    // 有知识库上下文时，构建含检索结果的 Prompt 并流式回答
     private void streamRagResponse(StreamChatContext ctx, RetrievalContext retrievalCtx) {
         StreamCancellationHandle handle = streamLLMResponse(
                 ctx.getRewriteResult(),
@@ -483,6 +594,7 @@ public class StreamChatPipeline {
 
     // ==================== LLM 响应 ====================
 
+    // 构建系统 Prompt + 历史消息 + 用户问题，调用 LLM 流式输出
     private StreamCancellationHandle streamSystemResponse(String question, List<ChatMessage> history,
                                                           String customPrompt, boolean deepThinking,
                                                           StreamCallback callback) {
@@ -505,6 +617,11 @@ public class StreamChatPipeline {
         return llmService.streamChat(req, callback);
     }
 
+    // 构建含检索上下文的结构化 Prompt 并调用 LLM 流式输出:
+    // 1. 组装 PromptContext（问题 + 知识库上下文 + MCP 上下文）
+    // 2. 构建结构化消息列表（系统消息 + 历史 + 子问题）
+    // 3. 根据是否有 MCP 上下文调整 temperature 和 topP
+    // 4. 调用 LLM 流式接口
     private StreamCancellationHandle streamLLMResponse(RewriteResult rewriteResult, RetrievalContext ctx,
                                                        List<ChatMessage> history,
                                                        boolean deepThinking, StreamCallback callback) {

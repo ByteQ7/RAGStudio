@@ -43,4 +43,9 @@ public class ConversationMessageBO {
      * 深度思考耗时（秒）
      */
     private Integer thinkingDuration;
+
+    /**
+     * Agent 推理步骤 JSON
+     */
+    private String agentSteps;
 }

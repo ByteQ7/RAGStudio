@@ -58,7 +58,16 @@ public enum SSEEventType {
      * 当请求被系统拒绝（如限流、参数校验失败等）时推送。
      * </p>
      */
-    REJECT("reject");
+    REJECT("reject"),
+
+    /**
+     * AGENT_STEP 事件：Agent 推理步骤事件
+     * <p>
+     * 当 ReACT Agent 循环中产生新的推理步骤（Thought / Action / Observation / FinalAnswer）时推送。
+     * 前端收到后展示 Agent 推理过程。
+     * </p>
+     */
+    AGENT_STEP("agent_step");
 
     /** SSE 事件名称（与前端约定一致） */
     private final String value;

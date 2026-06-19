@@ -21,6 +21,13 @@ import com.byteq.ai.ragstudio.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+/**
+ * 用户管理服务实现类
+ * <p>
+ * 实现用户的分页查询、创建、更新、删除及密码修改等业务逻辑，
+ * 包含默认管理员保护、用户名唯一性校验和角色规范化等内部辅助方法。
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
@@ -29,6 +36,15 @@ public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
 
+    /**
+     * 分页查询用户列表
+     * <p>
+     * 处理流程：
+     * 1. 解析关键词过滤条件（支持模糊匹配用户名和角色）
+     * 2. 构建分页查询条件，过滤已删除用户并按更新时间降序排列
+     * 3. 将查询结果从 UserDO 转换为 UserVO 返回
+     * </p>
+     */
     @Override
     public IPage<UserVO> pageQuery(UserPageRequest requestParam) {
         String keyword = StrUtil.trimToNull(requestParam.getKeyword());
@@ -46,6 +62,16 @@ public class UserServiceImpl implements UserService {
         return result.convert(this::toVO);
     }
 
+    /**
+     * 创建用户
+     * <p>
+     * 处理流程：
+     * 1. 校验请求参数和用户名/密码非空
+     * 2. 禁止使用默认管理员用户名 "admin"
+     * 3. 规范化角色值，校验用户名唯一性
+     * 4. 加密密码后构建 UserDO 并插入数据库
+     * </p>
+     */
     @Override
     public String create(UserCreateRequest requestParam) {
         Assert.notNull(requestParam, () -> new ClientException("请求不能为空"));
@@ -71,6 +97,15 @@ public class UserServiceImpl implements UserService {
         return String.valueOf(record.getId());
     }
 
+    /**
+     * 更新用户信息
+     * <p>
+     * 处理流程：
+     * 1. 加载目标用户并校验非默认管理员
+     * 2. 按需更新用户名（校验唯一性和合法性）、角色、头像和密码
+     * 3. 调用 Mapper 持久化更新
+     * </p>
+     */
     @Override
     public void update(String id, UserUpdateRequest requestParam) {
         Assert.notNull(requestParam, () -> new ClientException("请求不能为空"));
@@ -106,6 +141,9 @@ public class UserServiceImpl implements UserService {
         userMapper.updateById(record);
     }
 
+    /**
+     * 删除用户，默认管理员不允许删除
+     */
     @Override
     public void delete(String id) {
         UserDO record = loadById(id);
@@ -113,6 +151,16 @@ public class UserServiceImpl implements UserService {
         userMapper.deleteById(record.getId());
     }
 
+    /**
+     * 修改当前登录用户的密码
+     * <p>
+     * 处理流程：
+     * 1. 校验当前密码和新密码非空
+     * 2. 从 UserContext 获取当前用户并查询数据库记录
+     * 3. 验证当前密码是否正确
+     * 4. 加密新密码后更新数据库
+     * </p>
+     */
     @Override
     public void changePassword(ChangePasswordRequest requestParam) {
         Assert.notNull(requestParam, () -> new ClientException("请求不能为空"));
@@ -135,6 +183,7 @@ public class UserServiceImpl implements UserService {
         userMapper.updateById(record);
     }
 
+    // 根据 ID 查询未删除的用户记录，不存在时抛出异常
     private UserDO loadById(String id) {
         UserDO record = userMapper.selectOne(
                 Wrappers.lambdaQuery(UserDO.class)
@@ -145,12 +194,14 @@ public class UserServiceImpl implements UserService {
         return record;
     }
 
+    // 校验目标用户不是默认管理员（admin），防止被误修改或删除
     private void ensureNotDefaultAdmin(UserDO record) {
         if (record != null && DEFAULT_ADMIN_USERNAME.equalsIgnoreCase(record.getUsername())) {
             throw new ClientException("默认管理员不允许修改或删除");
         }
     }
 
+    // 校验用户名唯一性，excludeId 用于排除自身（更新场景）
     private void ensureUsernameAvailable(String username, String excludeId) {
         UserDO existing = userMapper.selectOne(
                 Wrappers.lambdaQuery(UserDO.class)
@@ -163,6 +214,7 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    // 规范化角色值：为空时默认返回 USER，非法值时抛出异常
     private String normalizeRole(String role) {
         String value = StrUtil.trimToNull(role);
         if (StrUtil.isBlank(value)) {
@@ -177,6 +229,7 @@ public class UserServiceImpl implements UserService {
         throw new ClientException("角色类型不合法");
     }
 
+    // 将 UserDO 实体转换为 UserVO 视图对象
     private UserVO toVO(UserDO record) {
         return UserVO.builder()
                 .id(String.valueOf(record.getId()))

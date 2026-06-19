@@ -30,10 +30,26 @@ public final class FileTypeDetector {
     private FileTypeDetector() {
     }
 
+    /**
+     * 仅通过文件名探测文件类型
+     *
+     * @param fileName 文件名（可包含路径）
+     * @return 标准化文件类型标识（如 "pdf"、"markdown"），无法识别时返回原始扩展名
+     */
     public static String detectType(String fileName) {
         return detectType(fileName, null);
     }
 
+    /**
+     * 通过文件名和 MIME 类型探测文件类型
+     * <p>
+     * 匹配优先级：文件扩展名 -> MIME 类型 -> 原始扩展名 -> 原始 MIME 类型。
+     * </p>
+     *
+     * @param fileName 文件名（可包含路径）
+     * @param mimeType MIME 类型（可为 null）
+     * @return 标准化文件类型标识（如 "pdf"、"markdown"、"docx"），无法识别时返回原始扩展名或 MIME
+     */
     public static String detectType(String fileName, String mimeType) {
         String extension = extractExtension(fileName);
         String typeByExtension = mapExtension(extension);
@@ -53,6 +69,7 @@ public final class FileTypeDetector {
         return mimeType == null ? "" : mimeType;
     }
 
+    // 通过扩展名映射表查找标准化文件类型，未匹配返回 null
     private static String mapExtension(String extension) {
         if (extension == null || extension.isBlank()) {
             return null;
@@ -60,6 +77,7 @@ public final class FileTypeDetector {
         return EXTENSION_MAP.get(extension);
     }
 
+    // 通过 MIME 类型映射表查找标准化文件类型，未匹配返回 null
     private static String mapMimeType(String mimeType) {
         if (mimeType == null || mimeType.isBlank()) {
             return null;
@@ -68,12 +86,14 @@ public final class FileTypeDetector {
         return MIME_MAP.get(normalized);
     }
 
+    // 标准化 MIME 类型：转小写并去除 charset 等参数（分号后的部分）
     private static String normalizeMimeType(String mimeType) {
         String normalized = mimeType.trim().toLowerCase(Locale.ROOT);
         int separator = normalized.indexOf(';');
         return separator >= 0 ? normalized.substring(0, separator).trim() : normalized;
     }
 
+    // 从文件名中提取扩展名：去除路径分隔符和尾随点号，统一转小写
     private static String extractExtension(String fileName) {
         if (fileName == null) {
             return "";

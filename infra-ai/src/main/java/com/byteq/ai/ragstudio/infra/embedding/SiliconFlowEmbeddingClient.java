@@ -54,6 +54,7 @@ public class SiliconFlowEmbeddingClient implements EmbeddingClient {
         return results;
     }
 
+    // 将 float 数组转换为 Float 列表，用于适配 Spring AI 返回的向量格式
     private static List<Float> toFloatList(float[] array) {
         List<Float> list = new ArrayList<>(array.length);
         for (float v : array) {

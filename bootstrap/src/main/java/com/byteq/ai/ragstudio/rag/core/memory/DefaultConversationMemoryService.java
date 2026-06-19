@@ -11,6 +11,13 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
+/**
+ * 对话记忆服务默认实现
+ * <p>
+ * 组合 {@link ConversationMemoryStore} 和 {@link ConversationMemorySummaryService}，
+ * 并行加载摘要与历史记录，并在追加消息后异步触发摘要压缩。
+ * </p>
+ */
 @Slf4j
 @Service
 public class DefaultConversationMemoryService implements ConversationMemoryService {
@@ -27,6 +34,9 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
         this.memoryLoadExecutor = memoryLoadExecutor;
     }
 
+    /**
+     * 并行加载对话摘要和历史记录，合并后返回；加载失败时降级返回空列表
+     */
     @Override
     public List<ChatMessage> load(String conversationId, String userId) {
         // 参数校验
@@ -85,6 +95,9 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
         }
     }
 
+    /**
+     * 追加消息到存储并触发异步摘要压缩判断
+     */
     @Override
     public String append(String conversationId, String userId, ChatMessage message) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(userId)) {
@@ -95,6 +108,7 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
         return messageId;
     }
 
+    // 将摘要消息拼接到历史消息列表的头部，摘要经过装饰后作为 system 消息插入
     private List<ChatMessage> attachSummary(ChatMessage summary, List<ChatMessage> messages) {
         // 确保返回值不为 null
         if (CollUtil.isEmpty(messages)) {

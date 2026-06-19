@@ -105,6 +105,16 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Value("knowledge-document-chunk_topic${unique-name:}")
     private String chunkTopic;
 
+    /**
+     * 上传文档
+     * <p>
+     * 处理流程：
+     * 1. 校验知识库存在性
+     * 2. 校验来源类型和定时调度参数
+     * 3. 存储文件（本地上传或远程拉取）
+     * 4. 解析处理模式配置并创建文档记录
+     * </p>
+     */
     @Override
     public KnowledgeDocumentVO upload(String kbId, KnowledgeDocumentUploadRequest requestParam, MultipartFile file) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
@@ -140,6 +150,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return BeanUtil.toBean(documentDO, KnowledgeDocumentVO.class);
     }
 
+    /**
+     * 开始文档分块处理
+     * <p>
+     * 处理流程：
+     * 1. 在事务中更新文档状态为 RUNNING（乐观锁防并发）
+     * 2. 同步更新定时调度记录
+     * 3. 发送 RocketMQ 事务消息触发异步分块
+     * </p>
+     */
     @Override
     public void startChunk(String docId) {
         KnowledgeDocumentChunkEvent event = KnowledgeDocumentChunkEvent.builder()
@@ -183,6 +202,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         runChunkTask(documentDO);
     }
 
+    // 执行文档分块任务的完整流程：创建日志 → 按处理模式执行分块 → 持久化结果 → 更新日志
     private void runChunkTask(KnowledgeDocumentDO documentDO) {
         String docId = documentDO.getId();
         ProcessMode processMode = ProcessMode.normalize(documentDO.getProcessMode());
@@ -234,6 +254,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    // 持久化分块结果：Phase1 在事务中删除旧分块、批量创建新分块并更新文档状态；Phase2 在事务外写入向量库
     private int persistChunksAndVectors(String collectionName, String docId, List<VectorChunk> chunkResults) {
         List<KnowledgeChunkCreateRequest> chunks = chunkResults.stream()
                 .map(vc -> {
@@ -271,6 +292,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return chunks.size();
     }
 
+    // 更新分块日志记录，包含各阶段耗时和最终状态
     private void updateChunkLog(String logId, String status, int chunkCount, long extractDuration,
                                 long chunkDuration, long embedDuration, long persistDuration,
                                 long totalDuration, String errorMessage) {
@@ -399,6 +421,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return chunks;
     }
 
+    /**
+     * 执行文档分块处理（由定时刷新处理器调用，不经过 MQ）
+     */
     public void chunkDocument(KnowledgeDocumentDO documentDO) {
         if (documentDO == null) {
             return;
@@ -406,6 +431,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         runChunkTask(documentDO);
     }
 
+    // 在事务中将文档状态标记为分块失败（FAILED）
     private void markChunkFailed(String docId) {
         transactionOperations.executeWithoutResult(status -> {
             KnowledgeDocumentDO update = new KnowledgeDocumentDO();
@@ -416,6 +442,16 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         });
     }
 
+    /**
+     * 删除文档
+     * <p>
+     * 处理流程：
+     * 1. 校验文档存在且未在分块中
+     * 2. 删除关联的分块、调度、日志记录
+     * 3. 逻辑删除文档
+     * 4. 清理向量库数据和存储文件
+     * </p>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(String docId) {
@@ -448,6 +484,16 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return BeanUtil.toBean(documentDO, KnowledgeDocumentVO.class);
     }
 
+    /**
+     * 更新文档信息
+     * <p>
+     * 处理流程：
+     * 1. 校验文档存在且未在分块中
+     * 2. 更新文档名称和处理模式（CHUNK/PIPELINE）
+     * 3. 处理定时调度相关字段（仅 URL 类型文档，校验 cron 合法性）
+     * 4. 若调度参数变更则同步更新调度记录
+     * </p>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void update(String docId, KnowledgeDocumentUpdateRequest requestParam) {
@@ -550,6 +596,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    // 分页查询文档列表，支持按关键词和状态筛选
     @Override
     public IPage<KnowledgeDocumentVO> page(String kbId, KnowledgeDocumentPageRequest requestParam) {
         Page<KnowledgeDocumentDO> pageParam = new Page<>(requestParam.getCurrent(), requestParam.getSize());
@@ -564,6 +611,10 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .convert(each -> BeanUtil.toBean(each, KnowledgeDocumentVO.class));
     }
 
+    /**
+     * 搜索文档
+     * <p>按关键词模糊搜索文档名称，并补充关联的知识库名称信息。</p>
+     */
     @Override
     public List<KnowledgeDocumentSearchVO> search(String keyword, int limit) {
         if (!StringUtils.hasText(keyword)) {
@@ -608,6 +659,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return records;
     }
 
+    /**
+     * 启用/禁用文档
+     * <p>
+     * 处理流程：
+     * 1. 校验文档存在、未在分块中且状态确实需要变更
+     * 2. 启用时先在事务外执行向量嵌入（耗时操作）
+     * 3. 在事务中更新文档状态、同步调度记录、更新分片状态、操作向量库
+     * </p>
+     */
     @Override
     public void enable(String docId, boolean enabled) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
@@ -662,6 +722,10 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         });
     }
 
+    /**
+     * 查询文档分块日志
+     * <p>分页查询分块日志并补充 Pipeline 名称和"其他耗时"字段。</p>
+     */
     @Override
     public IPage<KnowledgeDocumentChunkLogVO> getChunkLogs(String docId, Page<KnowledgeDocumentChunkLogVO> page) {
         Page<KnowledgeDocumentChunkLogDO> mpPage = new Page<>(page.getCurrent(), page.getSize());
@@ -706,6 +770,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return voPage;
     }
 
+    // 计算分块日志中"其他耗时"= 总耗时 - 各已知阶段耗时之和
     private static long getOther(KnowledgeDocumentChunkLogDO each, Long totalDuration) {
         String mode = each.getProcessMode();
         boolean pipelineMode = ProcessMode.PIPELINE.getValue().equalsIgnoreCase(mode);
@@ -718,6 +783,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 : totalDuration - extract - chunk - embed - persist;
     }
 
+    // 根据知识库 ID 查询对应的向量集合名称
     private String resolveCollectionName(String kbId) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
         if (kbDO == null) {
@@ -726,10 +792,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return kbDO.getCollectionName();
     }
 
+    // 判断文档是否启用了定时同步（仅 URL 类型且 scheduleEnabled=true）
     private boolean isScheduleEnabled(SourceType sourceType, KnowledgeDocumentUploadRequest request) {
         return SourceType.URL == sourceType && Boolean.TRUE.equals(request.getScheduleEnabled());
     }
 
+    // 校验来源地址和定时调度参数的合法性
     private void validateSourceAndSchedule(SourceType sourceType, KnowledgeDocumentUploadRequest request) {
         String sourceLocation = StrUtil.trimToNull(request.getSourceLocation());
         if (SourceType.URL == sourceType && !StringUtils.hasText(sourceLocation)) {
@@ -751,6 +819,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    // 解析处理模式配置：CHUNK 模式解析分块策略和参数，PIPELINE 模式校验 Pipeline ID
     private ProcessModeConfig resolveProcessModeConfig(KnowledgeDocumentUploadRequest request) {
         ProcessMode processMode = ProcessMode.normalize(request.getProcessMode());
         if (ProcessMode.CHUNK == processMode) {
@@ -770,6 +839,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    // 根据来源类型解析文件存储：本地文件直接上传，远程 URL 通过 RemoteFileFetcher 拉取
     private StoredFileDTO resolveStoredFile(String bucketName, SourceType sourceType, String sourceLocation, MultipartFile file) {
         if (SourceType.FILE == sourceType) {
             Assert.notNull(file, () -> new ClientException("上传文件不能为空"));
@@ -778,11 +848,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return remoteFileFetcher.fetchAndStore(bucketName, sourceLocation);
     }
 
+    // 根据分块模式和文档的分块参数 JSON 构建分块配置选项
     private ChunkingOptions buildChunkingOptions(ChunkingMode mode, KnowledgeDocumentDO documentDO) {
         Map<String, Object> config = parseChunkConfig(documentDO.getChunkConfig());
         return mode.createOptions(config);
     }
 
+    // 校验并归一化分块参数 JSON，确保包含所选分块模式的所有必要字段
     private String validateAndNormalizeChunkConfig(ChunkingMode mode, String chunkConfigJson) {
         if (!StringUtils.hasText(chunkConfigJson)) {
             return null;
@@ -806,6 +878,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return json;
     }
 
+    // 解析分块参数 JSON 为 Map，解析失败时返回空 Map
     private Map<String, Object> parseChunkConfig(String json) {
         if (!StringUtils.hasText(json)) {
             return Map.of();
@@ -819,6 +892,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    // 安全删除文档关联的存储文件，失败时仅记录警告日志
     private void deleteStoredFileQuietly(KnowledgeDocumentDO documentDO) {
         if (documentDO == null || !StringUtils.hasText(documentDO.getFileUrl())) {
             return;

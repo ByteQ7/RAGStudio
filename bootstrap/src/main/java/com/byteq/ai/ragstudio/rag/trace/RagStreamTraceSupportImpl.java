@@ -55,6 +55,18 @@ public class RagStreamTraceSupportImpl implements RagStreamTraceSupport {
     /** 链路追踪记录服务 */
     private final RagTraceRecordService traceRecordService;
 
+    /**
+     * 开启一个流式追踪节点
+     * <p>
+     * 在异步线程中手动创建链路节点记录，用于流式场景下 AOP 无法自动拦截的情况。
+     * 节点创建后自动推入 {@link RagTraceContext} 的节点栈，使后续子节点能识别父节点。
+     * 若链路追踪未开启或当前线程无 traceId，则返回空操作的 NOOP_SPAN。
+     * </p>
+     *
+     * @param name 节点名称，如 "llm-stream"
+     * @param type 节点类型，默认为 "STREAM"
+     * @return 流式节点 Span，用于管理节点的分离、完成、失败和取消等生命周期
+     */
     @Override
     public StreamSpan beginStreamNode(String name, String type) {
         if (!traceProperties.isEnabled()) {

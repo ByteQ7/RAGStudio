@@ -43,6 +43,19 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
     private final IngestionPipelineNodeMapper nodeMapper;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 创建数据清洗流水线
+     * <p>
+     * 流程:
+     * 1. 校验请求参数
+     * 2. 构建流水线实体并持久化（名称重复时抛出异常）
+     * 3. 全量写入节点配置
+     * 4. 返回完整流水线视图
+     * </p>
+     *
+     * @param request 创建请求，包含流水线名称、描述及节点配置列表
+     * @return 创建成功的流水线视图对象
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public IngestionPipelineVO create(IngestionPipelineCreateRequest request) {
@@ -62,6 +75,20 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         return toVO(pipeline, fetchNodes(pipeline.getId()));
     }
 
+    /**
+     * 更新数据清洗流水线
+     * <p>
+     * 流程:
+     * 1. 查询并校验流水线是否存在
+     * 2. 更新名称和描述（仅非空字段）
+     * 3. 如果传入了节点列表，全量替换节点配置
+     * 4. 返回更新后的流水线视图
+     * </p>
+     *
+     * @param pipelineId 流水线 ID
+     * @param request    更新请求体
+     * @return 更新后的流水线视图对象
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public IngestionPipelineVO update(String pipelineId, IngestionPipelineUpdateRequest request) {
@@ -83,6 +110,12 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         return toVO(pipeline, fetchNodes(pipeline.getId()));
     }
 
+    /**
+     * 根据 ID 查询流水线详情，包含完整的节点配置列表
+     *
+     * @param pipelineId 流水线 ID
+     * @return 流水线视图对象
+     */
     @Override
     public IngestionPipelineVO get(String pipelineId) {
         IngestionPipelineDO pipeline = pipelineMapper.selectById(pipelineId);
@@ -90,6 +123,13 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         return toVO(pipeline, fetchNodes(pipeline.getId()));
     }
 
+    /**
+     * 分页查询流水线列表，支持按名称关键字模糊搜索，按更新时间倒序排列
+     *
+     * @param page    分页参数
+     * @param keyword 搜索关键字（可选）
+     * @return 流水线分页结果
+     */
     @Override
     public IPage<IngestionPipelineVO> page(Page<IngestionPipelineVO> page, String keyword) {
         Page<IngestionPipelineDO> mpPage = new Page<>(page.getCurrent(), page.getSize());
@@ -105,6 +145,11 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         return voPage;
     }
 
+    /**
+     * 逻辑删除流水线及其关联的所有节点配置
+     *
+     * @param pipelineId 流水线 ID
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(String pipelineId) {
@@ -119,6 +164,15 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         nodeMapper.delete(qw);
     }
 
+    /**
+     * 获取流水线完整定义（供引擎执行使用）
+     * <p>
+     * 将流水线元数据和所有节点配置转换为引擎可执行的 PipelineDefinition 对象。
+     * </p>
+     *
+     * @param pipelineId 流水线 ID
+     * @return 流水线定义对象
+     */
     @Override
     public PipelineDefinition getDefinition(String pipelineId) {
         IngestionPipelineDO pipeline = pipelineMapper.selectById(pipelineId);
@@ -135,6 +189,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
                 .build();
     }
 
+    // 全量替换流水线的节点配置：先删除旧节点，再逐一插入新节点
     private void upsertNodes(String pipelineId, List<IngestionPipelineNodeRequest> nodes) {
         if (nodes == null || nodes.isEmpty()) {
             return;
@@ -160,6 +215,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         }
     }
 
+    // 根据流水线 ID 查询其所有未删除的节点配置
     private List<IngestionPipelineNodeDO> fetchNodes(String pipelineId) {
         LambdaQueryWrapper<IngestionPipelineNodeDO> qw = new LambdaQueryWrapper<IngestionPipelineNodeDO>()
                 .eq(IngestionPipelineNodeDO::getPipelineId, pipelineId)
@@ -167,12 +223,14 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         return nodeMapper.selectList(qw);
     }
 
+    // 将流水线 DO 及其节点列表转换为 VO 视图对象
     private IngestionPipelineVO toVO(IngestionPipelineDO pipeline, List<IngestionPipelineNodeDO> nodes) {
         IngestionPipelineVO vo = BeanUtil.toBean(pipeline, IngestionPipelineVO.class);
         vo.setNodes(nodes.stream().map(this::toNodeVO).toList());
         return vo;
     }
 
+    // 将节点 DO 转换为 VO，并反序列化 settings 和 condition JSON
     private IngestionPipelineNodeVO toNodeVO(IngestionPipelineNodeDO node) {
         IngestionPipelineNodeVO vo = BeanUtil.toBean(node, IngestionPipelineNodeVO.class);
         vo.setNodeType(normalizeNodeTypeForOutput(node.getNodeType()));
@@ -181,6 +239,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         return vo;
     }
 
+    // 将节点 DO 转换为引擎执行所需的 NodeConfig 对象
     private NodeConfig toNodeConfig(IngestionPipelineNodeDO node) {
         return NodeConfig.builder()
                 .nodeId(node.getNodeId())
@@ -191,6 +250,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
                 .build();
     }
 
+    // 将 JsonNode 序列化为字符串，null 返回 null
     private String toJson(JsonNode node) {
         if (node == null || node.isNull()) {
             return null;
@@ -198,6 +258,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         return node.toString();
     }
 
+    // 将字符串反序列化为 JsonNode，解析失败返回 null
     private JsonNode parseJson(String raw) {
         if (!StringUtils.hasText(raw)) {
             return null;
@@ -210,6 +271,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         }
     }
 
+    // 校验并标准化节点类型，未知类型抛出异常
     private String normalizeNodeType(String nodeType) {
         if (!StringUtils.hasText(nodeType)) {
             return nodeType;
@@ -221,6 +283,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         }
     }
 
+    // 标准化节点类型用于输出展示，未知类型不抛异常而是原样返回
     private String normalizeNodeTypeForOutput(String nodeType) {
         if (!StringUtils.hasText(nodeType)) {
             return nodeType;

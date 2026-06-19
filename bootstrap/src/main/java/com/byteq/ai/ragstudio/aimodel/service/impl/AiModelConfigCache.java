@@ -83,6 +83,7 @@ public class AiModelConfigCache implements ModelConfigProvider {
         return currentConfig;
     }
 
+    // 从数据库加载全量配置：1) 加载已启用供应商，构建 providerMap 和 idToName 映射；2) 加载已启用模型，关联供应商名称；3) 组装 DynamicModelConfig 返回
     private DynamicModelConfig loadFromDatabase() {
         // 加载所有已启用的供应商
         List<AiProviderDO> providers = providerMapper.selectList(
@@ -137,6 +138,7 @@ public class AiModelConfigCache implements ModelConfigProvider {
                 .build();
     }
 
+    // 将供应商 endpoints JSON 字符串解析为 Map，解析失败时返回空 Map
     private Map<String, String> parseEndpoints(String json) {
         if (StrUtil.isBlank(json)) {
             return Collections.emptyMap();

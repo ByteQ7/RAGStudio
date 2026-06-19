@@ -5,6 +5,13 @@ import com.byteq.ai.ragstudio.ingestion.domain.enums.EnhanceType;
 import java.util.EnumMap;
 import java.util.Map;
 
+/**
+ * 文档增强提示词管理器
+ * <p>
+ * 维护各增强类型（上下文增强、关键词提取、问题生成、元数据提取）的默认系统提示词，
+ * 供 EnhancerNode 在调用大语言模型时使用。
+ * </p>
+ */
 public final class EnhancerPromptManager {
 
     private static final Map<EnhanceType, String> DEFAULT_SYSTEM_PROMPTS = new EnumMap<>(EnhanceType.class);
@@ -41,6 +48,12 @@ public final class EnhancerPromptManager {
     private EnhancerPromptManager() {
     }
 
+    /**
+     * 获取指定增强类型的默认系统提示词
+     *
+     * @param type 增强类型枚举
+     * @return 对应的默认系统提示词，如果类型未注册则返回 null
+     */
     public static String systemPrompt(EnhanceType type) {
         return DEFAULT_SYSTEM_PROMPTS.get(type);
     }

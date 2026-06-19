@@ -31,6 +31,19 @@ public class DemoModeInterceptor implements HandlerInterceptor {
      */
     private static final Set<String> SSE_PATHS = Set.of("/rag/v3/chat");
 
+    /**
+     * 请求预处理，在体验模式下拦截非只读请求
+     * <p>
+     * 处理流程：
+     * 1. 未开启体验模式 → 直接放行
+     * 2. OPTIONS 预检请求 → 直接放行
+     * 3. GET 请求（非 SSE 流式接口）→ 直接放行
+     * 4. SSE 流式接口 → 返回 SSE 格式的拒绝消息
+     * 5. 其余写操作 → 返回 JSON 格式的拒绝消息
+     * </p>
+     *
+     * @return true 放行请求，false 拒绝请求
+     */
     @Override
     public boolean preHandle(@NonNull HttpServletRequest request,
                              @NonNull HttpServletResponse response,
@@ -55,6 +68,7 @@ public class DemoModeInterceptor implements HandlerInterceptor {
         return false;
     }
 
+    // 向响应写入 SSE 格式的拒绝消息，通过 text/event-stream 返回 reject 事件和 done 事件
     private void writeSseReject(HttpServletResponse response) {
         try {
             response.setStatus(HttpServletResponse.SC_OK);
@@ -72,6 +86,7 @@ public class DemoModeInterceptor implements HandlerInterceptor {
         }
     }
 
+    // 向响应写入 JSON 格式的拒绝消息，返回标准 Result 结构的错误响应
     private void writeJsonReject(HttpServletResponse response) {
         try {
             response.setStatus(HttpServletResponse.SC_OK);

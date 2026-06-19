@@ -22,6 +22,12 @@ public class SearchChannelProperties {
      */
     private Channels channels = new Channels();
 
+    /**
+     * 检索通道聚合配置
+     * <p>
+     * 包含向量全局检索和知识库选择检索两个子通道的配置
+     * </p>
+     */
     @Data
     public static class Channels {
 
@@ -36,6 +42,12 @@ public class SearchChannelProperties {
         private KnowledgeBaseSelection knowledgeBaseSelection = new KnowledgeBaseSelection();
     }
 
+    /**
+     * 向量全局检索通道配置
+     * <p>
+     * 支持开关控制和 TopK 倍数设置，全局检索时先按倍数多召回候选，后续通过 Rerank 筛选
+     * </p>
+     */
     @Data
     public static class VectorGlobal {
 
@@ -51,6 +63,12 @@ public class SearchChannelProperties {
         private int topKMultiplier = 3;
     }
 
+    /**
+     * 知识库选择检索通道配置
+     * <p>
+     * 通过 TopK 倍数控制在每个选定知识库中检索的召回数量
+     * </p>
+     */
     @Data
     public static class KnowledgeBaseSelection {
 

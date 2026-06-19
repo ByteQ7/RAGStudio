@@ -5,6 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * Prompt 规划结果，封装从意图识别阶段选用的基模板信息
+ */
 @Data
 @RequiredArgsConstructor
 @AllArgsConstructor

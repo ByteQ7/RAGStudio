@@ -21,6 +21,14 @@ public class PgRetrieverService implements RetrieverService {
     private final JdbcTemplate jdbcTemplate;
     private final EmbeddingService embeddingService;
 
+    /**
+     * 根据自然语言查询执行向量检索
+     * <p>
+     * 流程：调用 Embedding 服务获取向量 -> L2 归一化 -> 按向量相似度检索
+     *
+     * @param request 检索请求，包含查询文本、topK、collectionName 等
+     * @return 按相似度排序的 Chunk 列表
+     */
     @Override
     public List<RetrievedChunk> retrieve(RetrieveRequest request) {
         List<Float> embedding = embeddingService.embed(request.getQuery());
@@ -31,6 +39,15 @@ public class PgRetrieverService implements RetrieverService {
         return retrieveByVector(vector, request);
     }
 
+    /**
+     * 根据向量直接在 pgvector 中执行余弦相似度检索
+     * <p>
+     * 使用 HNSW 索引，通过 SET LOCAL 设置 ef_search=200 以平衡精度和性能
+     *
+     * @param vector  归一化后的查询向量
+     * @param request 检索请求，包含 collectionName 和 topK
+     * @return 按相似度排序的 Chunk 列表
+     */
     @Override
     @Transactional(readOnly = true)
     public List<RetrievedChunk> retrieveByVector(float[] vector, RetrieveRequest request) {
@@ -50,6 +67,7 @@ public class PgRetrieverService implements RetrieverService {
         );
     }
 
+    // 对向量进行 L2 归一化，使其模长为 1
     private float[] normalize(float[] vector) {
         float norm = 0;
         for (float v : vector) {
@@ -64,6 +82,7 @@ public class PgRetrieverService implements RetrieverService {
         return vector;
     }
 
+    // 将 Float 列表转换为 float 原始类型数组
     private float[] toArray(List<Float> list) {
         float[] arr = new float[list.size()];
         for (int i = 0; i < list.size(); i++) {
@@ -72,6 +91,7 @@ public class PgRetrieverService implements RetrieverService {
         return arr;
     }
 
+    // 将 float 数组转换为 pgvector 可识别的字面量格式（如 [0.1,0.2,...]）
     private String toVectorLiteral(float[] embedding) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < embedding.length; i++) {

@@ -41,6 +41,7 @@ public class DocumentParserSelector {
      */
     private final Map<String, DocumentParser> strategyMap;
 
+    // 初始化解析器列表和类型映射表，将注入的所有解析器按类型注册到 Map 中（重复类型保留先注册的）
     public DocumentParserSelector(List<DocumentParser> parsers) {
         this.strategies = parsers;
         this.strategyMap = parsers.stream()

@@ -69,6 +69,16 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
     private final KnowledgeChunkService knowledgeChunkService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 执行数据摄入任务
+     * <p>
+     * 根据请求中的流水线 ID 和文档来源配置，创建并执行一个摄入任务。
+     * 将请求中的文档来源转换为内部领域对象后委托给内部执行方法。
+     * </p>
+     *
+     * @param request 创建任务请求，包含流水线 ID 和文档来源配置
+     * @return 摄入任务执行结果
+     */
     @Override
     public IngestionResult execute(IngestionTaskCreateRequest request) {
         Assert.notNull(request, () -> new ClientException("请求不能为空"));
@@ -76,6 +86,20 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         return executeInternal(request.getPipelineId(), source, null, null, request.getVectorSpaceId());
     }
 
+    /**
+     * 上传文件并执行摄入任务
+     * <p>
+     * 流程:
+     * 1. 读取上传文件的字节内容
+     * 2. 自动检测文件的 MIME 类型
+     * 3. 构建本地文件类型的文档来源
+     * 4. 委托内部方法执行流水线处理
+     * </p>
+     *
+     * @param pipelineId 流水线 ID
+     * @param file       上传的文件
+     * @return 摄入任务执行结果
+     */
     @Override
     public IngestionResult upload(String pipelineId, MultipartFile file) {
         Assert.notNull(file, () -> new ClientException("文件不能为空"));
@@ -97,6 +121,12 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    /**
+     * 根据任务 ID 查询任务详情，包括状态、来源、日志和元数据
+     *
+     * @param taskId 任务 ID
+     * @return 任务详情视图对象
+     */
     @Override
     public IngestionTaskVO get(String taskId) {
         IngestionTaskDO task = taskMapper.selectById(taskId);
@@ -104,6 +134,13 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         return toVO(task);
     }
 
+    /**
+     * 分页查询摄入任务列表，支持按状态筛选，按创建时间倒序排列
+     *
+     * @param page   分页参数
+     * @param status 任务状态筛选条件（可选）
+     * @return 任务分页结果
+     */
     @Override
     public IPage<IngestionTaskVO> page(Page<IngestionTaskVO> page, String status) {
         Page<IngestionTaskDO> mpPage = new Page<>(page.getCurrent(), page.getSize());
@@ -118,6 +155,12 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         return voPage;
     }
 
+    /**
+     * 查询任务各节点的执行记录，按节点顺序和 ID 升序排列
+     *
+     * @param taskId 任务 ID
+     * @return 节点执行记录列表
+     */
     @Override
     public List<IngestionTaskNodeVO> listNodes(String taskId) {
         LambdaQueryWrapper<IngestionTaskNodeDO> qw = new LambdaQueryWrapper<IngestionTaskNodeDO>()
@@ -129,6 +172,13 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         return nodes.stream().map(this::toNodeVO).toList();
     }
 
+    // 任务执行核心流程:
+    // 1. 解析流水线定义
+    // 2. 创建任务记录并持久化
+    // 3. 构建执行上下文
+    // 4. 调用引擎执行流水线
+    // 5. 保存节点日志和更新任务状态
+    // 6. 创建知识库文档记录
     private IngestionResult executeInternal(String pipelineId,
                                             DocumentSource source,
                                             byte[] rawBytes,
@@ -179,6 +229,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 .build();
     }
 
+    // 根据引擎执行结果更新任务状态、分块数、错误信息、日志和元数据
     private void updateTaskFromContext(IngestionTaskDO task, IngestionContext context) {
         task.setStatus(context.getStatus() == null ? IngestionStatus.FAILED.getValue() : context.getStatus().getValue());
         task.setChunkCount(context.getChunks() == null ? 0 : context.getChunks().size());
@@ -310,6 +361,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 .orElse(null);
     }
 
+    // 将引擎产生的节点执行日志逐一持久化到任务节点表
     private void saveNodeLogs(IngestionTaskDO task, PipelineDefinition pipeline, List<NodeLog> logs) {
         if (logs == null || logs.isEmpty()) {
             return;
@@ -334,6 +386,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    // 根据流水线的节点链构建节点执行顺序映射，用于日志排序
     private Map<String, Integer> buildNodeOrderMap(PipelineDefinition pipeline) {
         Map<String, Integer> orderMap = new HashMap<>();
         if (pipeline == null || pipeline.getNodes() == null || pipeline.getNodes().isEmpty()) {
@@ -380,6 +433,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         return orderMap;
     }
 
+    // 根据节点日志判断节点执行状态：success/failed/skipped
     private String resolveNodeStatus(NodeLog log) {
         if (log == null) {
             return "failed";
@@ -394,6 +448,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         return "success";
     }
 
+    // 从上下文中汇总任务的元数据（包括关键词和问题）
     private Map<String, Object> buildTaskMetadata(IngestionContext context) {
         Map<String, Object> data = new HashMap<>();
         if (context.getMetadata() != null) {
@@ -408,6 +463,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         return data;
     }
 
+    // 校验流水线 ID 是否有效，为空时抛出异常
     private String resolvePipelineId(String pipelineId) {
         if (StringUtils.hasText(pipelineId)) {
             return pipelineId;
@@ -415,6 +471,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         throw new ClientException("必须传流水线ID");
     }
 
+    // 标准化任务状态字符串，通过枚举校验并返回规范值
     private String normalizeStatus(String status) {
         if (!StringUtils.hasText(status)) {
             return status;
@@ -426,6 +483,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    // 将文档来源请求对象转换为内部 DocumentSource 领域对象
     private DocumentSource toSource(DocumentSourceRequest request) {
         Assert.notNull(request, () -> new ClientException("文档来源不能为空"));
         DocumentSource source = DocumentSource.builder()
@@ -440,6 +498,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         return source;
     }
 
+    // 将任务 DO 转换为 VO 视图对象，包括状态标准化和 JSON 字段反序列化
     private IngestionTaskVO toVO(IngestionTaskDO task) {
         return IngestionTaskVO.builder()
                 .id(String.valueOf(task.getId()))
@@ -460,6 +519,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 .build();
     }
 
+    // 将任务节点 DO 转换为 VO 视图对象
     private IngestionTaskNodeVO toNodeVO(IngestionTaskNodeDO node) {
         return IngestionTaskNodeVO.builder()
                 .id(String.valueOf(node.getId()))
@@ -478,6 +538,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 .build();
     }
 
+    // 将对象序列化为 JSON 字符串，序列化失败返回 null
     private String writeJson(Object value) {
         if (value == null) {
             return null;
@@ -490,6 +551,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    // 构建精简版日志摘要，去除 output 字段以减小存储体积
     private List<NodeLog> buildLogSummary(List<NodeLog> logs) {
         if (logs == null) {
             return List.of();
@@ -507,6 +569,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 .toList();
     }
 
+    // 从 JSON 字符串反序列化为节点日志列表，解析失败返回空列表
     private List<NodeLog> readLogs(String raw) {
         if (!StringUtils.hasText(raw)) {
             return List.of();
@@ -519,6 +582,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    // 从 JSON 字符串反序列化为元数据 Map
     private Map<String, Object> parseMetadata(String raw) {
         if (!StringUtils.hasText(raw)) {
             return Map.of();
@@ -532,6 +596,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    // 从 JSON 字符串反序列化为节点输出 Map
     private Map<String, Object> parseOutput(String raw) {
         if (!StringUtils.hasText(raw)) {
             return Map.of();
@@ -545,6 +610,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    // 标准化文档来源类型字符串
     private String normalizeSourceType(String sourceType) {
         if (!StringUtils.hasText(sourceType)) {
             return sourceType;
@@ -556,6 +622,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    // 标准化节点类型字符串
     private String normalizeNodeType(String nodeType) {
         if (!StringUtils.hasText(nodeType)) {
             return nodeType;
@@ -567,6 +634,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         }
     }
 
+    // 标准化节点执行状态字符串，将连字符替换为下划线
     private String normalizeNodeStatus(String status) {
         if (!StringUtils.hasText(status)) {
             return status;
@@ -609,6 +677,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 + ",\"_preview\":\"" + escapeJsonString(preview) + "\"}";
     }
 
+    // 对字符串进行 JSON 转义处理，处理引号、反斜杠、换行符和控制字符
     private String escapeJsonString(String s) {
         StringBuilder sb = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {

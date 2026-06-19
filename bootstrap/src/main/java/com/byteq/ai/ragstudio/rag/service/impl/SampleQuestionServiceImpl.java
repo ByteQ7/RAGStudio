@@ -18,6 +18,12 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * 示例问题服务实现类
+ * <p>
+ * 实现示例问题的 CRUD、分页查询和随机获取功能，用于对话界面推荐问题展示。
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 public class SampleQuestionServiceImpl implements SampleQuestionService {
@@ -26,6 +32,7 @@ public class SampleQuestionServiceImpl implements SampleQuestionService {
 
     private final SampleQuestionMapper sampleQuestionMapper;
 
+    // 校验参数后创建示例问题记录
     @Override
     public String create(SampleQuestionCreateRequest requestParam) {
         Assert.notNull(requestParam, () -> new ClientException("请求不能为空"));
@@ -41,6 +48,7 @@ public class SampleQuestionServiceImpl implements SampleQuestionService {
         return String.valueOf(record.getId());
     }
 
+    // 加载记录后按非空字段逐个更新
     @Override
     public void update(String id, SampleQuestionUpdateRequest requestParam) {
         Assert.notNull(requestParam, () -> new ClientException("请求不能为空"));
@@ -61,18 +69,21 @@ public class SampleQuestionServiceImpl implements SampleQuestionService {
         sampleQuestionMapper.updateById(record);
     }
 
+    // 删除示例问题
     @Override
     public void delete(String id) {
         SampleQuestionDO record = loadById(id);
         sampleQuestionMapper.deleteById(record.getId());
     }
 
+    // 根据 ID 查询示例问题详情并转换为 VO
     @Override
     public SampleQuestionVO queryById(String id) {
         SampleQuestionDO record = loadById(id);
         return toVO(record);
     }
 
+    // 分页查询示例问题，支持按标题/描述/内容关键字模糊搜索，按更新时间降序
     @Override
     public IPage<SampleQuestionVO> pageQuery(SampleQuestionPageRequest requestParam) {
         String keyword = StrUtil.trimToNull(requestParam.getKeyword());
@@ -92,6 +103,7 @@ public class SampleQuestionServiceImpl implements SampleQuestionService {
         return result.convert(this::toVO);
     }
 
+    // 从启用的示例问题中随机选取指定数量返回，用于前端推荐展示
     @Override
     public List<SampleQuestionVO> listRandomQuestions() {
         List<SampleQuestionDO> records = sampleQuestionMapper.selectList(
@@ -107,6 +119,7 @@ public class SampleQuestionServiceImpl implements SampleQuestionService {
                 .toList();
     }
 
+    // 根据 ID 加载示例问题记录，不存在时抛出异常
     private SampleQuestionDO loadById(String id) {
         SampleQuestionDO record = sampleQuestionMapper.selectOne(
                 Wrappers.lambdaQuery(SampleQuestionDO.class)
@@ -117,6 +130,7 @@ public class SampleQuestionServiceImpl implements SampleQuestionService {
         return record;
     }
 
+    // 将示例问题 DO 转换为 VO
     private SampleQuestionVO toVO(SampleQuestionDO record) {
         return SampleQuestionVO.builder()
                 .id(String.valueOf(record.getId()))

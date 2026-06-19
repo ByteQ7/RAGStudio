@@ -13,6 +13,12 @@ import com.byteq.ai.ragstudio.user.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+/**
+ * 认证服务实现类
+ * <p>
+ * 实现用户登录和登出的核心业务逻辑，包括身份校验、Sa-Token 会话管理和登录信息返回。
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -21,6 +27,21 @@ public class AuthServiceImpl implements AuthService {
 
     private final UserMapper userMapper;
 
+    /**
+     * 用户登录
+     * <p>
+     * 处理流程：
+     * 1. 校验用户名和密码非空
+     * 2. 根据用户名查询未删除的用户记录
+     * 3. 校验密码是否匹配
+     * 4. 调用 Sa-Token 执行登录，生成会话 Token
+     * 5. 返回包含 Token 和用户信息的 LoginVO
+     * </p>
+     *
+     * @param requestParam 登录请求参数，包含用户名和密码
+     * @return 登录响应结果，包含 Token、角色和头像信息
+     * @throws ClientException 用户名/密码为空、用户不存在或密码错误时抛出
+     */
     @Override
     public LoginVO login(LoginRequest requestParam) {
         String username = requestParam.getUsername();
@@ -46,6 +67,7 @@ public class AuthServiceImpl implements AuthService {
         StpUtil.logout();
     }
 
+    // 根据用户名查询未删除的用户记录，用户名为空时返回 null
     private UserDO findByUsername(String username) {
         if (StrUtil.isBlank(username)) {
             return null;

@@ -73,6 +73,26 @@ public abstract class ForwardingStreamCallback implements StreamCallback {
     }
 
     /**
+     * Agent 推理步骤回调（final）
+     * <p>
+     * 直接透传 delegate。
+     */
+    @Override
+    public final void onAgentStep(Object step) {
+        delegate.onAgentStep(step);
+    }
+
+    /**
+     * Agent 步骤完成回调（final）
+     * <p>
+     * 直接透传 delegate。
+     */
+    @Override
+    public final void onAgentStepsComplete(String agentStepsJson) {
+        delegate.onAgentStepsComplete(agentStepsJson);
+    }
+
+    /**
      * 首包钩子
      * <p>
      * 流式响应到达「第一个 onContent」时触发一次，

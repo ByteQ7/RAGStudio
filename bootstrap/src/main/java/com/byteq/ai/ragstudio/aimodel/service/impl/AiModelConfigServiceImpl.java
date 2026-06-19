@@ -387,6 +387,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
     }
 
+    // 将供应商 DO 转换为 VO，并解析 endpoints JSON 字段
     private AiProviderVO toProviderVO(AiProviderDO provider) {
         AiProviderVO vo = BeanUtil.toBean(provider, AiProviderVO.class,
                 CopyOptions.create().setIgnoreProperties("endpoints"));
@@ -395,16 +396,19 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         return vo;
     }
 
+    // 将模型 DO 转换为 VO，自动加载供应商名称
     private AiModelVO toModelVO(AiModelDO model) {
         return toModelVO(model, loadProviderNameMap());
     }
 
+    // 将模型 DO 转换为 VO，使用预加载的供应商名称映射填充 providerName
     private AiModelVO toModelVO(AiModelDO model, Map<String, String> providerNames) {
         AiModelVO vo = BeanUtil.copyProperties(model, AiModelVO.class);
         vo.setProviderName(providerNames.getOrDefault(model.getProviderId(), ""));
         return vo;
     }
 
+    // 加载所有供应商的 ID -> 名称 映射，用于模型列表展示供应商名称
     private Map<String, String> loadProviderNameMap() {
         List<AiProviderDO> providers = providerMapper.selectList(null);
         Map<String, String> map = new HashMap<>();
@@ -415,6 +419,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
 
+    // 将 endpoints Map 序列化为 JSON 字符串，用于数据库存储
     private String serializeEndpoints(Map<String, String> endpoints) {
         if (endpoints == null || endpoints.isEmpty()) {
             return null;
@@ -426,6 +431,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
     }
 
+    // 将 JSON 字符串解析为 endpoints Map，解析失败时返回空 Map
     private Map<String, String> parseEndpoints(String json) {
         if (StrUtil.isBlank(json)) {
             return new HashMap<>();

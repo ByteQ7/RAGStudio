@@ -23,6 +23,14 @@ public class MessageFeedbackConsumer implements RocketMQListener<MessageWrapper<
 
     private final MessageFeedbackService feedbackService;
 
+    /**
+     * 消费消息反馈 MQ 事件
+     * <p>
+     * 从消息包装中提取点赞/点踩事件，委托给 {@link MessageFeedbackService} 异步持久化到数据库。
+     * </p>
+     *
+     * @param message 消息包装，包含反馈事件体和追踪 keys
+     */
     @Override
     public void onMessage(MessageWrapper<MessageFeedbackEvent> message) {
         MessageFeedbackEvent event = message.getBody();

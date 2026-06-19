@@ -47,6 +47,15 @@ public class WebConfig implements WebMvcConfigurer {
         converters.add(0, stringConverter);
     }
 
+    /**
+     * 配置全局跨域访问策略
+     * <p>
+     * 允许所有来源、常用 HTTP 方法和任意请求头，暴露 Authorization 响应头，
+     * 允许携带凭证（Cookie），预检请求结果缓存 1 小时。
+     * </p>
+     *
+     * @param registry CORS 配置注册器
+     */
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")

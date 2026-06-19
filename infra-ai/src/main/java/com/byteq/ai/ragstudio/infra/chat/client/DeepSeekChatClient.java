@@ -55,6 +55,7 @@ public class DeepSeekChatClient implements ChatClient {
         return FluxToStreamCallbackBridge.subscribe(flux, callback);
     }
 
+    // 从 ChatResponse 中提取响应文本，若响应为空则抛出异常
     private static String extractText(ChatResponse response, String provider) {
         if (response.getResult() == null || response.getResult().getOutput() == null) {
             throw new ModelClientException(

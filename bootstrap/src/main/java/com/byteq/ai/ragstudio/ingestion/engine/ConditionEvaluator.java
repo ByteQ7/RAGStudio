@@ -27,6 +27,22 @@ public class ConditionEvaluator {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 评估条件是否满足
+     * <p>
+     * 支持多种条件格式：
+     * <ul>
+     *   <li>null 或 null 节点 - 默认返回 true</li>
+     *   <li>布尔值 - 直接返回</li>
+     *   <li>字符串 - 作为 SpEL 表达式求值</li>
+     *   <li>对象 - 支持 all（全部满足）、any（任一满足）、not（取反）、field（字段规则匹配）</li>
+     * </ul>
+     * </p>
+     *
+     * @param context   摄入上下文，作为条件评估的数据源
+     * @param condition JSON 格式的条件配置
+     * @return 条件是否满足
+     */
     public boolean evaluate(IngestionContext context, JsonNode condition) {
         if (condition == null || condition.isNull()) {
             return true;
@@ -54,6 +70,7 @@ public class ConditionEvaluator {
         return true;
     }
 
+    // 评估 "all" 条件：所有子条件都必须满足
     private boolean evalAll(IngestionContext context, JsonNode node) {
         if (node == null || !node.isArray()) {
             return true;
@@ -66,6 +83,7 @@ public class ConditionEvaluator {
         return true;
     }
 
+    // 评估 "any" 条件：任一子条件满足即可
     private boolean evalAny(IngestionContext context, JsonNode node) {
         if (node == null || !node.isArray()) {
             return true;
@@ -78,6 +96,7 @@ public class ConditionEvaluator {
         return false;
     }
 
+    // 评估字段规则：读取上下文字段值并与目标值进行运算符比较
     private boolean evalRule(IngestionContext context, JsonNode node) {
         String field = node.path("field").asText(null);
         if (!StringUtils.hasText(field)) {
@@ -90,6 +109,7 @@ public class ConditionEvaluator {
         return compare(left, right, operator);
     }
 
+    // 通过 BeanWrapper 从上下文中读取指定路径的属性值
     private Object readField(IngestionContext context, String path) {
         try {
             BeanWrapperImpl wrapper = new BeanWrapperImpl(context);
@@ -99,6 +119,7 @@ public class ConditionEvaluator {
         }
     }
 
+    // 根据运算符类型对左右值进行比较，支持 eq/ne/in/contains/regex/gt/gte/lt/lte/exists/not_exists
     private boolean compare(Object left, Object right, String operator) {
         return switch (operator.toLowerCase()) {
             case "ne" -> !Objects.equals(normalize(left), normalize(right));
@@ -115,6 +136,7 @@ public class ConditionEvaluator {
         };
     }
 
+    // 判断左值是否存在于右值列表中（或反之）
     private boolean in(Object left, Object right) {
         if (right instanceof List<?> list) {
             return list.contains(left);
@@ -125,6 +147,7 @@ public class ConditionEvaluator {
         return Objects.equals(normalize(left), normalize(right));
     }
 
+    // 判断左值（字符串或列表）是否包含右值
     private boolean contains(Object left, Object right) {
         if (left == null || right == null) {
             return false;
@@ -138,6 +161,7 @@ public class ConditionEvaluator {
         return false;
     }
 
+    // 使用正则表达式匹配左值是否符合右值的模式
     private boolean regex(Object left, Object right) {
         if (left == null || right == null) {
             return false;
@@ -145,6 +169,7 @@ public class ConditionEvaluator {
         return String.valueOf(left).matches(String.valueOf(right));
     }
 
+    // 将左右值转为数值进行比较，返回标准的 compareTo 结果
     private int compareNumber(Object left, Object right) {
         if (left == null || right == null) {
             return 0;
@@ -157,6 +182,7 @@ public class ConditionEvaluator {
         return Double.compare(l, r);
     }
 
+    // 将值安全地转换为 Double 类型，转换失败返回 null
     private Double toDouble(Object value) {
         if (value instanceof Number n) {
             return n.doubleValue();
@@ -168,6 +194,7 @@ public class ConditionEvaluator {
         }
     }
 
+    // 标准化值：去除字符串两端空白，其他类型直接返回
     private Object normalize(Object value) {
         if (value instanceof String s) {
             return s.trim();
@@ -175,6 +202,7 @@ public class ConditionEvaluator {
         return value;
     }
 
+    // 使用 SpEL 表达式引擎评估条件，采用安全的只读上下文防止注入攻击
     private boolean evalSpel(IngestionContext context, String expression) {
         try {
             // 使用 SimpleEvaluationContext 替代 StandardEvaluationContext，

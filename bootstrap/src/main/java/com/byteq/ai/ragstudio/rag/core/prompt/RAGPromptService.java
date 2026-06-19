@@ -71,6 +71,7 @@ public class RAGPromptService {
         return messages;
     }
 
+    // 根据 MCP 和 KB 上下文的有无，决定本次 Prompt 构建的场景并生成构建计划
     private PromptBuildPlan plan(PromptContext context) {
         if (context.hasMcp() && !context.hasKb()) {
             return planMcpOnly(context);
@@ -89,6 +90,7 @@ public class RAGPromptService {
                 .build();
     }
 
+    // 构建仅知识库场景的 Prompt 计划
     private PromptBuildPlan planKbOnly(PromptContext context) {
         return PromptBuildPlan.builder()
                 .scene(PromptScene.KB_ONLY)
@@ -98,6 +100,7 @@ public class RAGPromptService {
                 .build();
     }
 
+    // 构建仅 MCP 场景的 Prompt 计划
     private PromptBuildPlan planMcpOnly(PromptContext context) {
         return PromptBuildPlan.builder()
                 .scene(PromptScene.MCP_ONLY)
@@ -107,6 +110,7 @@ public class RAGPromptService {
                 .build();
     }
 
+    // 构建 MCP + KB 混合场景的 Prompt 计划
     private PromptBuildPlan planMixed(PromptContext context) {
         return PromptBuildPlan.builder()
                 .scene(PromptScene.MIXED)
@@ -116,6 +120,7 @@ public class RAGPromptService {
                 .build();
     }
 
+    // 根据场景枚举返回对应的默认系统提示词模板
     private String defaultTemplate(PromptScene scene) {
         return switch (scene) {
             case KB_ONLY -> templateLoader.load(RAG_ENTERPRISE_PROMPT_PATH);
@@ -125,6 +130,7 @@ public class RAGPromptService {
         };
     }
 
+    // 构建用户问题文本：多子问题时渲染编号列表模板，否则渲染单问题模板
     private String buildUserQuestion(String question, List<String> subQuestions) {
         if (CollUtil.isNotEmpty(subQuestions) && subQuestions.size() > 1) {
             String numbered = IntStream.range(0, subQuestions.size())
@@ -138,6 +144,7 @@ public class RAGPromptService {
         return renderSection("single-question", Map.of("question", question));
     }
 
+    // 将证据文本和用户问题用双换行拼接为完整的 user message 内容
     private String mergeEvidenceAndQuestion(String evidenceBody, String question) {
         if (StrUtil.isBlank(evidenceBody)) {
             return question;
@@ -165,6 +172,7 @@ public class RAGPromptService {
         return sb.toString().trim();
     }
 
+    // 从上下文格式化模板中渲染指定 section 并填充占位符
     private String renderSection(String section, Map<String, String> slots) {
         return templateLoader.renderSection(CONTEXT_FORMAT_PATH, section, slots);
     }

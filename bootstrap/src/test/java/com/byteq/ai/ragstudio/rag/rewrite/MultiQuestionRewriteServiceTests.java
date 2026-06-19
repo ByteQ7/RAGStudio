@@ -18,6 +18,7 @@ public class MultiQuestionRewriteServiceTests {
 
     private final MultiQuestionRewriteService multiQuestionRewriteService;
 
+    // 验证包含并列主体（淘宝、天猫）的问题能被正确改写，且子问题拆分覆盖各主体
     @Test
     public void shouldReturnRewriteAndSubQuestions() {
         String question = "你好呀，淘宝和天猫数据安全怎么做的？";

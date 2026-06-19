@@ -67,6 +67,7 @@ public class ModelHealthStore {
                 && !isHalfOpenTimedOut(health);
     }
 
+    // 判断半开状态下的探测请求是否已超时（超过冷却时间视为探测失效）
     private boolean isHalfOpenTimedOut(ModelHealth health) {
         if (!health.halfOpenInFlight || health.halfOpenStartedAt == 0) {
             return false;

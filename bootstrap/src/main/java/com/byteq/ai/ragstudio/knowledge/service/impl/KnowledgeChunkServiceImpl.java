@@ -57,6 +57,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     private final VectorStoreService vectorStoreService;
     private final TransactionOperations transactionOperations;
 
+    // 按文档 ID 分页查询分片列表，按分片序号升序排列
     @Override
     public IPage<KnowledgeChunkVO> pageQuery(String docId, KnowledgeChunkPageRequest requestParam) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
@@ -72,6 +73,13 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         return result.convert(each -> BeanUtil.toBean(each, KnowledgeChunkVO.class));
     }
 
+    /**
+     * 新增分片
+     * <p>
+     * 处理流程：校验文档状态 → 自动计算分片序号 → 创建分片记录 →
+     * 更新文档分片计数 → 同步写入向量库
+     * </p>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public KnowledgeChunkVO create(String docId, KnowledgeChunkCreateRequest requestParam) {
@@ -137,6 +145,13 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         batchCreate(docId, requestParams, false);
     }
 
+    /**
+     * 批量新增分片
+     * <p>
+     * 处理流程：自动计算缺失的分片序号 → 逐条创建分片记录 →
+     * 批量写入数据库 → 更新文档分片计数 → 可选同步写入向量库
+     * </p>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void batchCreate(String docId, List<KnowledgeChunkCreateRequest> requestParams, boolean writeVector) {
@@ -220,6 +235,10 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         }
     }
 
+    /**
+     * 更新分片内容
+     * <p>校验文档和分片存在性后更新内容、哈希值和 Token 计数，并同步到向量库。</p>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void update(String docId, String chunkId, KnowledgeChunkUpdateRequest requestParam) {
@@ -266,6 +285,10 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         );
     }
 
+    /**
+     * 删除分片
+     * <p>删除分片记录、更新文档分片计数并从向量库中移除该分片。</p>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(String docId, String chunkId) {
@@ -294,6 +317,10 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         deleteChunkFromVector(collectionName, chunkId);
     }
 
+    /**
+     * 启用/禁用单个分片
+     * <p>启用时将分片重新写入向量库，禁用时从向量库移除。</p>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void enableChunk(String docId, String chunkId, boolean enabled) {
@@ -330,6 +357,13 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         }
     }
 
+    /**
+     * 批量启用/禁用分片
+     * <p>
+     * 处理流程：校验请求参数和文档状态 → 过滤出状态需要变更的分片 →
+     * 启用时批量嵌入向量并在事务中更新 DB 和向量库，禁用时在事务中更新 DB 并删除向量
+     * </p>
+     */
     @Override
     public void batchToggleEnabled(String docId, KnowledgeChunkBatchRequest requestParam, boolean enabled) {
         if (requestParam == null || CollUtil.isEmpty(requestParam.getChunkIds())) {
@@ -413,6 +447,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 documentDO.getKbId(), docId, needUpdateIds.size());
     }
 
+    // 根据文档 ID 批量更新所有分片的启用状态（由文档启用/禁用时调用）
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateEnabledByDocId(String docId, String kbId, boolean enabled) {
@@ -426,6 +461,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         log.info("根据文档ID更新所有Chunk启用状态, kbId={}, docId={}, enabled={}", kbId, docId, enabled);
     }
 
+    // 根据文档 ID 查询所有分片列表，按分片序号升序排列
     @Override
     public List<KnowledgeChunkVO> listByDocId(String docId) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
@@ -442,6 +478,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 .collect(Collectors.toList());
     }
 
+    // 根据文档 ID 删除该文档下的所有分片记录
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteByDocId(String docId) {
@@ -502,6 +539,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         return arr;
     }
 
+    // 批量为分片生成向量嵌入并设置到 VectorChunk 对象中
     private void attachEmbeddings(List<VectorChunk> chunks, String embeddingModel) {
         if (CollUtil.isEmpty(chunks)) {
             return;
@@ -516,18 +554,21 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         }
     }
 
+    // 对单条文本进行向量嵌入，支持指定嵌入模型或使用默认模型
     private List<Float> embedContent(String content, String embeddingModel) {
         return StrUtil.isBlank(embeddingModel)
                 ? embeddingService.embed(content)
                 : embeddingService.embed(content, embeddingModel);
     }
 
+    // 批量对文本列表进行向量嵌入
     private List<List<Float>> embedBatch(List<String> texts, String embeddingModel) {
         return StrUtil.isBlank(embeddingModel)
                 ? embeddingService.embedBatch(texts)
                 : embeddingService.embedBatch(texts, embeddingModel);
     }
 
+    // 计算文本的 Token 数量
     private Integer resolveTokenCount(String content) {
         if (!StringUtils.hasText(content)) {
             return 0;

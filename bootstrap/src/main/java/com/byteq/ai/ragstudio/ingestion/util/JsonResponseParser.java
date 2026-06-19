@@ -22,6 +22,15 @@ public final class JsonResponseParser {
     private JsonResponseParser() {
     }
 
+    /**
+     * 将 LLM 返回的 JSON 字符串解析为字符串列表
+     * <p>
+     * 自动处理 LLM 输出中常见的 Markdown 代码块包裹和多余文本，提取 JSON 数组部分。
+     * </p>
+     *
+     * @param raw LLM 返回的原始响应字符串
+     * @return 解析后的字符串列表，解析失败返回空列表
+     */
     public static List<String> parseStringList(String raw) {
         JsonElement element = parseJsonElement(raw);
         if (element == null || !element.isJsonArray()) {
@@ -30,6 +39,15 @@ public final class JsonResponseParser {
         return GSON.fromJson(element, List.class);
     }
 
+    /**
+     * 将 LLM 返回的 JSON 字符串解析为键值对 Map
+     * <p>
+     * 自动处理 LLM 输出中常见的 Markdown 代码块包裹和多余文本，提取 JSON 对象部分。
+     * </p>
+     *
+     * @param raw LLM 返回的原始响应字符串
+     * @return 解析后的键值对映射，解析失败返回空 Map
+     */
     public static Map<String, Object> parseObject(String raw) {
         JsonElement element = parseJsonElement(raw);
         if (element == null || !element.isJsonObject()) {
@@ -38,6 +56,7 @@ public final class JsonResponseParser {
         return GSON.fromJson(element, LinkedHashMap.class);
     }
 
+    // 清理 LLM 输出并解析为 JsonElement，支持去除 Markdown 代码块和提取 JSON 主体
     private static JsonElement parseJsonElement(String raw) {
         if (StrUtil.isBlank(raw)) {
             return null;
@@ -51,6 +70,7 @@ public final class JsonResponseParser {
         }
     }
 
+    // 从混合文本中提取 JSON 对象或数组部分，定位首尾的 {} 或 [] 边界
     private static String extractJsonBody(String raw) {
         int objStart = raw.indexOf('{');
         int arrStart = raw.indexOf('[');

@@ -13,6 +13,10 @@ import lombok.NoArgsConstructor;
 
 import java.util.Date;
 
+/**
+ * 会话实体类
+ * 用于存储用户会话的基本信息，包括会话标题、所属用户及最后活跃时间等
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

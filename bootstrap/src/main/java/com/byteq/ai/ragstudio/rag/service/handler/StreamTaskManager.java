@@ -20,6 +20,13 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
+/**
+ * 流式任务管理器
+ * <p>
+ * 管理 SSE 流式对话任务的生命周期，支持本地和分布式（Redis）两级取消机制。
+ * 通过 Guava Cache 维护本地任务注册表，通过 Redis Topic 实现跨实例取消通知。
+ * </p>
+ */
 @Slf4j
 @Component
 public class StreamTaskManager {
@@ -40,6 +47,9 @@ public class StreamTaskManager {
         this.redissonClient = redissonClient;
     }
 
+    /**
+     * 启动时订阅 Redis 取消主题，接收跨实例的取消通知并触发本地取消
+     */
     @PostConstruct
     public void subscribe() {
         RTopic topic = redissonClient.getTopic(CANCEL_TOPIC);
@@ -51,6 +61,9 @@ public class StreamTaskManager {
         });
     }
 
+    /**
+     * 销毁时取消订阅 Redis 取消主题
+     */
     @PreDestroy
     public void unsubscribe() {
         if (listenerId == -1) {
@@ -59,6 +72,16 @@ public class StreamTaskManager {
         redissonClient.getTopic(CANCEL_TOPIC).removeListener(listenerId);
     }
 
+    /**
+     * 注册流式任务，绑定 SSE 发送器和取消回调
+     * <p>
+     * 注册后会立即检查 Redis 中是否已有取消标记，若有则直接触发取消流程。
+     * </p>
+     *
+     * @param taskId           任务 ID
+     * @param sender           SSE 发送器
+     * @param onCancelSupplier 取消时执行的回调，返回完成载荷用于通知前端
+     */
     public void register(String taskId, SseEmitterSender sender, Supplier<CompletionPayload> onCancelSupplier) {
         StreamTaskInfo taskInfo = new StreamTaskInfo();
         taskInfo.sender = sender;
@@ -87,6 +110,12 @@ public class StreamTaskManager {
         }
     }
 
+    /**
+     * 绑定底层流式取消句柄，使取消操作能中断 LLM 的 HTTP 连接
+     *
+     * @param taskId 任务 ID
+     * @param handle 流式取消句柄
+     */
     public void bindHandle(String taskId, StreamCancellationHandle handle) {
         StreamTaskInfo taskInfo = getOrCreate(taskId);
         taskInfo.handle = handle;
@@ -95,11 +124,25 @@ public class StreamTaskManager {
         }
     }
 
+    /**
+     * 检查指定任务是否已被取消
+     *
+     * @param taskId 任务 ID
+     * @return true 表示已取消
+     */
     public boolean isCancelled(String taskId) {
         StreamTaskInfo info = tasks.getIfPresent(taskId);
         return info != null && info.cancelled.get();
     }
 
+    /**
+     * 取消指定任务，通过 Redis 发布取消通知到所有实例
+     * <p>
+     * 先在 Redis 设置取消标记，再通过 Topic 广播通知，确保跨实例一致性。
+     * </p>
+     *
+     * @param taskId 任务 ID
+     */
     public void cancel(String taskId) {
         // 先设置 Redis 标记，再发布消息
         RBucket<Boolean> bucket = redissonClient.getBucket(cancelKey(taskId));
@@ -128,6 +171,7 @@ public class StreamTaskManager {
         return false;
     }
 
+    // 本地取消任务: CAS 确保只执行一次 -> 中断 LLM 连接 -> 执行取消回调保存已有内容
     private void cancelLocal(String taskId) {
         StreamTaskInfo taskInfo = tasks.getIfPresent(taskId);
         if (taskInfo == null) {
@@ -151,6 +195,11 @@ public class StreamTaskManager {
         }
     }
 
+    /**
+     * 注销任务，清理本地缓存和 Redis 取消标记
+     *
+     * @param taskId 任务 ID
+     */
     public void unregister(String taskId) {
         // 清理本地缓存
         tasks.invalidate(taskId);
@@ -159,16 +208,19 @@ public class StreamTaskManager {
         redissonClient.getBucket(cancelKey(taskId)).deleteAsync();
     }
 
+    // 生成 Redis 取消标记的 Key
     private String cancelKey(String taskId) {
         return CANCEL_KEY_PREFIX + taskId;
     }
 
+    // 向前端发送取消事件和完成信号
     private void sendCancelAndDone(SseEmitterSender sender, CompletionPayload payload) {
         CompletionPayload actualPayload = payload == null ? new CompletionPayload(null, null) : payload;
         sender.sendEvent(SSEEventType.CANCEL.value(), actualPayload);
         sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
     }
 
+    // 从缓存获取任务信息，不存在则创建新的空任务信息
     @SneakyThrows
     private StreamTaskInfo getOrCreate(String taskId) {
         return tasks.get(taskId, StreamTaskInfo::new);

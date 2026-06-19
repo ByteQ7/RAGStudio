@@ -93,6 +93,7 @@ public enum ChunkingMode {
 
     // ============ 解析工具 ============
 
+    // 从配置 Map 中安全地提取整数值，支持 Number 和 String 类型，解析失败时返回默认值
     static int toInt(Map<String, Object> config, String key, int defaultValue) {
         if (config == null) return defaultValue;
         Object value = config.get(key);
@@ -108,6 +109,16 @@ public enum ChunkingMode {
         return defaultValue;
     }
 
+    /**
+     * 根据字符串值反序列化分块策略枚举
+     * <p>
+     * 支持策略的 value（如 "fixed_size"）和枚举名（如 "FIXED_SIZE"）两种匹配方式，
+     * 自动归一化大小写和连字符/下划线差异。
+     * </p>
+     *
+     * @param value 策略字符串值，null 时返回 null
+     * @return 匹配的枚举常量，未匹配时抛出 IllegalArgumentException
+     */
     @JsonCreator
     public static ChunkingMode fromValue(String value) {
         if (value == null) {
@@ -122,6 +133,7 @@ public enum ChunkingMode {
         throw new IllegalArgumentException("Unknown chunk strategy: " + value);
     }
 
+    // 归一化策略值字符串：去首尾空白、转小写、将连字符替换为下划线
     private static String normalize(String value) {
         String trimmed = value.trim();
         String lower = trimmed.toLowerCase();

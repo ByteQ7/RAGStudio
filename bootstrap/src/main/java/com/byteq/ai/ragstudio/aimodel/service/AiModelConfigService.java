@@ -21,26 +21,83 @@ public interface AiModelConfigService {
 
     // ==================== 供应商管理 ====================
 
+    /**
+     * 创建 AI 供应商
+     *
+     * @param request 创建请求参数
+     * @return 新创建的供应商 ID
+     */
     String createProvider(AiProviderCreateRequest request);
 
+    /**
+     * 更新指定供应商的信息
+     *
+     * @param id      供应商 ID
+     * @param request 更新请求参数
+     */
     void updateProvider(String id, AiProviderUpdateRequest request);
 
+    /**
+     * 删除指定供应商（需先处理其下已启用的模型）
+     *
+     * @param id 供应商 ID
+     */
     void deleteProvider(String id);
 
+    /**
+     * 根据 ID 查询供应商详情
+     *
+     * @param id 供应商 ID
+     * @return 供应商信息
+     */
     AiProviderVO getProvider(String id);
 
+    /**
+     * 查询所有供应商列表
+     *
+     * @return 供应商列表
+     */
     List<AiProviderVO> listProviders();
 
     // ==================== 模型管理 ====================
 
+    /**
+     * 创建 AI 模型配置
+     *
+     * @param request 创建请求参数
+     * @return 新创建的模型 ID
+     */
     String createModel(AiModelCreateRequest request);
 
+    /**
+     * 更新指定模型的配置信息
+     *
+     * @param id      模型 ID
+     * @param request 更新请求参数
+     */
     void updateModel(String id, AiModelUpdateRequest request);
 
+    /**
+     * 删除指定模型配置
+     *
+     * @param id 模型 ID
+     */
     void deleteModel(String id);
 
+    /**
+     * 根据 ID 查询模型详情
+     *
+     * @param id 模型 ID
+     * @return 模型信息
+     */
     AiModelVO getModel(String id);
 
+    /**
+     * 查询模型列表，可按能力类型过滤
+     *
+     * @param capability 能力类型（可选）
+     * @return 模型列表
+     */
     List<AiModelVO> listModels(String capability);
 
     // ==================== 默认模型 & 优先级 ====================

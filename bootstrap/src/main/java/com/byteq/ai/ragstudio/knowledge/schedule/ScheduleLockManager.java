@@ -168,24 +168,29 @@ public class ScheduleLockManager {
         }
     }
 
+    // 计算心跳间隔：取锁有效时长的 1/3，限制在 5~60 秒范围内
     private long computeHeartbeatIntervalMillis() {
         long effectiveLockSeconds = effectiveLockSeconds();
         long intervalSeconds = Math.max(5, Math.min(effectiveLockSeconds / 3, 60));
         return intervalSeconds * 1000;
     }
 
+    // 获取锁有效时长（毫秒），最小 60 秒
     private long effectiveLockMillis() {
         return effectiveLockSeconds() * 1000;
     }
 
+    // 获取锁有效时长（秒），取配置值与 60 秒的较大者
     private long effectiveLockSeconds() {
         return Math.max(scheduleProperties.getLockSeconds(), 60L);
     }
 
+    // 生成唯一锁令牌，格式为"实例前缀:UUID"
     private String nextLockToken() {
         return instancePrefix + ":" + UUID.randomUUID();
     }
 
+    // 解析实例前缀，由主机名和随机 UUID 组成，用于标识当前实例
     private static String resolveInstancePrefix() {
         String host;
         try {

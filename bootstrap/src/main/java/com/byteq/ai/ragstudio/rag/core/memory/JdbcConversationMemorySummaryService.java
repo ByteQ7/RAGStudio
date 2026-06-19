@@ -30,6 +30,13 @@ import java.util.stream.Collectors;
 import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.CONTEXT_FORMAT_PATH;
 import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.CONVERSATION_SUMMARY_PROMPT_PATH;
 
+/**
+ * 基于 JDBC 的对话记忆摘要服务实现
+ * <p>
+ * 使用分布式锁保证并发安全，当对话轮数达到阈值时异步调用 LLM 将历史消息压缩为摘要，
+ * 摘要结果持久化到数据库，加载时作为 system 消息注入对话上下文。
+ * </p>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -45,6 +52,9 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
     private final RedissonClient redissonClient;
     private final Executor memorySummaryExecutor;
 
+    /**
+     * 判断是否需要压缩：仅当摘要功能开启且消息角色为 ASSISTANT 时，提交异步压缩任务
+     */
     @Override
     public void compressIfNeeded(String conversationId, String userId, ChatMessage message) {
         if (!memoryProperties.getSummaryEnabled()) {
@@ -61,12 +71,18 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                 });
     }
 
+    /**
+     * 从数据库查询指定对话的最新摘要记录并转换为 ChatMessage
+     */
     @Override
     public ChatMessage loadLatestSummary(String conversationId, String userId) {
         ConversationSummaryDO summary = conversationGroupService.findLatestSummary(conversationId, userId);
         return toChatMessage(summary);
     }
 
+    /**
+     * 使用上下文格式化模板中的 summary-wrapper section 包装摘要内容，返回 system 角色消息
+     */
     @Override
     public ChatMessage decorateIfNeeded(ChatMessage summary) {
         if (summary == null || StrUtil.isBlank(summary.getContent())) {
@@ -79,6 +95,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return ChatMessage.system(wrapped);
     }
 
+    // 执行对话记忆压缩：获取分布式锁 → 统计消息总数 → 判断是否达到触发阈值 → 提取待摘要消息 → 调用 LLM 生成摘要 → 持久化
     private void doCompressIfNeeded(String conversationId, String userId) {
         long startTime = System.currentTimeMillis();
         int triggerTurns = memoryProperties.getSummaryStartTurns();
@@ -151,6 +168,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         }
     }
 
+    // 调用 LLM 将消息列表压缩为摘要文本，支持合并已有摘要并去重
     private String summarizeMessages(List<ConversationMessageDO> messages, String existingSummary) {
         List<ChatMessage> histories = toHistoryMessages(messages);
         if (CollUtil.isEmpty(histories)) {
@@ -193,6 +211,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         }
     }
 
+    // 将数据库消息实体列表转换为 ChatMessage 列表，仅保留 user 和 assistant 角色的有效消息
     private List<ChatMessage> toHistoryMessages(List<ConversationMessageDO> messages) {
         if (CollUtil.isEmpty(messages)) {
             return List.of();
@@ -214,6 +233,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                 .collect(Collectors.toList());
     }
 
+    // 将摘要数据库记录转换为 SYSTEM 角色的 ChatMessage
     private ChatMessage toChatMessage(ConversationSummaryDO record) {
         if (record == null || StrUtil.isBlank(record.getContent())) {
             return null;
@@ -221,6 +241,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return new ChatMessage(ChatMessage.Role.SYSTEM, record.getContent());
     }
 
+    // 比较两个消息 ID 的大小，优先按数字比较，不支持时退化为字符串字典序比较
     private int compareIds(String id1, String id2) {
         try {
             return Long.compare(Long.parseLong(id1), Long.parseLong(id2));
@@ -229,6 +250,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         }
     }
 
+    // 解析摘要的起始消息 ID：优先使用上次摘要记录的 lastMessageId，否则通过时间戳反查
     private String resolveSummaryStartId(String conversationId, String userId, ConversationSummaryDO summary) {
         if (summary == null) {
             return null;
@@ -244,6 +266,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return conversationGroupService.findMaxMessageIdAtOrBefore(conversationId, userId, after);
     }
 
+    // 从最近用户消息列表中解析截断点 ID（列表中最早的那条用户消息 ID）
     private String resolveCutoffId(List<ConversationMessageDO> latestUserTurns) {
         if (CollUtil.isEmpty(latestUserTurns)) {
             return null;
@@ -254,6 +277,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return oldest == null ? null : oldest.getId();
     }
 
+    // 从待摘要消息列表中逆序查找最后一条有效消息的 ID
     private String resolveLastMessageId(List<ConversationMessageDO> toSummarize) {
         for (int i = toSummarize.size() - 1; i >= 0; i--) {
             ConversationMessageDO item = toSummarize.get(i);
@@ -264,6 +288,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return null;
     }
 
+    // 将生成的摘要内容持久化到数据库，记录摘要关联的最后一条消息 ID
     private void createSummary(String conversationId,
                                String userId,
                                String content,
@@ -277,6 +302,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         conversationMessageService.addMessageSummary(summaryRecord);
     }
 
+    // 构建分布式锁的 key，格式为 userId:conversationId
     private String buildLockKey(String conversationId, String userId) {
         return userId.trim() + ":" + conversationId.trim();
     }

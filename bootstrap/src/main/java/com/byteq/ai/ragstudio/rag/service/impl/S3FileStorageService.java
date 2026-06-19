@@ -25,6 +25,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
 
+/**
+ * S3 文件存储服务实现类
+ * <p>
+ * 基于 AWS S3 SDK 实现文件上传、下载和删除功能，支持预签名 URL 流式上传（低内存）
+ * 和 SDK 原生上传（带自动重试）两种模式。
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 public class S3FileStorageService implements FileStorageService {
@@ -37,6 +44,7 @@ public class S3FileStorageService implements FileStorageService {
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int READ_TIMEOUT_MS = 60_000;
 
+    // 通过预签名 URL 流式上传 MultipartFile，使用 Tika 自动探测 Content-Type
     @Override
     @SneakyThrows
     public StoredFileDTO upload(String bucketName, MultipartFile file) {
@@ -58,6 +66,7 @@ public class S3FileStorageService implements FileStorageService {
         }
     }
 
+    // 通过预签名 URL 流式上传 InputStream
     @Override
     @SneakyThrows
     public StoredFileDTO upload(String bucketName, InputStream content, long size, String originalFilename, String contentType) {
@@ -68,6 +77,7 @@ public class S3FileStorageService implements FileStorageService {
         return streamUploadToS3(bucketName, content, size, originalFilename, detected);
     }
 
+    // 通过预签名 URL 流式上传字节数组
     @Override
     @SneakyThrows
     public StoredFileDTO upload(String bucketName, byte[] content, String originalFilename, String contentType) {
@@ -78,12 +88,14 @@ public class S3FileStorageService implements FileStorageService {
         return streamUploadToS3(bucketName, new ByteArrayInputStream(content), content.length, originalFilename, detected);
     }
 
+    // 解析 S3 URL 并通过 SDK 获取文件输入流
     @Override
     public InputStream openStream(String url) {
         S3Location loc = parseS3Url(url);
         return s3Client.getObject(b -> b.bucket(loc.bucket()).key(loc.key()));
     }
 
+    // 解析 S3 URL 并删除对应的文件
     @Override
     @SneakyThrows
     public void deleteByUrl(String url) {
@@ -125,6 +137,7 @@ public class S3FileStorageService implements FileStorageService {
         return buildStoredFileDTO(url, originalFilename, detectedContentType, size);
     }
 
+    // 通过 SDK 原生 putObject 上传，具备自动重试能力，适合小文件或对可靠性要求高的场景
     @Override
     @SneakyThrows
     public StoredFileDTO reliableUpload(String bucketName, InputStream content, long size,
@@ -186,6 +199,7 @@ public class S3FileStorageService implements FileStorageService {
         }
     }
 
+    // 读取 HTTP 连接的错误流内容
     private String readErrorStream(HttpURLConnection conn) {
         try (InputStream err = conn.getErrorStream()) {
             return err != null ? new String(err.readAllBytes(), StandardCharsets.UTF_8) : "(empty)";
@@ -194,10 +208,12 @@ public class S3FileStorageService implements FileStorageService {
         }
     }
 
+    // 拼接 S3 URL: s3://bucket/key
     private String toS3Url(String bucket, String key) {
         return "s3://" + bucket + "/" + key;
     }
 
+    // 解析 S3 URL 为 bucket 和 key
     private S3Location parseS3Url(String url) {
         URI uri = URI.create(url);
         if (!"s3".equalsIgnoreCase(uri.getScheme())) {
@@ -218,12 +234,14 @@ public class S3FileStorageService implements FileStorageService {
     private record S3Location(String bucket, String key) {
     }
 
+    // 提取文件名的后缀（不含点号）
     private String extractSuffix(String filename) {
         if (filename == null) return "";
         int idx = filename.lastIndexOf('.');
         return (idx < 0 || idx == filename.length() - 1) ? "" : filename.substring(idx + 1).trim();
     }
 
+    // 生成唯一的 S3 对象 Key（UUID + 后缀）
     private String generateS3Key(String originalFilename) {
         String suffix = extractSuffix(originalFilename);
         UUID uuid = UUID.randomUUID();
@@ -231,10 +249,12 @@ public class S3FileStorageService implements FileStorageService {
         return suffix.isBlank() ? key : key + "." + suffix;
     }
 
+    // 校验 bucket 名称不为空
     private void validateBucketName(String bucketName) {
         Assert.notBlank(bucketName, "bucketName 不能为空");
     }
 
+    // 构建文件存储结果 DTO
     private StoredFileDTO buildStoredFileDTO(String url, String originalFilename,
                                              String contentType, long size) {
         String detectedType = FileTypeDetector.detectType(originalFilename, contentType);
@@ -246,6 +266,7 @@ public class S3FileStorageService implements FileStorageService {
                 .build();
     }
 
+    // 解析 Content-Type: 优先使用显式传入值，回退用 Tika 根据文件名探测
     private String resolveContentType(String originalFilename, String contentType) {
         if (contentType != null && !contentType.isBlank()) return contentType;
         if (originalFilename != null && !originalFilename.isBlank()) return TIKA.detect(originalFilename);

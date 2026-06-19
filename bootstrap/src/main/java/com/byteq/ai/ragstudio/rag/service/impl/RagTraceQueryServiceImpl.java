@@ -36,6 +36,10 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
     private final RagTraceNodeMapper nodeMapper;
     private final UserMapper userMapper;
 
+    // 分页查询链路运行记录:
+    // 1. 根据过滤条件构建查询（traceId、conversationId、taskId、status）
+    // 2. 分页查询并加载用户名映射
+    // 3. 将 DO 转换为 VO 返回
     @Override
     public IPage<RagTraceRunVO> pageRuns(RagTraceRunPageRequest request) {
         LambdaQueryWrapper<RagTraceRunDO> wrapper = Wrappers.lambdaQuery(RagTraceRunDO.class)
@@ -59,6 +63,7 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
         return pageResult.convert(run -> toRunVO(run, usernameMap));
     }
 
+    // 查询链路详情，包含运行记录和所有子节点信息
     @Override
     public RagTraceDetailVO detail(String traceId) {
         RagTraceRunDO run = runMapper.selectOne(Wrappers.lambdaQuery(RagTraceRunDO.class)
@@ -74,6 +79,7 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
                 .build();
     }
 
+    // 查询指定链路的所有节点，按开始时间和 ID 升序排列
     @Override
     public List<RagTraceNodeVO> listNodes(String traceId) {
         List<RagTraceNodeDO> nodes = nodeMapper.selectList(Wrappers.lambdaQuery(RagTraceNodeDO.class)
@@ -83,6 +89,7 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
         return nodes.stream().map(this::toNodeVO).toList();
     }
 
+    // 将链路运行记录 DO 转换为 VO，填充用户名
     private RagTraceRunVO toRunVO(RagTraceRunDO run, Map<String, String> usernameMap) {
         String username = resolveUsername(run.getUserId(), usernameMap);
         return RagTraceRunVO.builder()
@@ -101,6 +108,7 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
                 .build();
     }
 
+    // 批量加载运行记录中涉及的用户 ID 到用户名的映射
     private Map<String, String> loadUsernameMap(List<RagTraceRunDO> runs) {
         if (runs == null || runs.isEmpty()) {
             return Collections.emptyMap();
@@ -128,6 +136,7 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
         ));
     }
 
+    // 从用户名映射中查找指定用户 ID 对应的用户名
     private String resolveUsername(String userId, Map<String, String> usernameMap) {
         if (StrUtil.isBlank(userId) || usernameMap == null || usernameMap.isEmpty()) {
             return null;
@@ -135,6 +144,7 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
         return usernameMap.get(userId);
     }
 
+    // 将链路节点 DO 转换为 VO
     private RagTraceNodeVO toNodeVO(RagTraceNodeDO node) {
         return RagTraceNodeVO.builder()
                 .traceId(node.getTraceId())

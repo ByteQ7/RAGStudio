@@ -25,6 +25,12 @@ import org.springframework.stereotype.Service;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 查询词条映射管理服务实现类
+ * <p>
+ * 实现映射规则的 CRUD 操作，每次写操作后清除缓存以保证查询一致性。
+ * </p>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -34,6 +40,7 @@ public class QueryTermMappingAdminServiceImpl implements QueryTermMappingAdminSe
     private final QueryTermMappingCacheManager queryTermMappingCacheManager;
     private final ObjectMapper objectMapper;
 
+    // 创建映射规则: 校验参数 -> 构建实体 -> 插入数据库 -> 清除缓存
     @Override
     public String create(QueryTermMappingCreateRequest requestParam) {
         Assert.notNull(requestParam, () -> new ClientException("请求不能为空"));
@@ -57,6 +64,7 @@ public class QueryTermMappingAdminServiceImpl implements QueryTermMappingAdminSe
         return String.valueOf(record.getId());
     }
 
+    // 更新映射规则: 加载记录 -> 按非空字段逐个更新 -> 写回数据库 -> 清除缓存
     @Override
     public void update(String id, QueryTermMappingUpdateRequest requestParam) {
         Assert.notNull(requestParam, () -> new ClientException("请求不能为空"));
@@ -93,6 +101,7 @@ public class QueryTermMappingAdminServiceImpl implements QueryTermMappingAdminSe
         queryTermMappingCacheManager.clearCache();
     }
 
+    // 删除映射规则并清除缓存
     @Override
     public void delete(String id) {
         QueryTermMappingDO record = loadById(id);
@@ -100,12 +109,14 @@ public class QueryTermMappingAdminServiceImpl implements QueryTermMappingAdminSe
         queryTermMappingCacheManager.clearCache();
     }
 
+    // 根据 ID 查询映射规则详情并转换为 VO
     @Override
     public QueryTermMappingVO queryById(String id) {
         QueryTermMappingDO record = loadById(id);
         return toVO(record);
     }
 
+    // 分页查询映射规则，支持按源词条/目标词条关键字模糊搜索，按优先级升序、更新时间降序
     @Override
     public IPage<QueryTermMappingVO> pageQuery(QueryTermMappingPageRequest requestParam) {
         String keyword = StrUtil.trimToNull(requestParam.getKeyword());
@@ -123,12 +134,14 @@ public class QueryTermMappingAdminServiceImpl implements QueryTermMappingAdminSe
         return result.convert(this::toVO);
     }
 
+    // 根据 ID 加载映射规则，不存在时抛出异常
     private QueryTermMappingDO loadById(String id) {
         QueryTermMappingDO record = queryTermMappingMapper.selectById(id);
         Assert.notNull(record, () -> new ClientException("映射规则不存在"));
         return record;
     }
 
+    // 将映射规则 DO 转换为 VO，包含知识库 ID 列表的反序列化
     private QueryTermMappingVO toVO(QueryTermMappingDO record) {
         return QueryTermMappingVO.builder()
                 .id(String.valueOf(record.getId()))

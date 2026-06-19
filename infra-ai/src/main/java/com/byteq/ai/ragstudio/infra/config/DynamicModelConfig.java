@@ -58,6 +58,7 @@ public class DynamicModelConfig {
         return buildGroup("RERANK");
     }
 
+    // 按能力类型（CHAT/EMBEDDING/RERANK）筛选模型列表，并确定默认模型，构建 ModelGroup
     private ModelGroup buildGroup(String capability) {
         List<ModelEntry> filtered = models.stream()
                 .filter(m -> capability.equalsIgnoreCase(m.getCapability()))

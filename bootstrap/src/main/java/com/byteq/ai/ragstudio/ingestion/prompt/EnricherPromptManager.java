@@ -5,6 +5,13 @@ import com.byteq.ai.ragstudio.ingestion.domain.enums.ChunkEnrichType;
 import java.util.EnumMap;
 import java.util.Map;
 
+/**
+ * 分块富化提示词管理器
+ * <p>
+ * 维护各富化类型（关键词提取、摘要生成、元数据提取）的默认系统提示词，
+ * 供 EnricherNode 在对文本块进行 AI 富化时调用大语言模型使用。
+ * </p>
+ */
 public final class EnricherPromptManager {
 
     private static final Map<ChunkEnrichType, String> DEFAULT_SYSTEM_PROMPTS = new EnumMap<>(ChunkEnrichType.class);
@@ -30,6 +37,12 @@ public final class EnricherPromptManager {
     private EnricherPromptManager() {
     }
 
+    /**
+     * 获取指定富化类型的默认系统提示词
+     *
+     * @param type 分块富化类型枚举
+     * @return 对应的默认系统提示词，如果类型未注册则返回 null
+     */
     public static String systemPrompt(ChunkEnrichType type) {
         return DEFAULT_SYSTEM_PROMPTS.get(type);
     }

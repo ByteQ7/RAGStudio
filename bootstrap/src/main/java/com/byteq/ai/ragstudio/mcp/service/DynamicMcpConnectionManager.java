@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PreDestroy;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -203,6 +204,7 @@ public class DynamicMcpConnectionManager {
 
     // ==================== 内部方法 ====================
 
+    // 内部断开逻辑：注销已注册的工具、关闭客户端连接、更新状态为 disconnected
     private void disconnectInternal(String serverId) {
         List<String> toolIds = serverToolIds.remove(serverId);
         if (toolIds != null) {
@@ -224,6 +226,7 @@ public class DynamicMcpConnectionManager {
         serverStatuses.put(serverId, STATUS_DISCONNECTED);
     }
 
+    // 解析 JSON 格式的请求头字符串为 Map，解析失败返回空 Map
     private Map<String, String> parseHeaders(String headersJson) {
         if (StrUtil.isBlank(headersJson)) {
             return Map.of();
@@ -277,7 +280,8 @@ public class DynamicMcpConnectionManager {
         if ("sse".equalsIgnoreCase(transportType)) {
             log.info("使用 SSE 传输连接: {}, baseUrl={}, endpoint={}", mcpUrl, baseUrl,
                     useDefaultEndpoint ? "(default /sse)" : path);
-            HttpClientSseClientTransport.Builder builder = HttpClientSseClientTransport.builder(baseUrl);
+            HttpClientSseClientTransport.Builder builder = HttpClientSseClientTransport.builder(baseUrl)
+                    .connectTimeout(Duration.ofSeconds(5));
             if (!useDefaultEndpoint) {
                 builder.sseEndpoint(path);
             }
@@ -289,7 +293,9 @@ public class DynamicMcpConnectionManager {
         } else {
             log.info("使用 Streamable HTTP 传输连接: {}, baseUrl={}, endpoint={}", mcpUrl, baseUrl,
                     useDefaultEndpoint ? "(default /mcp)" : path);
-            HttpClientStreamableHttpTransport.Builder builder = HttpClientStreamableHttpTransport.builder(baseUrl);
+            HttpClientStreamableHttpTransport.Builder builder = HttpClientStreamableHttpTransport.builder(baseUrl)
+                    .connectTimeout(Duration.ofSeconds(5))
+                    .resumableStreams(false);
             if (!useDefaultEndpoint) {
                 builder.endpoint(path);
             }

@@ -10,6 +10,17 @@ import jakarta.validation.ConstraintValidatorContext;
  */
 public class MemoryConfigValidator implements ConstraintValidator<ValidMemoryConfig, MemoryProperties> {
 
+    /**
+     * 校验记忆配置的合理性
+     * <p>
+     * 当摘要功能启用时，验证 summaryStartTurns（摘要触发轮数）必须大于
+     * historyKeepTurns（历史保留轮数），否则摘要永远不会被触发。
+     * </p>
+     *
+     * @param config  记忆配置属性
+     * @param context 校验上下文，用于构建自定义违规消息
+     * @return true 配置合法，false 配置不合法
+     */
     @Override
     public boolean isValid(MemoryProperties config, ConstraintValidatorContext context) {
         if (config == null) {

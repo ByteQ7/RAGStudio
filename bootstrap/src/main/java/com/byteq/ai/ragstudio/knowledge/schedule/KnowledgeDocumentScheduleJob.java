@@ -6,6 +6,7 @@ import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeDocumentScheduleDO;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentScheduleMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +36,7 @@ import java.util.concurrent.RejectedExecutionException;
 public class KnowledgeDocumentScheduleJob {
 
     private final KnowledgeDocumentScheduleMapper scheduleMapper;
+    @Qualifier("knowledgeChunkExecutor")
     private final Executor knowledgeChunkExecutor;
     private final KnowledgeScheduleProperties scheduleProperties;
     private final ScheduleLockManager lockManager;

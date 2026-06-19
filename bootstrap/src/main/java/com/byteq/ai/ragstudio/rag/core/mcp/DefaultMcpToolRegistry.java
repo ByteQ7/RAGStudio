@@ -49,6 +49,9 @@ public class DefaultMcpToolRegistry implements McpToolRegistry {
         log.info("MCP 工具自动注册完成, 共注册 {} 个工具", autoDiscoveredExecutors.size());
     }
 
+    /**
+     * 注册工具执行器到注册表，校验执行器和工具ID非空后存入 ConcurrentHashMap，重复注册时覆盖并记录警告
+     */
     @Override
     public void register(McpToolExecutor executor) {
         if (executor == null || executor.getToolDefinition() == null) {
@@ -70,6 +73,9 @@ public class DefaultMcpToolRegistry implements McpToolRegistry {
         }
     }
 
+    /**
+     * 根据工具ID从注册表中移除执行器，存在时记录注销日志
+     */
     @Override
     public void unregister(String toolId) {
         McpToolExecutor removed = executorMap.remove(toolId);
@@ -78,11 +84,17 @@ public class DefaultMcpToolRegistry implements McpToolRegistry {
         }
     }
 
+    /**
+     * 根据工具ID查找对应的执行器，以 Optional 形式返回
+     */
     @Override
     public Optional<McpToolExecutor> getExecutor(String toolId) {
         return Optional.ofNullable(executorMap.get(toolId));
     }
 
+    /**
+     * 收集所有已注册执行器的工具定义，返回 Tool 列表
+     */
     @Override
     public List<Tool> listAllTools() {
         return executorMap.values().stream()
@@ -90,16 +102,25 @@ public class DefaultMcpToolRegistry implements McpToolRegistry {
                 .toList();
     }
 
+    /**
+     * 返回所有已注册执行器的副本列表
+     */
     @Override
     public List<McpToolExecutor> listAllExecutors() {
         return new ArrayList<>(executorMap.values());
     }
 
+    /**
+     * 判断指定工具ID是否已注册
+     */
     @Override
     public boolean contains(String toolId) {
         return executorMap.containsKey(toolId);
     }
 
+    /**
+     * 返回已注册工具总数
+     */
     @Override
     public int size() {
         return executorMap.size();

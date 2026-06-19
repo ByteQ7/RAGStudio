@@ -44,6 +44,7 @@ public class FetcherNode implements IngestionNode {
      */
     private final Map<SourceType, DocumentFetcher> fetchers;
 
+    // 将所有文档获取器按支持的来源类型注册到策略映射表中，便于后续按类型路由
     public FetcherNode(List<DocumentFetcher> fetchers) {
         this.fetchers = fetchers.stream()
                 .collect(Collectors.toMap(DocumentFetcher::supportedType, Function.identity()));
@@ -56,6 +57,12 @@ public class FetcherNode implements IngestionNode {
 
     @Override
     public NodeResult execute(IngestionContext context, NodeConfig config) {
+        // 文档获取流程:
+        // 1. 幂等性检查：上下文中已有原始字节则跳过获取，补充 MIME 类型检测
+        // 2. 校验文档来源和来源类型的有效性
+        // 3. 根据来源类型从策略映射表中路由到对应的 DocumentFetcher
+        // 4. 执行获取操作，将字节内容、MIME 类型和文件名写回上下文
+
         // 幂等性检查：如果上下文中已有原始字节数据，则跳过获取流程
         if (context.getRawBytes() != null && context.getRawBytes().length > 0) {
             if (!StringUtils.hasText(context.getMimeType())) {
