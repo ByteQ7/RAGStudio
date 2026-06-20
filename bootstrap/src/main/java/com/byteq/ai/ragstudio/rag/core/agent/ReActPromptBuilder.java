@@ -37,6 +37,10 @@ public class ReActPromptBuilder {
     private static final String KB_IRRELEVANT_NOTE =
             "> ⚠️ 注意：用户问题经判断与所选知识库**不相关**，已跳过知识库检索。请不要尝试使用 rag_search 工具。";
 
+    /** KB 相关时的提示 */
+    private static final String KB_RELEVANT_NOTE =
+            "> 📚 用户已选择知识库且问题与知识库相关。知识库内容需要通过 rag_search 工具检索才能获取，请在需要时调用该工具。";
+
     private final PromptTemplateLoader templateLoader;
 
     public ReActPromptBuilder(PromptTemplateLoader templateLoader) {
@@ -65,6 +69,8 @@ public class ReActPromptBuilder {
         String relevanceNote = "";
         if (!kbRelevant && StrUtil.isBlank(kbContext)) {
             relevanceNote = KB_IRRELEVANT_NOTE;
+        } else if (kbRelevant && StrUtil.isBlank(kbContext)) {
+            relevanceNote = KB_RELEVANT_NOTE;
         }
 
         String filled = PromptTemplateUtils.fillSlots(template, Map.of(

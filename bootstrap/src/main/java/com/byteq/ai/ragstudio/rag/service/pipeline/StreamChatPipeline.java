@@ -182,11 +182,9 @@ public class StreamChatPipeline {
         ToolRegistry toolRegistry = traceNode("工具注册", "TOOL_REGISTRY", () -> buildAgentToolRegistry(ctx));
         checkCancellation(ctx);
 
-        // 2. 相关性判断 + 条件检索
-        String kbContext = "";
+        // 2. 相关性判断（不做预检索，由 Agent 在循环中自主调用 rag_search）
         boolean kbRelevant = false;
         if (CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds())) {
-            // 构建 KbInfoProvider
             KbRelevanceChecker.KbInfoProvider infoProvider = kbIds -> {
                 if (CollUtil.isEmpty(kbIds)) return List.of();
                 List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
@@ -203,32 +201,18 @@ public class StreamChatPipeline {
                     kbRelevanceChecker.check(ctx.getQuestion(), ctx.getKnowledgeBaseIds(), infoProvider));
             checkCancellation(ctx);
 
-            if (relevance.relevant()) {
-                log.info("问题与知识库相关，执行检索。reasoning: {}", relevance.reasoning());
-                RetrievalContext retrievalCtx = traceNode("知识检索", "RETRIEVE", () -> {
-                    // 使用 RewriteResult 兼容现有检索 API
-                    var rewriteResult = new com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult(
-                            ctx.getQuestion(), List.of(ctx.getQuestion()));
-                    return retrievalEngine.retrieveByKnowledgeBases(
-                            ctx.getKnowledgeBaseIds(), rewriteResult, searchProperties.getDefaultTopK());
-                });
-                checkCancellation(ctx);
-                kbContext = retrievalCtx != null ? retrievalCtx.getKbContext() : "";
-                kbRelevant = true;
-            } else {
-                log.info("问题与知识库不相关，跳过检索。reasoning: {}", relevance.reasoning());
-                kbContext = "";
-                kbRelevant = false;
-            }
+            kbRelevant = relevance.relevant();
+            log.info("知识库相关性判断: relevant={}, reasoning='{}'", kbRelevant, relevance.reasoning());
         } else {
             log.info("未选择知识库，跳过检索");
         }
+        // 不预检索知识库，由 Agent 在循环中自主调用 rag_search 工具
 
         // 3. 构建 AgentContext 并执行 AgentLoop
         AgentContext agentCtx = new AgentContext(
                 ctx.getQuestion(),
                 ctx.getHistory(),
-                kbContext,
+                "",        // kbContext：不预检索，Agent 自主调用 rag_search
                 kbRelevant,
                 toolRegistry.listAll(),
                 10,        // maxIterations

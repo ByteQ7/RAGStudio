@@ -3,9 +3,11 @@ package com.byteq.ai.ragstudio.rag.controller;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.idempotent.IdempotentSubmit;
 import com.byteq.ai.ragstudio.framework.web.Results;
+import com.byteq.ai.ragstudio.rag.config.FlushableSseEmitter;
 import com.byteq.ai.ragstudio.rag.config.RAGDefaultProperties;
 import com.byteq.ai.ragstudio.rag.controller.request.ChatRequest;
 import com.byteq.ai.ragstudio.rag.service.RAGChatService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -50,9 +52,12 @@ public class RAGChatController {
             message = "当前会话处理中，请稍后再发起新的对话"
     )
     @PostMapping(value = "/rag/v3/chat", produces = "text/event-stream;charset=UTF-8")
-    public SseEmitter chat(@Valid @RequestBody ChatRequest request) {
-        SseEmitter emitter = new SseEmitter(ragDefaultProperties.getSseTimeoutMs());
-        ragChatService.streamChat(request.getQuestion(), request.getConversationId(), null, request.getKnowledgeBaseIds(), emitter, request.getMode());
+    public SseEmitter chat(@Valid @RequestBody ChatRequest request,
+                           HttpServletResponse httpResponse) {
+        FlushableSseEmitter emitter = new FlushableSseEmitter(
+                ragDefaultProperties.getSseTimeoutMs(), httpResponse);
+        ragChatService.streamChat(request.getQuestion(), request.getConversationId(),
+                null, request.getKnowledgeBaseIds(), emitter, request.getMode());
         return emitter;
     }
 

@@ -37,6 +37,66 @@ interface ChatState {
   submitFeedback: (messageId: string, feedback: FeedbackValue) => Promise<void>;
 }
 
+/** 前端模拟流式输出的字符缓冲与定时器 */
+let streamingBuffer = "";
+let streamingTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 定位当前正在流式输出的消息 */
+function findStreamingMessage(messages: Message[]): { idx: number; msg: Message } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "assistant" && (m.status === "streaming" || m.status === "done")) {
+      return { idx: i, msg: m };
+    }
+  }
+  return null;
+}
+
+function startStreamingTimer(get: () => ChatState) {
+  if (streamingTimer) return;
+  streamingTimer = setInterval(() => {
+    if (streamingBuffer.length === 0) {
+      const state = get();
+      if (!state.isStreaming && streamingTimer) {
+        clearInterval(streamingTimer);
+        streamingTimer = null;
+      }
+      return;
+    }
+    const take = Math.min(2, streamingBuffer.length);
+    const chars = streamingBuffer.slice(0, take);
+    streamingBuffer = streamingBuffer.slice(take);
+    useChatStore.setState((prev) => {
+      const found = findStreamingMessage(prev.messages);
+      if (!found) return prev;
+      if (found.msg.status === "cancelled" || found.msg.status === "error") return prev;
+      const updated = [...prev.messages];
+      updated[found.idx] = { ...found.msg, content: found.msg.content + chars };
+      return { messages: updated };
+    });
+  }, 1);
+}
+
+/** 停止定时器，可选 flush 剩余缓冲 */
+function stopStreamingTimer(flushRemaining = true) {
+  if (streamingTimer) {
+    clearInterval(streamingTimer);
+    streamingTimer = null;
+  }
+  if (flushRemaining && streamingBuffer.length > 0) {
+    const remaining = streamingBuffer;
+    streamingBuffer = "";
+    useChatStore.setState((prev) => {
+      const found = findStreamingMessage(prev.messages);
+      if (!found) return prev;
+      if (found.msg.status === "cancelled" || found.msg.status === "error") return prev;
+      const updated = [...prev.messages];
+      updated[found.idx] = { ...found.msg, content: found.msg.content + remaining };
+      return { messages: updated };
+    });
+  }
+}
+
 function mapVoteToFeedback(vote?: number | null): FeedbackValue {
   if (vote === 1) return "like";
   if (vote === -1) return "dislike";
@@ -214,6 +274,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const trimmed = content.trim();
     if (!trimmed) return;
     if (get().isStreaming) return;
+    // 清除旧缓冲，防止残留字符泄漏到新消息
+    streamingBuffer = "";
+    if (streamingTimer) {
+      clearInterval(streamingTimer);
+      streamingTimer = null;
+    }
     const inputFocusKey = Date.now();
 
     const userMessage: Message = {
@@ -357,6 +423,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onCancel: (payload: CompletionPayload) => {
         if (get().streamingMessageId !== assistantId) return;
+        stopStreamingTimer(true);
         if (payload?.title && get().currentSessionId) {
           get().updateSessionTitle(get().currentSessionId as string, payload.title);
         }
@@ -383,6 +450,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onDone: () => {
         if (get().streamingMessageId !== assistantId) return;
+        // 只改状态，不碰定时器——定时器会自然消耗缓冲，空了后自动停止
         set({
           isStreaming: false,
           streamTaskId: null,
@@ -399,6 +467,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onError: (error: Error) => {
         if (get().streamingMessageId !== assistantId) return;
+        stopStreamingTimer();
         set((state) => ({
           isStreaming: false,
           streamTaskId: null,
@@ -466,16 +535,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   appendStreamContent: (delta) => {
     if (!delta) return;
-    set((state) => ({
-      messages: state.messages.map((message) => {
-        if (message.id !== state.streamingMessageId) return message;
-        if (message.status === "cancelled" || message.status === "error") return message;
-        return {
-          ...message,
-          content: message.content + delta
-        };
-      })
-    }));
+    streamingBuffer += delta;
+    startStreamingTimer(get);
   },
   submitFeedback: async (messageId, feedback) => {
     const vote = feedback === "like" ? 1 : feedback === "dislike" ? -1 : null;
