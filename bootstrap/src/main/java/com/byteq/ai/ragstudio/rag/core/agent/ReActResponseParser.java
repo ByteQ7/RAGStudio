@@ -81,9 +81,20 @@ public class ReActResponseParser {
         }
 
         // === Level 3: 降级为 FINISH ===
-        log.warn("无法解析 ReACT 响应格式，降级为 FINISH。响应前200字符: {}",
-                cleaned.substring(0, Math.min(200, cleaned.length())));
-        return AgentStep.finish(iteration, "", cleaned);
+        // 当 LLM 直接回答（不遵循 ReACT 格式）时，将第一行作为 thought 提取
+        String firstLine = cleaned;
+        String rest = cleaned;
+        int firstNewline = cleaned.indexOf('\n');
+        if (firstNewline > 0) {
+            firstLine = cleaned.substring(0, firstNewline).trim();
+            rest = cleaned.substring(firstNewline).trim();
+        }
+        // 如果 firstLine 太短（<5字符）或本身就是个标题，用整个内容
+        String thought = firstLine.length() > 5 ? firstLine : "";
+        String finalAnswer = rest.length() > firstLine.length() ? rest : cleaned;
+        log.info("LLM 未遵循 ReACT 格式，直接作为回答处理。首行: {}",
+                thought.length() > 50 ? thought.substring(0, 50) + "..." : thought);
+        return AgentStep.finish(iteration, thought, finalAnswer);
     }
 
     /**

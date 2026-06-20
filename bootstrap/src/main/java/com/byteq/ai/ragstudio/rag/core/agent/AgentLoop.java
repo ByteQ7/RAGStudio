@@ -107,7 +107,20 @@ public class AgentLoop {
                 }
 
                 if (StrUtil.isBlank(llmResponse)) {
-                    log.warn("Agent 迭代 {} LLM 返回空响应", iteration);
+                    log.warn("Agent 迭代 {} LLM 返回空响应，自动重试一次", iteration);
+                    try {
+                        llmResponse = llmService.chat(ChatRequest.builder()
+                                .messages(new ArrayList<>(ctx.getMessages()))
+                                .temperature(0.1)
+                                .thinking(false)
+                                .build());
+                    } catch (Exception e2) {
+                        log.warn("Agent 迭代 {} 重试也失败: {}", iteration, e2.getMessage());
+                    }
+                }
+
+                if (StrUtil.isBlank(llmResponse)) {
+                    log.warn("Agent 迭代 {} 重试后仍为空，终止", iteration);
                     AgentStep emptyStep = AgentStep.error(iteration, "", "模型返回空响应");
                     pushStep(emptyStep, callback);
                     pushStepsComplete(ctx, callback);
@@ -200,21 +213,28 @@ public class AgentLoop {
                 toolRegistry, ctx.getKbContext(), ctx.isKbRelevant());
         messages.add(systemPrompt);
 
-        // 2. 对话历史（含摘要）
+        // 2. 强制检索指令：当知识库相关时，必须调用 rag_search
+        if (ctx.isKbRelevant() && hasRagSearchTool()) {
+            messages.add(ChatMessage.system(
+                    "【强制指令】用户已选择知识库且问题与知识库相关。"
+                    + "你的第一轮行动必须调用 rag_search 工具检索知识库，"
+                    + "然后基于检索结果回答。不得仅凭自身知识直接回答。"));
+        }
+
+        // 3. 对话历史（含摘要）
         if (CollUtil.isNotEmpty(ctx.getHistory())) {
             messages.addAll(ctx.getHistory());
         }
 
-        // 3. 用户当前问题
-        // 如果 KB 上下文存在且相关，作为问题前缀提供
-        String userQuestion = ctx.getQuestion();
-        if (ctx.hasKb() && ctx.isKbRelevant()) {
-            userQuestion = "【预检索知识库内容】\n" + ctx.getKbContext()
-                    + "\n\n【用户问题】\n" + userQuestion;
-        }
-        messages.add(ChatMessage.user(userQuestion));
+        // 4. 用户当前问题
+        messages.add(ChatMessage.user(ctx.getQuestion()));
 
         return messages;
+    }
+
+    /** 检查工具注册表中是否有 rag_search */
+    private boolean hasRagSearchTool() {
+        return toolRegistry.contains("rag_search");
     }
 
     // ==================== 流式输出 ====================

@@ -13,10 +13,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.ANSWER_CHAT_PATH;
 import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.CONTEXT_FORMAT_PATH;
-import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.MCP_KB_MIXED_PROMPT_PATH;
-import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.MCP_ONLY_PROMPT_PATH;
-import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.RAG_ENTERPRISE_PROMPT_PATH;
 
 /**
  * RAG Prompt 编排服务
@@ -120,14 +118,10 @@ public class RAGPromptService {
                 .build();
     }
 
-    // 根据场景枚举返回对应的默认系统提示词模板
+    // 根据场景枚举加载统一提示词模板
     private String defaultTemplate(PromptScene scene) {
-        return switch (scene) {
-            case KB_ONLY -> templateLoader.load(RAG_ENTERPRISE_PROMPT_PATH);
-            case MCP_ONLY -> templateLoader.load(MCP_ONLY_PROMPT_PATH);
-            case MIXED -> templateLoader.load(MCP_KB_MIXED_PROMPT_PATH);
-            case EMPTY -> "";
-        };
+        if (scene == PromptScene.EMPTY) return "";
+        return templateLoader.load(ANSWER_CHAT_PATH);
     }
 
     // 构建用户问题文本：多子问题时渲染编号列表模板，否则渲染单问题模板

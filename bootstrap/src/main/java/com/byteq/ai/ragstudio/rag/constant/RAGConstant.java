@@ -55,10 +55,10 @@ public class RAGConstant {
     public static final String CONVERSATION_TITLE_PROMPT_PATH = "prompt/conversation-title.st";
 
     /**
-     * 默认 RAG 问答提示词模板路径
-     * 用于指导大模型基于检索到的文档内容进行准确回答，包含严格的事实性约束和链接处理规则
+     * 统一 RAG 问答提示词模板路径
+     * 合并了 KB-only、MCP-only、MCP+KB 三种场景，根据输入标签自动匹配规则
      */
-    public static final String RAG_ENTERPRISE_PROMPT_PATH = "prompt/answer-chat-kb.st";
+    public static final String ANSWER_CHAT_PATH = "prompt/answer-chat.st";
 
     /**
      * MCP 工具参数提取提示词模板路径
@@ -71,18 +71,6 @@ public class RAGConstant {
      * 用于构建包含工具定义和用户问题的用户消息，通过 {@code {tool_definition}} 和 {@code {user_question}} 占位符注入内容
      */
     public static final String MCP_PARAMETER_EXTRACT_USER_PROMPT_PATH = "prompt/mcp-parameter-extract-user.st";
-
-    /**
-     * MCP-only 场景提示词模板路径
-     * 仅动态数据片段时使用
-     */
-    public static final String MCP_ONLY_PROMPT_PATH = "prompt/answer-chat-mcp.st";
-
-    /**
-     * MCP + KB 混合场景提示词模板路径
-     * 兼顾动态数据片段与知识库内容的综合回答
-     */
-    public static final String MCP_KB_MIXED_PROMPT_PATH = "prompt/answer-chat-mcp-kb-mixed.st";
 
     /**
      * MCP 工具调用决策提示词模板路径
