@@ -43,10 +43,9 @@ export function WelcomeScreen() {
   const [value, setValue] = React.useState("");
   const [isFocused, setIsFocused] = React.useState(false);
   const [promptPresets, setPromptPresets] = React.useState<PromptPreset[]>(DEFAULT_PRESETS);
-  const [knowledgeBaseIds, setKnowledgeBaseIds] = React.useState<string[]>([]);
   const isComposingRef = React.useRef(false);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const { sendMessage, isStreaming, cancelGeneration } =
+  const { sendMessage, isStreaming, cancelGeneration, knowledgeBaseIds, setKnowledgeBaseIds } =
     useChatStore();
 
   const focusInput = React.useCallback(() => {
@@ -123,7 +122,7 @@ export function WelcomeScreen() {
     const next = value;
     setValue("");
     focusInput();
-    await sendMessage(next, knowledgeBaseIds);
+    await sendMessage(next);
     focusInput();
   };
 

@@ -156,9 +156,13 @@ public class AgentLoop {
                 }
 
                 if (step.getAction() == AgentAction.TOOL_CALL) {
-                    // 2e. 执行工具
+                    // 2e. 执行工具（失败时自动重试一次）
                     log.info("Agent 调用工具: {}, params={}", step.getToolName(), step.getToolInput());
                     ToolResult result = toolRegistry.execute(step.getToolName(), step.getToolInput());
+                    if (!result.isSuccess()) {
+                        log.warn("工具 {} 执行失败，自动重试一次: {}", step.getToolName(), result.getContent());
+                        result = toolRegistry.execute(step.getToolName(), step.getToolInput());
+                    }
                     step.setObservation(result.toObservation());
                     step.setDurationMs(result.getDurationMs());
 
@@ -226,7 +230,14 @@ public class AgentLoop {
             messages.addAll(ctx.getHistory());
         }
 
-        // 4. 用户当前问题
+        // 4. 格式提醒（利用 recency bias 强化格式遵守）
+        messages.add(ChatMessage.system(
+                "【格式提醒】请严格按照 ReACT 格式输出。禁止直接输出回答文本。"
+                + "每次输出必须包含 Thought 和 Action 字段。即使你不需要调用工具，"
+                + "也必须输出 Thought + Action: FINISH + Final Answer。"
+                + "绝对不要直接输出一段文字而不带格式标签。"));
+
+        // 5. 用户当前问题
         messages.add(ChatMessage.user(ctx.getQuestion()));
 
         return messages;

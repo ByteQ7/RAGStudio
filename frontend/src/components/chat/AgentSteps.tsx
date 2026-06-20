@@ -100,11 +100,7 @@ function StepDetail({ step }: { step: AgentStep }) {
 
 export const AgentSteps = React.memo(function AgentSteps({ steps }: AgentStepsProps) {
   if (!steps || steps.length === 0) return null;
-  const [expandedSteps, setExpandedSteps] = React.useState<Set<number>>(() => {
-    // Auto-expand the most recent step
-    const last = steps[steps.length - 1];
-    return last ? new Set([last.iteration]) : new Set();
-  });
+  const [expandedSteps, setExpandedSteps] = React.useState<Set<number>>(new Set());
 
   const toggle = (iteration: number) => {
     setExpandedSteps((prev) => {
