@@ -17,12 +17,13 @@ export function ChatPage() {
     currentSessionId,
     sessions,
     isCreatingNew,
+    knowledgeBaseIds,
+    setKnowledgeBaseIds,
     fetchSessions,
     selectSession,
     createSession
   } = useChatStore();
   const [sessionsReady, setSessionsReady] = React.useState(false);
-  const [knowledgeBaseIds, setKnowledgeBaseIds] = React.useState<string[]>([]);
   const sessionExists = React.useMemo(() => {
     if (!sessionId) return false;
     return sessions.some((session) => session.id === sessionId);
@@ -99,7 +100,7 @@ export function ChatPage() {
                   onKnowledgeBaseIdsChange={setKnowledgeBaseIds}
                 />
               </div>
-              <ChatInput knowledgeBaseIds={knowledgeBaseIds} />
+              <ChatInput />
             </div>
           </div>
         )}

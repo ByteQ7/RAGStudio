@@ -1,15 +1,11 @@
 import * as React from "react";
-import { Send, Square } from "lucide-react";
+import { Loader2, Send, Square } from "lucide-react";
 
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 
-interface ChatInputProps {
-  knowledgeBaseIds?: string[];
-}
-
-export function ChatInput({ knowledgeBaseIds }: ChatInputProps) {
+export function ChatInput() {
   const [value, setValue] = React.useState("");
   const [isFocused, setIsFocused] = React.useState(false);
   const isComposingRef = React.useRef(false);
@@ -17,6 +13,7 @@ export function ChatInput({ knowledgeBaseIds }: ChatInputProps) {
   const {
     sendMessage,
     isStreaming,
+    isStopping,
     cancelGeneration,
     inputFocusKey
   } = useChatStore();
@@ -45,7 +42,7 @@ export function ChatInput({ knowledgeBaseIds }: ChatInputProps) {
   }, [inputFocusKey, focusInput]);
 
   const handleSubmit = async () => {
-    if (isStreaming) {
+    if (isStreaming || isStopping) {
       cancelGeneration();
       focusInput();
       return;
@@ -54,7 +51,7 @@ export function ChatInput({ knowledgeBaseIds }: ChatInputProps) {
     const next = value;
     setValue("");
     focusInput();
-    await sendMessage(next, knowledgeBaseIds);
+    await sendMessage(next);
     focusInput();
   };
 
@@ -106,18 +103,25 @@ export function ChatInput({ knowledgeBaseIds }: ChatInputProps) {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={!hasContent && !isStreaming}
-              aria-label={isStreaming ? "停止生成" : "发送消息"}
+              disabled={!hasContent && !isStreaming && !isStopping}
+              aria-label={isStopping ? "停止中" : isStreaming ? "停止生成" : "发送消息"}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium transition-all duration-200",
-                isStreaming
-                  ? "bg-rose-50 text-rose-500 hover:bg-rose-100"
-                  : hasContent
-                    ? "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 hover:shadow-md"
-                    : "cursor-not-allowed bg-gray-100 text-gray-400"
+                isStopping
+                  ? "bg-amber-50 text-amber-500"
+                  : isStreaming
+                    ? "bg-rose-50 text-rose-500 hover:bg-rose-100"
+                    : hasContent
+                      ? "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 hover:shadow-md"
+                      : "cursor-not-allowed bg-gray-100 text-gray-400"
               )}
             >
-              {isStreaming ? (
+              {isStopping ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>停止中</span>
+                </>
+              ) : isStreaming ? (
                 <>
                   <Square className="h-3.5 w-3.5" />
                   <span>停止</span>

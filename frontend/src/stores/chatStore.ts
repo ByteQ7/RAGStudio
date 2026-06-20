@@ -20,7 +20,9 @@ interface ChatState {
   sessionsLoaded: boolean;
   inputFocusKey: number;
   isStreaming: boolean;
+  isStopping: boolean;
   isCreatingNew: boolean;
+  knowledgeBaseIds: string[];
   streamTaskId: string | null;
   streamAbort: (() => void) | null;
   streamingMessageId: string | null;
@@ -31,15 +33,18 @@ interface ChatState {
   renameSession: (sessionId: string, title: string) => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
   updateSessionTitle: (sessionId: string, title: string) => void;
-  sendMessage: (content: string, knowledgeBaseIds?: string[]) => Promise<void>;
+  setKnowledgeBaseIds: (ids: string[]) => void;
+  sendMessage: (content: string) => Promise<void>;
   cancelGeneration: () => void;
   appendStreamContent: (delta: string) => void;
   submitFeedback: (messageId: string, feedback: FeedbackValue) => Promise<void>;
+  /** 内部方法：缓冲播放完毕时由定时器调用 */
+  setIsStreamingFalse?: () => void;
 }
 
 /** 前端模拟流式输出的字符缓冲与定时器 */
 let streamingBuffer = "";
-let streamingTimer: ReturnType<typeof setInterval> | null = null;
+let streamingTimer: number | null = null;
 
 /** 定位当前正在流式输出的消息 */
 function findStreamingMessage(messages: Message[]): { idx: number; msg: Message } | null {
@@ -54,16 +59,18 @@ function findStreamingMessage(messages: Message[]): { idx: number; msg: Message 
 
 function startStreamingTimer(get: () => ChatState) {
   if (streamingTimer) return;
-  streamingTimer = setInterval(() => {
+  streamingTimer = window.setInterval(() => {
     if (streamingBuffer.length === 0) {
       const state = get();
-      if (!state.isStreaming && streamingTimer) {
-        clearInterval(streamingTimer);
+      // 缓冲空 + 后端已完成 → 流式结束
+      if (state.streamingMessageId === null && state.isStreaming) {
+        window.clearInterval(streamingTimer!);
         streamingTimer = null;
+        state.setIsStreamingFalse?.();
       }
       return;
     }
-    const take = Math.min(2, streamingBuffer.length);
+    const take = Math.min(3, streamingBuffer.length);
     const chars = streamingBuffer.slice(0, take);
     streamingBuffer = streamingBuffer.slice(take);
     useChatStore.setState((prev) => {
@@ -80,7 +87,7 @@ function startStreamingTimer(get: () => ChatState) {
 /** 停止定时器，可选 flush 剩余缓冲 */
 function stopStreamingTimer(flushRemaining = true) {
   if (streamingTimer) {
-    clearInterval(streamingTimer);
+    window.clearInterval(streamingTimer!);
     streamingTimer = null;
   }
   if (flushRemaining && streamingBuffer.length > 0) {
@@ -139,7 +146,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessionsLoaded: false,
   inputFocusKey: 0,
   isStreaming: false,
+  isStopping: false,
   isCreatingNew: false,
+  knowledgeBaseIds: [],
   streamTaskId: null,
   streamAbort: null,
   streamingMessageId: null,
@@ -182,8 +191,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentSessionId: null,
       messages: [],
       isStreaming: false,
+      isStopping: false,
       isLoading: false,
       isCreatingNew: true,
+      knowledgeBaseIds: [],
       streamTaskId: null,
       streamAbort: null,
       streamingMessageId: null,
@@ -228,7 +239,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       isLoading: true,
       currentSessionId: sessionId,
-      isCreatingNew: false
+      isCreatingNew: false,
+      knowledgeBaseIds: []
     });
     try {
       const data = await listMessages(sessionId);
@@ -270,14 +282,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       )
     }));
   },
-  sendMessage: async (content, knowledgeBaseIds) => {
+  sendMessage: async (content) => {
     const trimmed = content.trim();
     if (!trimmed) return;
     if (get().isStreaming) return;
+    const knowledgeBaseIds = get().knowledgeBaseIds;
     // 清除旧缓冲，防止残留字符泄漏到新消息
     streamingBuffer = "";
     if (streamingTimer) {
-      clearInterval(streamingTimer);
+      window.clearInterval(streamingTimer!);
       streamingTimer = null;
     }
     const inputFocusKey = Date.now();
@@ -450,9 +463,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onDone: () => {
         if (get().streamingMessageId !== assistantId) return;
-        // 只改状态，不碰定时器——定时器会自然消耗缓冲，空了后自动停止
+        // 清 streamingMessageId 标记后端完成，但不改 isStreaming
+        // 定时器检测到 streamingMessageId=null 且缓冲空后自动设 isStreaming=false
         set({
-          isStreaming: false,
           streamTaskId: null,
           streamAbort: null,
           streamingMessageId: null,
@@ -514,7 +527,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } finally {
       if (get().streamingMessageId === assistantId) {
         set({
-          isStreaming: false,
           streamTaskId: null,
           streamAbort: null,
           streamingMessageId: null,
@@ -524,13 +536,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
   cancelGeneration: () => {
-    const { isStreaming, streamTaskId } = get();
+    const { isStreaming, streamTaskId, streamingMessageId } = get();
     if (!isStreaming) return;
+
+    // 缓冲播放模式：streamingMessageId 已为 null（后端已完成）
+    if (streamingMessageId === null) {
+      // 强制 flush 剩余缓冲
+      stopStreamingTimer(true);
+      set({ isStopping: true });
+      // 1.5~3s 后恢复
+      const delay = 1500 + Math.random() * 1500;
+      setTimeout(() => {
+        set({ isStopping: false, isStreaming: false });
+      }, delay);
+      return;
+    }
+
+    // 后端传输中模式：正常取消逻辑
     set({ cancelRequested: true });
     if (streamTaskId) {
       stopTask(streamTaskId).catch(() => null);
     }
-    // 同时触发 AbortController 关闭客户端 HTTP 连接
     get().streamAbort?.();
   },
   appendStreamContent: (delta) => {
@@ -538,6 +564,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     streamingBuffer += delta;
     startStreamingTimer(get);
   },
+  setKnowledgeBaseIds: (ids) => set({ knowledgeBaseIds: ids }),
+  setIsStreamingFalse: () => set({ isStreaming: false }),
   submitFeedback: async (messageId, feedback) => {
     const vote = feedback === "like" ? 1 : feedback === "dislike" ? -1 : null;
     const prev = get().messages.find((message) => message.id === messageId)?.feedback ?? null;
