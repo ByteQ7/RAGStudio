@@ -98,8 +98,22 @@ public class KbRelevanceChecker {
             boolean relevant = obj.has("relevant") && obj.get("relevant").getAsBoolean();
             String reasoning = obj.has("reasoning") ? obj.get("reasoning").getAsString() : "";
 
-            log.info("相关性判断结果: relevant={}, reasoning='{}'", relevant, reasoning);
+            // 提取相关的 collection 名称列表
+            List<String> relevantCollections = List.of();
+            if (obj.has("relevant_collection_names") && obj.get("relevant_collection_names").isJsonArray()) {
+                var arr = obj.getAsJsonArray("relevant_collection_names");
+                relevantCollections = arr.asList().stream()
+                        .map(e -> e.isJsonPrimitive() ? e.getAsString() : null)
+                        .filter(java.util.Objects::nonNull)
+                        .toList();
+            }
 
+            log.info("相关性判断结果: relevant={}, reasoning='{}', relevantCollections={}",
+                    relevant, reasoning, relevantCollections);
+
+            if (relevant && !relevantCollections.isEmpty()) {
+                return RelevanceResult.relevant(reasoning, relevantCollections);
+            }
             return relevant
                     ? RelevanceResult.relevant(reasoning)
                     : RelevanceResult.irrelevant(reasoning);
@@ -128,7 +142,7 @@ public class KbRelevanceChecker {
             if (StrUtil.isNotBlank(info.description())) {
                 sb.append(" - ").append(info.description());
             }
-            sb.append("\n");
+            sb.append("（").append(info.collectionName()).append("）\n");
         }
         return sb.toString().trim();
     }
@@ -208,9 +222,9 @@ public class KbRelevanceChecker {
     // ==================== 支持类型 ====================
 
     /**
-     * 知识库基本信息（名称 + 描述）
+     * 知识库基本信息
      */
-    public record KbInfo(String id, String name, String description) {}
+    public record KbInfo(String id, String name, String description, String collectionName) {}
 
     /**
      * 知识库信息提供者接口
@@ -225,13 +239,21 @@ public class KbRelevanceChecker {
     /**
      * 相关性判断结果
      */
-    public record RelevanceResult(boolean relevant, String reasoning) {
+    public record RelevanceResult(boolean relevant, String reasoning, List<String> relevantCollectionNames) {
         public static RelevanceResult relevant(String reasoning) {
-            return new RelevanceResult(true, reasoning);
+            return new RelevanceResult(true, reasoning, List.of());
+        }
+
+        public static RelevanceResult relevant(String reasoning, List<String> collectionNames) {
+            return new RelevanceResult(true, reasoning, collectionNames);
         }
 
         public static RelevanceResult irrelevant(String reasoning) {
-            return new RelevanceResult(false, reasoning);
+            return new RelevanceResult(false, reasoning, List.of());
+        }
+
+        public boolean hasSpecificCollections() {
+            return relevant && relevantCollectionNames != null && !relevantCollectionNames.isEmpty();
         }
     }
 }

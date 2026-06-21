@@ -72,12 +72,6 @@ public class RAGConstant {
      */
     public static final String MCP_PARAMETER_EXTRACT_USER_PROMPT_PATH = "prompt/mcp-parameter-extract-user.st";
 
-    /**
-     * MCP 工具调用决策提示词模板路径
-     * 用于第一阶段 LLM 判断是否需要调用 MCP 工具
-     */
-    public static final String MCP_DECISION_PROMPT_PATH = "prompt/mcp-decision-prompt.st";
-
     // ==================== 上下文格式化模板（单文件多 section） ====================
 
     /**

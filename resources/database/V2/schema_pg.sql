@@ -160,6 +160,7 @@ COMMENT ON COLUMN t_sample_question.deleted IS '是否删除 0：正常 1：删�
 CREATE TABLE t_knowledge_base (
     id              VARCHAR(64) NOT NULL PRIMARY KEY,
     name            VARCHAR(128) NOT NULL,
+    description     TEXT,
     embedding_model VARCHAR(128) NOT NULL,
     collection_name VARCHAR(128) NOT NULL,
     created_by      VARCHAR(64)  NOT NULL,

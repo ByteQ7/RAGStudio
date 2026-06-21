@@ -37,6 +37,11 @@ public class KnowledgeBaseDO {
     private String name;
 
     /**
+     * 知识库描述
+     */
+    private String description;
+
+    /**
      * 嵌入模型标识，如：qwen3-embedding:8b-fp16
      */
     private String embeddingModel;

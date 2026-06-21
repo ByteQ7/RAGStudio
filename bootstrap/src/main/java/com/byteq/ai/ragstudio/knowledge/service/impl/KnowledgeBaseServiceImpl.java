@@ -93,6 +93,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         try {
             KnowledgeBaseDO kbDO = KnowledgeBaseDO.builder()
                     .name(requestParam.getName())
+                    .description(requestParam.getDescription())
                     .embeddingModel(requestParam.getEmbeddingModel())
                     .collectionName(requestParam.getCollectionName())
                     .createdBy(UserContext.getUsername())
@@ -152,6 +153,11 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 
         if (StringUtils.hasText(requestParam.getName())) {
             kb.setName(requestParam.getName());
+        }
+
+        // 描述始终可修改（允许清空）
+        if (requestParam.getDescription() != null) {
+            kb.setDescription(requestParam.getDescription());
         }
 
         kb.setUpdatedBy(UserContext.getUsername());

@@ -26,9 +26,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 import type { KnowledgeBase, PageResult } from "@/services/knowledgeService";
-import { deleteKnowledgeBase, getKnowledgeBasesPage, renameKnowledgeBase } from "@/services/knowledgeService";
+import { deleteKnowledgeBase, getKnowledgeBasesPage, updateKnowledgeBase } from "@/services/knowledgeService";
 import { CreateKnowledgeBaseDialog } from "@/components/admin/CreateKnowledgeBaseDialog";
 import { getErrorMessage } from "@/utils/error";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,7 @@ export function KnowledgeListPage() {
     kb: null
   });
   const [renameValue, setRenameValue] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [stats, setStats] = useState({
     totalCount: 0,
     documentCount: 0,
@@ -155,6 +157,7 @@ export function KnowledgeListPage() {
   useEffect(() => {
     if (renameDialog.open) {
       setRenameValue(renameDialog.kb?.name || "");
+      setEditDescription(renameDialog.kb?.description || "");
     }
   }, [renameDialog]);
 
@@ -224,24 +227,24 @@ export function KnowledgeListPage() {
     return "border-gray-200 bg-gray-100 text-gray-600";
   };
 
-  const handleRename = async () => {
+  const handleEditSave = async () => {
     if (!renameDialog.kb) return;
     const nextName = renameValue.trim();
     if (!nextName) {
       toast.error("请输入知识库名称");
       return;
     }
-    if (nextName === renameDialog.kb.name) {
-      setRenameDialog({ open: false, kb: null });
-      return;
-    }
+    const nextDesc = editDescription.trim();
     try {
-      await renameKnowledgeBase(renameDialog.kb.id, nextName);
-      toast.success("重命名成功");
+      await updateKnowledgeBase(renameDialog.kb.id, {
+        name: nextName,
+        description: nextDesc
+      });
+      toast.success("保存成功");
       setRenameDialog({ open: false, kb: null });
       await loadKnowledgeBases(pageNo, keyword);
     } catch (error) {
-      toast.error(getErrorMessage(error, "重命名失败"));
+      toast.error(getErrorMessage(error, "保存失败"));
       console.error(error);
     }
   };
@@ -406,20 +409,32 @@ export function KnowledgeListPage() {
       </AlertDialog>
 
       <Dialog open={renameDialog.open} onOpenChange={(open) => setRenameDialog({ open, kb: open ? renameDialog.kb : null })}>
-        <DialogContent className="sm:max-w-[420px]" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => { e.preventDefault(); requestAnimationFrame(() => (document.activeElement as HTMLElement)?.blur()); }}>
+        <DialogContent className="sm:max-w-[460px]" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => { e.preventDefault(); requestAnimationFrame(() => (document.activeElement as HTMLElement)?.blur()); }}>
           <DialogHeader>
-            <DialogTitle>重命名知识库</DialogTitle>
-            <DialogDescription>修改知识库名称</DialogDescription>
+            <DialogTitle>编辑知识库</DialogTitle>
+            <DialogDescription>修改知识库名称和描述</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">名称</label>
-            <Input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} />
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">名称</label>
+              <Input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} placeholder="知识库名称" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">描述</label>
+              <Textarea
+                value={editDescription}
+                onChange={(event) => setEditDescription(event.target.value)}
+                placeholder="用于帮助 AI 判断问题是否与知识库相关（可选）"
+                className="resize-none"
+                rows={3}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenameDialog({ open: false, kb: null })}>
               取消
             </Button>
-            <Button onClick={handleRename}>保存</Button>
+            <Button onClick={handleEditSave}>保存</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -22,6 +22,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -37,6 +38,7 @@ import { getErrorMessage } from "@/utils/error";
 
 const formSchema = z.object({
   name: z.string().min(1, "请输入知识库名称").max(50, "名称不能超过50个字符"),
+  description: z.string().max(200, "描述不能超过200个字符").optional(),
   embeddingModel: z.string().min(1, "请选择Embedding模型"),
   collectionName: z
     .string()
@@ -66,6 +68,7 @@ export function CreateKnowledgeBaseDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
+      description: "",
       embeddingModel: "",
       collectionName: "",
     },
@@ -128,6 +131,7 @@ export function CreateKnowledgeBaseDialog({
     if (!nextOpen) {
       form.reset({
         name: "",
+        description: "",
         embeddingModel: "",
         collectionName: "",
       });
@@ -161,6 +165,28 @@ export function CreateKnowledgeBaseDialog({
                   </FormControl>
                   <FormDescription>
                     为知识库起一个易于识别的名称
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>知识库描述</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="例如：Java相关技术文档，包括Spring、MyBatis等框架"
+                      className="resize-none"
+                      rows={2}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    用于帮助 AI 判断问题是否与此知识库相关（可选）
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

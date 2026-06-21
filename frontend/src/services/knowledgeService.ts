@@ -3,6 +3,7 @@ import { api } from "./api";
 export interface KnowledgeBase {
   id: string;
   name: string;
+  description?: string | null;
   embeddingModel: string;
   collectionName: string;
   createdBy?: string | null;
@@ -87,6 +88,7 @@ export interface PageResult<T> {
 
 export interface KnowledgeBaseUpdatePayload {
   name?: string;
+  description?: string;
   embeddingModel?: string;
 }
 
@@ -153,10 +155,6 @@ export const createKnowledgeBase = async (data: Partial<KnowledgeBase>): Promise
 
 export const updateKnowledgeBase = async (id: string, data: KnowledgeBaseUpdatePayload): Promise<void> => {
   await api.put(`/knowledge-base/${id}`, data);
-};
-
-export const renameKnowledgeBase = async (id: string, name: string): Promise<void> => {
-  await api.put(`/knowledge-base/${id}`, { name });
 };
 
 export const deleteKnowledgeBase = async (id: string): Promise<void> => {
