@@ -145,15 +145,15 @@ Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 |:---:|:---:|
 | ![对话](docs/assets/img.png) | ![推理示例](docs/assets/img_1.png) |
 
-| Agent 步骤（折叠） | Agent 步骤（展开） |
-|:---:|:---:|
-| ![步骤折叠](docs/assets/img_2.png) | ![步骤展开](docs/assets/img_3.png) |
+| Agent 推理步骤 |
+|:---:|
+| ![步骤折叠](docs/assets/img_2.png) |
 
 ### 知识库
 
-| 知识库管理 |
-|:---:|
-| ![知识库](docs/assets/img_4.png) |
+| 知识库管理 | 知识库详情 |
+|:---:|:---:|
+| ![知识库列表](docs/assets/img_3.png) | ![知识库详情](docs/assets/img_4.png) |
 
 ### 链路追踪
 
