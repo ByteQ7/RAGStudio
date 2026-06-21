@@ -30,36 +30,38 @@ RAGStudio 是一个基于 Java 17 + Spring Boot 3.5 构建的企业级 AI 问答
 ## 架构总览
 
 ```mermaid
-flowchart TB
-    subgraph S1[展示层]
-        direction LR
-        A[对话页面] -.- B[知识库管理] -.- C[管理后台]
+graph TD
+    subgraph UI["前端"]
+        A[聊天页面] --- B[管理后台]
     end
 
-    subgraph S2[应用层]
-        direction LR
-        D[记忆加载] -.- E[相关性判断] -.- F[工具注册] -.- G[AgentLoop]
+    subgraph CORE["StreamChatPipeline"]
+        C[记忆加载] --> D[KB 相关性判断]
+        D --> E[工具注册]
+        E --> F[AgentLoop]
     end
 
-    subgraph S3[Agent 循环]
-        H[LLM 调用] --> I{解析 ReACT}
-        I -->|TOOL_CALL| J[执行工具]
-        J --> K[注入 Observation]
-        K --> H
-        I -->|FINISH| L[流式输出]
+    subgraph LOOP["Agent 循环"]
+        G[LLM 调用] --> H[ReACT 解析]
+        H -->|"TOOL_CALL"| I[执行工具]
+        I --> J[Observation 注入]
+        J --> G
+        H -->|"FINISH"| K[流式输出 Final Answer]
     end
 
-    subgraph S4[工具层]
-        direction LR
-        M[McpToolAdapter] -.- N[TimeTool] -.- O[RagSearchTool]
+    subgraph TOOLS["工具"]
+        L[TimeTool] --- M[RagSearchTool] --- N[McpToolAdapter]
     end
 
-    subgraph S5[基础设施]
-        direction LR
-        P[(PostgreSQL)] -.- Q[(Redis)] -.- R[(S3)]
+    subgraph INFRA["基础设施"]
+        O[(PostgreSQL)] --- P[(Redis)] --- Q[(S3)]
     end
 
-    S1 --> S2 --> S3 --> S4 --> S5
+    UI -->|"/rag/v3/chat"| CORE
+    CORE --> LOOP
+    LOOP --> TOOLS
+    TOOLS --> INFRA
+    K -->|"SSE 流式推送"| UI
 ```
 
 ---
