@@ -179,11 +179,8 @@ public class StreamChatPipeline {
         });
         checkCancellation(ctx);
 
-        // 1. 构建 ToolRegistry（MCP 工具 + RAG 检索工具）
-        ToolRegistry toolRegistry = traceNode("工具注册", "TOOL_REGISTRY", () -> buildAgentToolRegistry(ctx));
-        checkCancellation(ctx);
-
-        // 2. 相关性判断（不做预检索，由 Agent 在循环中自主调用 rag_search）
+        // 1. 相关性判断 + KB 过滤
+        List<String> effectiveKbIds = ctx.getKnowledgeBaseIds();
         boolean kbRelevant = false;
         if (CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds())) {
             KbRelevanceChecker.KbInfoProvider infoProvider = kbIds -> {
@@ -194,7 +191,7 @@ public class StreamChatPipeline {
                                 .eq(KnowledgeBaseDO::getDeleted, 0));
                 return kbList.stream()
                         .map(kb -> new KbRelevanceChecker.KbInfo(
-                                kb.getId(), kb.getName(), kb.getCollectionName()))
+                                kb.getId(), kb.getName(), kb.getDescription(), kb.getCollectionName()))
                         .toList();
             };
 
@@ -203,11 +200,35 @@ public class StreamChatPipeline {
             checkCancellation(ctx);
 
             kbRelevant = relevance.relevant();
-            log.info("知识库相关性判断: relevant={}, reasoning='{}'", kbRelevant, relevance.reasoning());
+            // LLM 指定了具体的相关知识库 → 只检索这些
+            if (relevance.hasSpecificCollections()) {
+                List<String> relevantCollections = relevance.relevantCollectionNames();
+                // 从原始 KB IDs 中过滤出 collection 匹配的
+                List<KnowledgeBaseDO> allKbs = knowledgeBaseMapper.selectList(
+                        com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
+                                .in(KnowledgeBaseDO::getId, ctx.getKnowledgeBaseIds())
+                                .eq(KnowledgeBaseDO::getDeleted, 0));
+                effectiveKbIds = allKbs.stream()
+                        .filter(kb -> relevantCollections.contains(kb.getCollectionName()))
+                        .map(KnowledgeBaseDO::getId)
+                        .toList();
+                if (effectiveKbIds.isEmpty()) {
+                    log.warn("LLM 指定的相关知识库未匹配到任何 KB，降级使用全部");
+                    effectiveKbIds = ctx.getKnowledgeBaseIds();
+                }
+                log.info("知识库相关性判断: relevant=true, 过滤后检索 {} 个知识库: {}",
+                        effectiveKbIds.size(), relevantCollections);
+            } else {
+                log.info("知识库相关性判断: relevant={}, reasoning='{}'", kbRelevant, relevance.reasoning());
+            }
         } else {
             log.info("未选择知识库，跳过检索");
         }
-        // 不预检索知识库，由 Agent 在循环中自主调用 rag_search 工具
+
+        // 2. 构建 ToolRegistry（MCP 工具 + 过滤后的 RAG 检索工具）
+        List<String> finalKbIds = effectiveKbIds;
+        ToolRegistry toolRegistry = traceNode("工具注册", "TOOL_REGISTRY", () -> buildAgentToolRegistry(ctx, finalKbIds));
+        checkCancellation(ctx);
 
         // 3. 构建 AgentContext 并执行 AgentLoop
         AgentContext agentCtx = new AgentContext(
@@ -234,13 +255,14 @@ public class StreamChatPipeline {
     /**
      * 构建 Agent 模式下的 ToolRegistry
      * <p>
-     * 包含两类工具：
+     * 包含三类工具：
      * <ol>
      *   <li>MCP 工具：通过 {@link McpToolAdapter} 包装现有 {@link McpToolExecutor}</li>
+     *   <li>内置时间工具：{@link TimeTool}，零依赖</li>
      *   <li>RAG 检索工具：{@link RagSearchTool}，允许 Agent 在循环中主动检索知识库</li>
      * </ol>
      */
-    private ToolRegistry buildAgentToolRegistry(StreamChatContext ctx) {
+    private ToolRegistry buildAgentToolRegistry(StreamChatContext ctx, List<String> kbIds) {
         ToolRegistry registry = new ToolRegistry();
 
         // 1. MCP 工具
@@ -251,16 +273,16 @@ public class StreamChatPipeline {
         // 2. 内置时间工具（始终注册，零依赖）
         registry.register(new TimeTool());
 
-        // 3. RAG 检索工具（仅当用户选择了知识库时添加）
-        if (CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds())) {
+        // 3. RAG 检索工具（仅当选择了知识库时添加）
+        if (CollUtil.isNotEmpty(kbIds)) {
             RagSearchTool ragTool = new RagSearchTool(
-                    retrievalEngine, searchProperties, ctx.getKnowledgeBaseIds());
+                    retrievalEngine, searchProperties, kbIds);
             registry.register(ragTool);
         }
 
         log.info("Agent 工具注册完成 - MCP: {}, RAG: {}, 内置: 1, 总计: {}",
                 mcpToolRegistry.size(),
-                CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds()) ? 1 : 0,
+                CollUtil.isNotEmpty(kbIds) ? 1 : 0,
                 registry.size());
         return registry;
     }

@@ -111,6 +111,7 @@ export function KnowledgeBaseSelector({
         {selectedKBs.map((kb) => (
           <span
             key={kb.id}
+            title={kb.description || undefined}
             className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700"
           >
             {kb.name}
@@ -168,10 +169,14 @@ export function KnowledgeBaseSelector({
                       {isSelected && <Check className="h-3 w-3" />}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium text-slate-900">{kb.name}</div>
-                      {kb.collectionName && (
+                      <div className="truncate font-medium text-slate-900" title={kb.description || undefined}>
+                        {kb.name}
+                      </div>
+                      {kb.description ? (
+                        <div className="truncate text-slate-400">{kb.description}</div>
+                      ) : kb.collectionName ? (
                         <div className="truncate text-slate-400">{kb.collectionName}</div>
-                      )}
+                      ) : null}
                     </div>
                     {kb.documentCount != null && (
                       <span className="shrink-0 text-slate-400">{kb.documentCount} 文档</span>

@@ -58,7 +58,8 @@ public class KnowledgeBaseController {
     @PutMapping("/knowledge-base/{kb-id}")
     public Result<Void> renameKnowledgeBase(@PathVariable("kb-id") String kbId,
                                             @RequestBody KnowledgeBaseUpdateRequest requestParam) {
-        knowledgeBaseService.rename(kbId, requestParam);
+        requestParam.setId(kbId);
+        knowledgeBaseService.update(requestParam);
         return Results.success();
     }
 
