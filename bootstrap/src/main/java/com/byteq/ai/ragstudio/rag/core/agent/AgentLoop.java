@@ -93,7 +93,7 @@ public class AgentLoop {
                 try {
                     llmResponse = llmService.chat(ChatRequest.builder()
                             .messages(new ArrayList<>(ctx.getMessages()))
-                            .temperature(0.1)   // 低温度保证格式稳定
+                            .temperature(0.0)   // 最低温度，最大程度保证格式遵守
                             .thinking(false)
                             .build());
                 } catch (Exception e) {
@@ -130,9 +130,34 @@ public class AgentLoop {
 
                 // 2b. 解析响应
                 AgentStep step = responseParser.parse(llmResponse, iteration);
+
+                // 格式校正：初次迭代 LLM 未使用 ReACT 格式时重试一次
+                if (iteration == 0 && !llmResponse.contains("Action:") && !llmResponse.contains("Action：")) {
+                    log.warn("Agent 初次迭代 LLM 未使用 ReACT 格式，注入纠正提示后重试");
+                    ctx.addMessage(ChatMessage.assistant(llmResponse));
+                    ctx.addMessage(ChatMessage.system(
+                            "你刚才的输出没有遵循 ReACT 格式。请重新输出，"
+                            + "确保包含 Thought: 和 Action: 字段。"
+                            + "即使你认为不需要调用工具，也必须输出：\n"
+                            + "Thought: ...\nAction: FINISH\nFinal Answer: ..."));
+                    try {
+                        String retryResponse = llmService.chat(ChatRequest.builder()
+                                .messages(new ArrayList<>(ctx.getMessages()))
+                                .temperature(0.0)
+                                .thinking(false)
+                                .build());
+                        if (StrUtil.isNotBlank(retryResponse)) {
+                            llmResponse = retryResponse;
+                            step = responseParser.parse(llmResponse, iteration);
+                        }
+                    } catch (Exception e2) {
+                        log.warn("格式校正重试也失败: {}", e2.getMessage());
+                    }
+                }
+
                 ctx.addStep(step);
 
-                // 追加 LLM 响应到消息列表（下一轮 LLM 能看到之前的对话）
+                // 追加 LLM 响应到消息列表
                 ctx.addMessage(ChatMessage.assistant(llmResponse));
 
                 // 2c. 如有 Plan，注入计划到上下文（后续迭代可参照执行）
@@ -217,27 +242,24 @@ public class AgentLoop {
                 toolRegistry, ctx.getKbContext(), ctx.isKbRelevant());
         messages.add(systemPrompt);
 
-        // 2. 强制检索指令：当知识库相关时，必须调用 rag_search
-        if (ctx.isKbRelevant() && hasRagSearchTool()) {
-            messages.add(ChatMessage.system(
-                    "【强制指令】用户已选择知识库且问题与知识库相关。"
-                    + "你的第一轮行动必须调用 rag_search 工具检索知识库，"
-                    + "然后基于检索结果回答。不得仅凭自身知识直接回答。"));
-        }
-
-        // 3. 对话历史（含摘要）
+        // 2. 对话历史（含摘要）
         if (CollUtil.isNotEmpty(ctx.getHistory())) {
             messages.addAll(ctx.getHistory());
         }
 
-        // 4. 格式提醒（利用 recency bias 强化格式遵守）
-        messages.add(ChatMessage.system(
-                "【格式提醒】请严格按照 ReACT 格式输出。禁止直接输出回答文本。"
-                + "每次输出必须包含 Thought 和 Action 字段。即使你不需要调用工具，"
-                + "也必须输出 Thought + Action: FINISH + Final Answer。"
-                + "绝对不要直接输出一段文字而不带格式标签。"));
+        // 3. 前置指令（利用 recency bias，紧贴用户问题）
+        StringBuilder reminder = new StringBuilder();
+        reminder.append("【格式要求】请严格按照 ReACT 格式输出。每次输出必须包含 Thought 和 Action 字段。")
+                .append("即使你不需要调用工具，也必须输出 Thought + Action: FINISH + Final Answer。")
+                .append("绝对不要直接输出一段文字而不带格式标签。");
+        if (ctx.isKbRelevant() && hasRagSearchTool()) {
+            reminder.append("\n\n【强制检索】用户已选择知识库且问题与知识库相关。")
+                    .append("你的第一轮行动必须调用 rag_search 工具检索知识库，")
+                    .append("然后基于检索结果回答。不得仅凭自身知识直接回答。");
+        }
+        messages.add(ChatMessage.system(reminder.toString()));
 
-        // 5. 用户当前问题
+        // 4. 用户当前问题
         messages.add(ChatMessage.user(ctx.getQuestion()));
 
         return messages;
