@@ -17,6 +17,7 @@ import com.byteq.ai.ragstudio.rag.core.agent.McpToolAdapter;
 import com.byteq.ai.ragstudio.rag.core.agent.RagSearchTool;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActPromptBuilder;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActResponseParser;
+import com.byteq.ai.ragstudio.rag.core.agent.TimeTool;
 import com.byteq.ai.ragstudio.rag.core.agent.ToolRegistry;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolExecutor;
@@ -247,14 +248,17 @@ public class StreamChatPipeline {
             registry.register(new McpToolAdapter(executor));
         }
 
-        // 2. RAG 检索工具（仅当用户选择了知识库时添加）
+        // 2. 内置时间工具（始终注册，零依赖）
+        registry.register(new TimeTool());
+
+        // 3. RAG 检索工具（仅当用户选择了知识库时添加）
         if (CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds())) {
             RagSearchTool ragTool = new RagSearchTool(
                     retrievalEngine, searchProperties, ctx.getKnowledgeBaseIds());
             registry.register(ragTool);
         }
 
-        log.info("Agent 工具注册完成 - MCP: {}, RAG: {}, 总计: {}",
+        log.info("Agent 工具注册完成 - MCP: {}, RAG: {}, 内置: 1, 总计: {}",
                 mcpToolRegistry.size(),
                 CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds()) ? 1 : 0,
                 registry.size());
