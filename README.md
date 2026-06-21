@@ -29,39 +29,34 @@ RAGStudio 是一个基于 Java 17 + Spring Boot 3.5 构建的企业级 AI 问答
 
 ## 架构总览
 
-```mermaid
-graph TD
-    subgraph UI["前端"]
-        A[聊天页面] --- B[管理后台]
-    end
-
-    subgraph CORE["StreamChatPipeline"]
-        C[记忆加载] --> D[KB 相关性判断]
-        D --> E[工具注册]
-        E --> F[AgentLoop]
-    end
-
-    subgraph LOOP["Agent 循环"]
-        G[LLM 调用] --> H[ReACT 解析]
-        H -->|"TOOL_CALL"| I[执行工具]
-        I --> J[Observation 注入]
-        J --> G
-        H -->|"FINISH"| K[流式输出 Final Answer]
-    end
-
-    subgraph TOOLS["工具"]
-        L[TimeTool] --- M[RagSearchTool] --- N[McpToolAdapter]
-    end
-
-    subgraph INFRA["基础设施"]
-        O[(PostgreSQL)] --- P[(Redis)] --- Q[(S3)]
-    end
-
-    UI -->|"/rag/v3/chat"| CORE
-    CORE --> LOOP
-    LOOP --> TOOLS
-    TOOLS --> INFRA
-    K -->|"SSE 流式推送"| UI
+```
+┌─────────────────────────────────────────────────────┐
+│ 展示层                                               │
+│  React + TypeScript + Zustand + Tailwind CSS         │
+│  ┌────────────┐ ┌──────────────┐ ┌───────────────┐  │
+│  │ 对话页面    │ │ 知识库管理    │ │ 管理后台       │  │
+│  └────────────┘ └──────────────┘ └───────────────┘  │
+├─────────────────────────────────────────────────────┤
+│ 应用层                                               │
+│  StreamChatPipeline                                  │
+│  ┌──────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
+│  │ 记忆  │ │ 相关性   │ │ 工具注册 │ │ AgentLoop  │ │
+│  │ 加载  │ │ 判断     │ │          │ │            │ │
+│  └──────┘ └──────────┘ └──────────┘ └────────────┘ │
+├─────────────────────────────────────────────────────┤
+│ Agent 循环                                           │
+│  LLM 调用 → ReACT 解析 → TOOL_CALL / FINISH         │
+│  TOOL_CALL → 执行工具 → Observation → 下一轮        │
+│  FINISH → 流式输出 Final Answer                      │
+├─────────────────────────────────────────────────────┤
+│ 工具层                                               │
+│  ┌────────────┐ ┌─────────┐ ┌────────────────────┐  │
+│  │ MCP 工具   │ │ TimeTool│ │ RagSearchTool      │  │
+│  └────────────┘ └─────────┘ └────────────────────┘  │
+├─────────────────────────────────────────────────────┤
+│ 基础设施                                             │
+│  PostgreSQL + pgvector / Redis / RocketMQ / S3       │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
