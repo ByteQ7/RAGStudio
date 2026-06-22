@@ -7,7 +7,7 @@ export function RAGStudioLogo({ className }: RAGStudioLogoProps) {
     <img
       src="/girl.png"
       alt="RAGStudio Logo"
-      className={`${className || ""} object-contain`}
+      className={className}
     />
   );
 }
