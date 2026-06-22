@@ -56,6 +56,9 @@ Java.json
 .agents/*
 .reasonix/*
 .qoder/*
+
+### SSH Keys ###
+.ssh/
 /INTERVIEW_ANSWERS.md
 /INTERVIEW_HIGHLIGHTS.md
 /PROJECT_HIGHLIGHTS.md
