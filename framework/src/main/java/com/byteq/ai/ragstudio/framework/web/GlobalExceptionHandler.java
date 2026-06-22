@@ -95,7 +95,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(value = {AbstractException.class})
     public Result<Void> abstractException(HttpServletRequest request, AbstractException ex) {
         if (ex.getCause() != null) {
-            log.error("[{}] {} [ex] {}", request.getMethod(), request.getRequestURL().toString(), ex, ex.getCause());
+            log.error("[{}] {} [ex] {}", request.getMethod(), request.getRequestURI(), ex, ex.getCause());
             return Results.failure(ex);
         }
         // 记录前 5 行堆栈信息用于问题排查
@@ -105,7 +105,7 @@ public class GlobalExceptionHandler {
         for (int i = 0; i < Math.min(5, stackTrace.length); i++) {
             stackTraceBuilder.append("\tat ").append(stackTrace[i]).append("\n");
         }
-        log.error("[{}] {} [ex] {} \n\n{}", request.getMethod(), request.getRequestURL().toString(), ex, stackTraceBuilder);
+        log.error("[{}] {} [ex] {} \n\n{}", request.getMethod(), request.getRequestURI(), ex, stackTraceBuilder);
         return Results.failure(ex);
     }
 
@@ -177,15 +177,12 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 获取完整请求 URL（含查询参数）
+     * 获取请求路径（不含查询参数），避免敏感信息泄漏到日志
      *
      * @param request HTTP 请求
-     * @return 完整的请求 URL 字符串
+     * @return 请求 URI 路径
      */
     private String getUrl(HttpServletRequest request) {
-        if (StrUtil.isBlank(request.getQueryString())) {
-            return request.getRequestURL().toString();
-        }
-        return request.getRequestURL().toString() + "?" + request.getQueryString();
+        return request.getRequestURI();
     }
 }
