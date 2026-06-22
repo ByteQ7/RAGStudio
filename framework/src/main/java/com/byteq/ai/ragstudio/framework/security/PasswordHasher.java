@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.framework.security;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 /**
@@ -8,6 +9,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
  * 使用 BCrypt 算法对密码进行哈希和校验，
  * 替代原有的明文存储方案。
  */
+@Slf4j
 public final class PasswordHasher {
 
     private static final BCryptPasswordEncoder ENCODER = new BCryptPasswordEncoder();
@@ -48,6 +50,7 @@ public final class PasswordHasher {
             return ENCODER.matches(rawPassword, stored);
         }
         // 兼容旧版明文密码（迁移过渡期）
+        log.warn("用户密码为明文存储，建议尽快迁移至 BCrypt 加密");
         return stored.equals(rawPassword);
     }
 }

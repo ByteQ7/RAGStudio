@@ -63,4 +63,21 @@ public class StreamChatContext {
     /** MCP 工具决策结果：非空表示需要调用该工具 */
     @Setter
     private String mcpToolId;
+
+    /**
+     * 获取改写后的问题，如果改写结果为空则返回原始问题
+     */
+    public String getRewrittenQuestionOrOriginal() {
+        return rewriteResult != null ? rewriteResult.rewrittenQuestion() : question;
+    }
+
+    /**
+     * 安全获取 RewriteResult，如果为空则使用原始问题构造默认结果
+     */
+    public RewriteResult getRewriteResultOrDefault() {
+        if (rewriteResult != null) {
+            return rewriteResult;
+        }
+        return new RewriteResult(question, List.of(question));
+    }
 }

@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.ingestion.engine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.byteq.ai.ragstudio.ingestion.domain.context.IngestionContext;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
@@ -17,6 +18,7 @@ import java.util.Objects;
  * 条件评估器
  * 用于根据给定的 IngestionContext 上下文和 JsonNode 格式的条件配置来评估条件是否满足
  */
+@Slf4j
 @Component
 public class ConditionEvaluator {
 
@@ -115,6 +117,7 @@ public class ConditionEvaluator {
             BeanWrapperImpl wrapper = new BeanWrapperImpl(context);
             return wrapper.getPropertyValue(path);
         } catch (Exception e) {
+            log.debug("读取字段失败: path={}, {}", path, e.getMessage());
             return null;
         }
     }
@@ -190,6 +193,7 @@ public class ConditionEvaluator {
         try {
             return Double.parseDouble(String.valueOf(value));
         } catch (Exception e) {
+            log.debug("数值转换失败: value={}, {}", value, e.getMessage());
             return null;
         }
     }
@@ -215,6 +219,7 @@ public class ConditionEvaluator {
             Boolean result = parser.parseExpression(expression).getValue(ctx, Boolean.class);
             return Boolean.TRUE.equals(result);
         } catch (Exception e) {
+            log.warn("SpEL 条件求值失败: expression={}, {}", expression, e.getMessage());
             return false;
         }
     }

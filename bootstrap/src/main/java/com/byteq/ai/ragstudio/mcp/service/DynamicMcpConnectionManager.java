@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 动态 MCP 连接管理器
@@ -62,6 +63,11 @@ public class DynamicMcpConnectionManager {
      */
     private final Map<String, String> serverStatuses = new ConcurrentHashMap<>();
 
+    /**
+     * 各 Server 的连接锁（per-server 粒度，避免全局同步）
+     */
+    private final Map<String, ReentrantLock> serverLocks = new ConcurrentHashMap<>();
+
     private static final String STATUS_CONNECTED = "connected";
     private static final String STATUS_DISCONNECTED = "disconnected";
     private static final String STATUS_ERROR = "error";
@@ -76,14 +82,14 @@ public class DynamicMcpConnectionManager {
      * @param server MCP Server 配置
      * @return 连接结果（成功/失败及工具数量）
      */
-    public synchronized ConnectResult connect(McpServerDO server) {
+    public ConnectResult connect(McpServerDO server) {
         String serverId = server.getId();
         String serverName = server.getName();
-
-        // 清理旧连接
-        disconnectInternal(serverId);
-
+        ReentrantLock lock = serverLocks.computeIfAbsent(serverId, k -> new ReentrantLock());
+        lock.lock();
         try {
+            disconnectInternal(serverId);
+
             String mcpUrl = server.getUrl();
             if (StrUtil.isBlank(mcpUrl)) {
                 throw new IllegalArgumentException("MCP Server URL 不能为空");
@@ -126,6 +132,8 @@ public class DynamicMcpConnectionManager {
             log.error("MCP Server [{}] 连接失败: {}", serverName, reason, e);
             serverStatuses.put(serverId, STATUS_ERROR);
             return new ConnectResult(false, 0, reason);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -134,8 +142,14 @@ public class DynamicMcpConnectionManager {
      *
      * @param serverId MCP Server ID
      */
-    public synchronized void disconnect(String serverId) {
-        disconnectInternal(serverId);
+    public void disconnect(String serverId) {
+        ReentrantLock lock = serverLocks.computeIfAbsent(serverId, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            disconnectInternal(serverId);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -154,11 +168,24 @@ public class DynamicMcpConnectionManager {
      * @param serverId MCP Server ID
      * @return 健康状态
      */
-    public synchronized HealthStatus healthCheck(String serverId) {
+    public HealthStatus healthCheck(String serverId) {
         McpSyncClient client = activeClients.get(serverId);
         if (client == null) {
             return new HealthStatus(STATUS_DISCONNECTED, "未建立连接", 0);
         }
+        ReentrantLock lock = serverLocks.get(serverId);
+        if (lock != null) {
+            lock.lock();
+            try {
+                return doHealthCheck(client, serverId);
+            } finally {
+                lock.unlock();
+            }
+        }
+        return doHealthCheck(client, serverId);
+    }
+
+    private HealthStatus doHealthCheck(McpSyncClient client, String serverId) {
         try {
             ListToolsResult result = client.listTools();
             int toolCount = result.tools() != null ? result.tools().size() : 0;

@@ -489,7 +489,7 @@ public class StreamChatPipeline {
     // 根据改写后的查询从指定知识库检索相关文档
     private RetrievalContext retrieve(StreamChatContext ctx) {
         return retrievalEngine.retrieveByKnowledgeBases(
-                ctx.getKnowledgeBaseIds(), ctx.getRewriteResult(), searchProperties.getDefaultTopK());
+                ctx.getKnowledgeBaseIds(), ctx.getRewriteResultOrDefault(), searchProperties.getDefaultTopK());
     }
 
     // ==================== MCP 调用 ====================
@@ -532,7 +532,7 @@ public class StreamChatPipeline {
         CallToolResult result;
         try {
             Map<String, Object> params = mcpParameterExtractor.extractParameters(
-                    ctx.getRewriteResult().rewrittenQuestion(), tool);
+                    ctx.getRewrittenQuestionOrOriginal(), tool);
             result = executor.execute(params != null ? params : new HashMap<>());
         } catch (Exception e) {
             log.warn("MCP 工具 {} 执行失败，降级为普通 RAG 回答: {}", toolId, e.getMessage());
@@ -581,7 +581,7 @@ public class StreamChatPipeline {
     // 无知识库上下文时，直接用系统 Prompt 流式回答用户问题
     private void streamDirectResponse(StreamChatContext ctx) {
         StreamCancellationHandle handle = streamSystemResponse(
-                ctx.getRewriteResult().rewrittenQuestion(),
+                ctx.getRewrittenQuestionOrOriginal(),
                 ctx.getHistory(),
                 null,
                 ctx.isDeepThinking(),
@@ -593,7 +593,7 @@ public class StreamChatPipeline {
     // 有知识库上下文时，构建含检索结果的 Prompt 并流式回答
     private void streamRagResponse(StreamChatContext ctx, RetrievalContext retrievalCtx) {
         StreamCancellationHandle handle = streamLLMResponse(
-                ctx.getRewriteResult(),
+                ctx.getRewriteResultOrDefault(),
                 retrievalCtx,
                 ctx.getHistory(),
                 ctx.isDeepThinking(),

@@ -61,7 +61,11 @@ public class SseEmitterSender {
 
     private void closeWithError(Throwable throwable) {
         if (closed.compareAndSet(false, true)) {
-            emitter.completeWithError(throwable);
+            try {
+                emitter.completeWithError(throwable);
+            } catch (Exception e) {
+                log.warn("SSE closeWithError failed", e);
+            }
         }
     }
 }

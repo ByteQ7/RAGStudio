@@ -116,8 +116,6 @@ public class LocalFileFetcher implements DocumentFetcher {
             }
             String mimeType = MimeTypeDetector.detect(bytes, fileName);
             return new FetchResult(bytes, mimeType, fileName);
-        } catch (ServiceException e) {
-            throw e;
         } catch (Exception e) {
             throw new ServiceException("读取文件失败: " + e.getMessage());
         }
