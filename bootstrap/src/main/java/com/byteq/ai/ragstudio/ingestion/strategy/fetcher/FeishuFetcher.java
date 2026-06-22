@@ -88,12 +88,12 @@ public class FeishuFetcher implements DocumentFetcher {
             String apiUrl = "https://open.feishu.cn/open-apis/docx/v1/documents/" + docToken + "/raw_content";
             HttpClientHelper.HttpFetchResponse resp = httpClientHelper.get(apiUrl, headers);
             byte[] bodyBytes = resp.body();
-            String content = null;
-            if (bodyBytes != null) {
-                content = extractDocxContent(bodyBytes);
-                if (!StringUtils.hasText(content)) {
-                    content = new String(bodyBytes, StandardCharsets.UTF_8);
-                }
+            if (bodyBytes == null) {
+                throw new ServiceException("飞书文档API返回内容为空");
+            }
+            String content = extractDocxContent(bodyBytes);
+            if (!StringUtils.hasText(content)) {
+                content = new String(bodyBytes, StandardCharsets.UTF_8);
             }
             String fileName = StringUtils.hasText(source.getFileName()) ? source.getFileName() : docToken + ".txt";
             return new FetchResult(content.getBytes(StandardCharsets.UTF_8), "text/plain", fileName);
