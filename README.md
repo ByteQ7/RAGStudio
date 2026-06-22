@@ -6,13 +6,13 @@
 
 <p align="center">
   <a href="README_en.md">
-    <img src="https://img.shields.io/badge/🌍_English_Version-blue?style=for-the-badge&logoColor=white" alt="English Version"/>
+    <img src="https://img.shields.io/badge/English_Version-blue?style=for-the-badge&logoColor=white" alt="English Version"/>
   </a>
 </p>
 
 ---
 
-## 📋 目录
+## 目录
 
 - [项目简介](#项目简介)
 - [架构总览](#架构总览)
@@ -91,7 +91,7 @@ StreamChatPipeline.doExecuteRag()
 
 ## 核心功能
 
-### 🤖 ReACT Agent 循环
+### ReACT Agent 循环
 
 Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 
@@ -117,7 +117,7 @@ Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 - **缺参数先问** — 可搜索参数（日期）→ 搜索获取；用户参数（城市）→ 反问用户
 - **格式校正** — LLM 未按要求输出 ReACT 格式时，自动注入纠正提示后重试一次
 
-### 🧠 知识库关联性判断
+### 知识库关联性判断
 
 进入 Agent 循环前，用轻量 LLM 调用判断问题与所选知识库是否相关：
 
@@ -125,7 +125,7 @@ Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 - **判断依据** — 知识库名称 + 知识库描述（创建/编辑时可填写）
 - **JSON 断尾修复** — 处理 LLM 输出被截断的情况，确保解析健壮
 
-### 📚 知识库管理
+### 知识库管理
 
 - 创建/编辑/删除知识库，支持配置 embedding 模型
 - **知识库描述** — 创建和编辑时可填写描述，用于 AI 关联判断
@@ -134,19 +134,19 @@ Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 - 定时刷新同步（cron 表达式 + ETag/Hash 变更检测）
 - 分块查看、启用/禁用、手动编辑
 
-### ⚙️ 多模型路由与熔断降级
+### 多模型路由与熔断降级
 
 - 数据库驱动的动态模型配置，运行时无重启切换
 - 优先级路由 + Circuit Breaker 状态机（CLOSED → OPEN → HALF_OPEN）
 - 单模型故障秒级自动 fallback，流式场景与同步场景共享健康检查
 
-### 🧩 MCP 集成
+### MCP 集成
 
 - MCP 服务器注册与管理，启动时异步加载不阻塞应用
 - Agent 在循环中自主调用，支持多次调用和链式调用
 - 工具调用失败时 Agent 可自主重试或换用其他工具
 
-### 🖥️ 管理后台
+### 管理后台
 
 - **仪表盘** — 用户量、对话量、消息量等核心 KPI 概览，延迟/成功率趋势
 - **知识库管理** — 知识库列表、文档管理、分块详情、处理日志
@@ -156,7 +156,7 @@ Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 - **MCP 服务** — 外部 MCP 服务器注册管理
 - **用户管理** — 账号管理、角色分配
 
-### 🔐 用户认证与权限
+### 用户认证与权限
 
 - Sa-Token 登录/注销（用户名+密码）
 - 管理员 / 普通用户双角色权限
@@ -595,6 +595,6 @@ resources/database/
 ---
 
 <p align="center">
-  Built with ❤️ by ByteQ<br/>
+  Built by ByteQ<br/>
   <a href="LICENSE">MIT License</a>
 </p>

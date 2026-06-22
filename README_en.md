@@ -6,13 +6,13 @@
 
 <p align="center">
   <a href="README.md">
-    <img src="https://img.shields.io/badge/🌍_中文版-blue?style=for-the-badge&logoColor=white" alt="中文版"/>
+    <img src="https://img.shields.io/badge/中文版-blue?style=for-the-badge&logoColor=white" alt="中文版"/>
   </a>
 </p>
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Introduction](#introduction)
 - [Architecture Overview](#architecture-overview)
@@ -91,7 +91,7 @@ StreamChatPipeline.doExecuteRag()
 
 ## Core Features
 
-### 🤖 ReACT Agent Loop
+### ReACT Agent Loop
 
 Agent mode is the default interaction style — the LLM reasons and decides autonomously in a loop:
 
@@ -117,7 +117,7 @@ Iteration 2:  Thought → Information sufficient
 - **Missing Parameters** — Searchable params (dates) are auto-retrieved; user-specific params (cities) prompt a clarifying question
 - **Format Correction** — If the LLM fails to output ReACT format, an automatic correction prompt is injected and retried once
 
-### 🧠 KB Relevance Check
+### KB Relevance Check
 
 Before entering the Agent loop, a lightweight LLM call determines if the question is relevant to the selected knowledge bases.
 
@@ -125,7 +125,7 @@ Before entering the Agent loop, a lightweight LLM call determines if the questio
 - **Judgment Criteria** — Based on KB name and description (configurable during creation/editing)
 - **Truncation Recovery** — Handles truncated LLM responses to ensure robust parsing
 
-### 📚 Knowledge Base Management
+### Knowledge Base Management
 
 - **CRUD Operations** — Create, edit, delete knowledge bases with configurable embedding models
 - **KB Description** — Descriptions help AI determine KB relevance during Q&A
@@ -134,19 +134,19 @@ Before entering the Agent loop, a lightweight LLM call determines if the questio
 - **Scheduled Sync** — Cron-based refresh with ETag/Hash change detection
 - **Chunk Management** — View, enable/disable, and manually edit chunks
 
-### ⚙️ Multi-Model Routing & Circuit Breaker
+### Multi-Model Routing & Circuit Breaker
 
 - **Dynamic Configuration** — Database-driven model configuration with zero-downtime runtime switching
 - **Circuit Breaker FSM** — Priority-based routing with circuit breaker state machine (CLOSED → OPEN → HALF_OPEN)
 - **Instant Failover** — Second-level automatic fallback with shared health checks for streaming and sync scenarios
 
-### 🧩 MCP Integration
+### MCP Integration
 
 - **MCP Server Management** — Register and manage MCP servers; async loading on startup doesn't block the app
 - **Autonomous Tool Calls** — The Agent autonomously invokes tools in its loop, supporting multi-turn and chained calls
 - **Failure Retry** — On tool failure, the Agent can retry or switch to alternative tools
 
-### 🖥️ Admin Dashboard
+### Admin Dashboard
 
 - **Dashboard** — Core KPIs: user count, conversation count, message volume, latency/success rate trends
 - **KB Management** — KB list, document management, chunk details, processing logs
@@ -156,7 +156,7 @@ Before entering the Agent loop, a lightweight LLM call determines if the questio
 - **MCP Services** — External MCP server registration and management
 - **User Management** — Account management and role assignment
 
-### 🔐 User Authentication & Authorization
+### User Authentication & Authorization
 
 - Sa-Token login/logout (username + password)
 - Admin / Regular user dual-role access control
@@ -595,6 +595,6 @@ resources/database/
 ---
 
 <p align="center">
-  Built with ❤️ by ByteQ<br/>
+  Built by ByteQ<br/>
   <a href="LICENSE">MIT License</a>
 </p>
