@@ -134,6 +134,21 @@ Before entering the Agent loop, a lightweight LLM call determines if the questio
 - **Scheduled Sync** — Cron-based refresh with ETag/Hash change detection
 - **Chunk Management** — View, enable/disable, and manually edit chunks
 
+### Chunking Strategies
+
+Two chunking strategies available, configurable per knowledge base:
+
+**Fixed-size chunking (`fixed_size`)**
+- Splits text into fixed-size chunks (default 512 chars/chunk), configurable overlap (default 128 chars)
+- Respects sentence boundaries (Chinese 。！？ and English .!?) — won't split mid-sentence
+- Handles URL line-break issues automatically
+
+**Structure-aware chunking (`structure_aware`)**
+- Designed for Markdown documents — recognizes headings, code fences, paragraphs
+- Uses min/target/max budget packing (default 600/1400/1800 chars)
+- Keeps headings and their content together, won't split them across chunks
+- Supports block-level overlap and automatic trailing-small-chunk merging
+
 ### Multi-Model Routing & Circuit Breaker
 
 - **Dynamic Configuration** — Database-driven model configuration with zero-downtime runtime switching

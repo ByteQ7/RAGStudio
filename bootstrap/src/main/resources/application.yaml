@@ -4,6 +4,8 @@ server:
     context-path: /api/ragstudio
 
 spring:
+  dotenv:
+    location: ../.env     # .env 在项目根目录，bootstrap/ 是子模块
   application:
     name: ragstudio${unique-name:}-service
 
@@ -39,6 +41,18 @@ rocketmq:
     send-message-timeout: 2000
 
 rag:
+  skills:
+    dir: skills              # SKILL 目录（相对于项目根目录）
+    allowed-commands: ""     # 允许执行的命令前缀白名单，空表示禁用 command 类型
+    poll-interval-ms: 15000  # 热更新轮询间隔（毫秒）
+    script-timeout-ms: 30000 # 脚本执行超时（毫秒）
+    sandbox:
+      enabled: true          # 是否启用 Docker 沙箱（false 则禁止所有 script/command 执行）
+      image: sandbox:latest  # 沙箱镜像
+      memory: 256m           # 内存限制
+      cpus: "0.5"            # CPU 限制
+      timeout-ms: 30000      # 执行超时
+
   vector:
     type: pg
 

@@ -20,6 +20,7 @@ import {
   Users,
   FolderKanban,
   Workflow,
+  Zap,
   BrainCircuit
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
@@ -131,6 +132,11 @@ const menuGroups: MenuGroup[] = [
         icon: Plug
       },
       {
+        path: "/admin/skills",
+        label: "技能",
+        icon: Zap
+      },
+      {
         path: "/admin/ai-models",
         label: "模型管理",
         icon: BrainCircuit
@@ -154,7 +160,8 @@ const breadcrumbMap: Record<string, string> = {
   settings: "系统设置",
   users: "用户管理",
   "mcp-servers": "MCP 服务",
-  "ai-models": "模型管理"
+  "ai-models": "模型管理",
+  "skills": "技能"
 };
 
 export function AdminLayout() {
