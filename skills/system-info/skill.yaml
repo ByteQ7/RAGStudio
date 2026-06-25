@@ -1,0 +1,8 @@
+name: system_info
+description: 查询服务器的基本系统信息，包括主机名、操作系统、CPU 核心数、内存使用率和磁盘使用率。
+type: script
+config:
+  scriptFile: "sysinfo.sh"
+parameters:
+  type: object
+  properties: {}

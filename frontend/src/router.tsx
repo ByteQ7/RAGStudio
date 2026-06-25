@@ -17,6 +17,7 @@ import { QueryTermMappingPage } from "@/pages/admin/query-term-mapping/QueryTerm
 import { UserListPage } from "@/pages/admin/users/UserListPage";
 import { McpServerPage } from "@/pages/admin/mcp/McpServerPage";
 import { AiModelConfigPage } from "@/pages/admin/ai-models/AiModelConfigPage";
+import { SkillListPage } from "@/pages/admin/skills/SkillListPage";
 import { useAuthStore } from "@/stores/authStore";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -147,6 +148,10 @@ export const router = createBrowserRouter([
       {
         path: "ai-models",
         element: <AiModelConfigPage />
+      },
+      {
+        path: "skills",
+        element: <SkillListPage />
       }
     ]
   },

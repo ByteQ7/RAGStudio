@@ -11,6 +11,7 @@ import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
 import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentContext;
+
 import com.byteq.ai.ragstudio.rag.core.agent.AgentLoop;
 import com.byteq.ai.ragstudio.rag.core.agent.KbRelevanceChecker;
 import com.byteq.ai.ragstudio.rag.core.agent.McpToolAdapter;
@@ -19,6 +20,12 @@ import com.byteq.ai.ragstudio.rag.core.agent.ReActPromptBuilder;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActResponseParser;
 import com.byteq.ai.ragstudio.rag.core.agent.TimeTool;
 import com.byteq.ai.ragstudio.rag.core.agent.ToolRegistry;
+import com.byteq.ai.ragstudio.rag.core.skill.SkillDefinition;
+import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
+import com.byteq.ai.ragstudio.rag.core.skill.SkillReaderTool;
+import com.byteq.ai.ragstudio.rag.core.skill.SkillTool;
+import com.byteq.ai.ragstudio.rag.core.skill.SandboxExecutor;
+import okhttp3.OkHttpClient;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolExecutor;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
@@ -108,6 +115,40 @@ public class StreamChatPipeline {
 
     /** 链路追踪记录服务，用于记录各阶段的执行耗时 */
     private final RagTraceRecordService traceRecordService;
+
+    /** SKILL 加载器，从 Redis/本地提供用户自定义 Agent 工具 */
+    private final SkillLoader skillLoader;
+
+    /** HTTP 客户端，用于执行 http 类型的 SKILL */
+    private final OkHttpClient syncHttpClient;
+
+    /** Docker 沙箱执行器，用于安全执行 script/command 类型的 SKILL */
+    private SandboxExecutor sandboxExecutor;
+
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.image:sandbox}")
+    private String sandboxImage;
+
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.timeout-ms:30000}")
+    private long sandboxTimeoutMs;
+
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.memory:256m}")
+    private String sandboxMemory;
+
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.cpus:0.5}")
+    private String sandboxCpus;
+
+    @jakarta.annotation.PostConstruct
+    public void initSandbox() {
+        this.sandboxExecutor = SandboxExecutor.builder()
+                .dockerCommand("sudo", "-n", "docker")
+                .image(sandboxImage)
+                .timeoutMs(sandboxTimeoutMs)
+                .memory(sandboxMemory)
+                .cpus(sandboxCpus)
+                .build();
+    }
+
+
 
     /** 链路追踪配置，用于判断是否启用追踪 */
     private final RagTraceProperties traceProperties;
@@ -255,11 +296,12 @@ public class StreamChatPipeline {
     /**
      * 构建 Agent 模式下的 ToolRegistry
      * <p>
-     * 包含三类工具：
+     * 包含四类工具：
      * <ol>
      *   <li>MCP 工具：通过 {@link McpToolAdapter} 包装现有 {@link McpToolExecutor}</li>
      *   <li>内置时间工具：{@link TimeTool}，零依赖</li>
      *   <li>RAG 检索工具：{@link RagSearchTool}，允许 Agent 在循环中主动检索知识库</li>
+     *   <li>用户自定义 SKILL：从 skills 目录加载的 JSON 工具</li>
      * </ol>
      */
     private ToolRegistry buildAgentToolRegistry(StreamChatContext ctx, List<String> kbIds) {
@@ -280,9 +322,20 @@ public class StreamChatPipeline {
             registry.register(ragTool);
         }
 
-        log.info("Agent 工具注册完成 - MCP: {}, RAG: {}, 内置: 1, 总计: {}",
+        // 4. SKILL 阅读器（始终注册，让 LLM 能读取 SKILL 详情）
+        registry.register(new SkillReaderTool(skillLoader));
+
+        // 5. 用户自定义 SKILL
+        List<SkillDefinition> skills = skillLoader.getAllSkills();
+        for (SkillDefinition def : skills) {
+            registry.register(new SkillTool(def, syncHttpClient, sandboxExecutor));
+        }
+
+        int skillCount = skills.size();
+        log.info("Agent 工具注册完成 - MCP: {}, RAG: {}, SKILL: {}, 内置: 2, 总计: {}",
                 mcpToolRegistry.size(),
                 CollUtil.isNotEmpty(kbIds) ? 1 : 0,
+                skillCount,
                 registry.size());
         return registry;
     }
