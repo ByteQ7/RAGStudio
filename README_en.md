@@ -1,7 +1,7 @@
-# RAGStudio — Enterprise Agentic RAG Platform
+# RAGStudio — Agentic RAG Platform
 
 <p align="center">
-  <em>Enterprise-grade Retrieval-Augmented Generation platform powered by ReACT Agent loop</em>
+  <em>Retrieval-Augmented Generation platform powered by ReACT Agent loop</em>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 ## Introduction
 
-**RAGStudio** is an enterprise AI Q&A platform built on **Java 17 + Spring Boot 3.5**. It adopts the **ReACT Agent loop** (Thought → Action → Observation) by default, supporting multi-step reasoning, chained tool calls, and autonomous knowledge base retrieval.
+**RAGStudio** is an AI Q&A platform built on **Java 17 + Spring Boot 3.5**. It adopts the **ReACT Agent loop** (Thought → Action → Observation) by default, supporting multi-step reasoning, chained tool calls, and autonomous knowledge base retrieval.
 
 ### Core Capabilities
 

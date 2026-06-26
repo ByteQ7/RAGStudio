@@ -1,4 +1,4 @@
-# RAGStudio — 企业级智能 Agent RAG 平台
+# RAGStudio — 智能 Agent RAG 平台
 
 <p align="center">
   <em>基于 ReACT Agent 循环的深度推理引擎 · 覆盖从文档入库到智能问答的完整链路</em>
@@ -30,7 +30,7 @@
 
 ## 项目简介
 
-**RAGStudio** 是一个基于 **Java 17 + Spring Boot 3.5** 构建的企业级 AI 问答平台，默认采用 **ReACT Agent 循环**（Thought → Action → Observation），支持多步推理、链式工具调用和知识库自主检索。
+**RAGStudio** 是一个基于 **Java 17 + Spring Boot 3.5** 构建的 AI 问答平台，默认采用 **ReACT Agent 循环**（Thought → Action → Observation），支持多步推理、链式工具调用和知识库自主检索。
 
 ### 核心能力
 
