@@ -30,7 +30,7 @@
 
 ## Introduction
 
-**RAGStudio** is an AI Q&A platform built on **Java 17 + Spring Boot 3.5**. It adopts the **ReACT Agent loop** (Thought → Action → Observation) by default, supporting multi-step reasoning, chained tool calls, and autonomous knowledge base retrieval.
+**RAGStudio** is an AI Q&A platform built on **Java 17 + Spring Boot 3.5**. It uses the **ReACT Agent loop** (Thought → Action → Observation) for all requests. The LLM autonomously reasons, calls tools (including knowledge base retrieval), observes results, and iterates until it produces a final answer.
 
 ### Core Capabilities
 
@@ -517,7 +517,7 @@ Once started, visit: **http://localhost:5173**
 
 ## API Examples
 
-### 1. Agent Mode (Default)
+### Agent Mode
 
 ```bash
 curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
@@ -526,7 +526,7 @@ curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
   -d '{"question": "How does HashMap work in Java?"}'
 ```
 
-### 2. Agent Mode with Knowledge Base
+### Agent + Knowledge Base
 
 ```bash
 curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
@@ -538,18 +538,7 @@ curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
   }'
 ```
 
-### 3. RAG Mode
 
-```bash
-curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
-  -H "Content-Type: application/json" \
-  -H "Authorization: <token>" \
-  -d '{
-    "question": "How to apply for annual leave?",
-    "knowledgeBaseIds": ["kb-001"],
-    "mode": "rag"
-  }'
-```
 
 ---
 

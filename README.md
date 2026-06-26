@@ -30,7 +30,7 @@
 
 ## 项目简介
 
-**RAGStudio** 是一个基于 **Java 17 + Spring Boot 3.5** 构建的 AI 问答平台，默认采用 **ReACT Agent 循环**（Thought → Action → Observation），支持多步推理、链式工具调用和知识库自主检索。
+**RAGStudio** 是一个基于 **Java 17 + Spring Boot 3.5** 构建的 AI 问答平台，采用 **ReACT Agent 循环**（Thought → Action → Observation），所有请求统一走 Agent 管线，LLM 在循环中自主推理、调用工具（包括知识库检索）、观察结果，直到给出最终答案。
 
 ### 核心能力
 
@@ -522,7 +522,7 @@ npm run dev
 
 ## API 示例
 
-### 1. Agent 模式（默认）
+### Agent 模式
 
 ```bash
 curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
@@ -531,7 +531,7 @@ curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
   -d '{"question": "HashMap的原理是什么？"}'
 ```
 
-### 2. Agent 模式 + 知识库
+### Agent + 知识库
 
 ```bash
 curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
@@ -543,18 +543,7 @@ curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
   }'
 ```
 
-### 3. RAG 模式
 
-```bash
-curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
-  -H "Content-Type: application/json" \
-  -H "Authorization: <token>" \
-  -d '{
-    "question": "公司年假怎么申请？",
-    "knowledgeBaseIds": ["kb-001"],
-    "mode": "rag"
-  }'
-```
 
 ---
 
