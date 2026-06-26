@@ -76,6 +76,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
                 .thinkingContent(message.getThinkingContent())
                 .thinkingDuration(message.getThinkingDuration())
                 .agentSteps(message.getAgentSteps())
+                .citations(message.getCitations())
                 .build();
         String messageId = conversationMessageService.addMessage(conversationMessage);
 
@@ -106,7 +107,8 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
                 record.getContent(),
                 record.getThinkingContent(),
                 record.getThinkingDuration(),
-                record.getAgentSteps()
+                record.getAgentSteps(),
+                record.getCitations()
         );
     }
 

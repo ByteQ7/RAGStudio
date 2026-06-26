@@ -48,4 +48,7 @@ public class ConversationMessageBO {
      * Agent 推理步骤 JSON
      */
     private String agentSteps;
+
+    /** 引用溯源 JSON */
+    private String citations;
 }
