@@ -86,6 +86,7 @@ CREATE TABLE t_message (
     thinking_content  TEXT,
     thinking_duration INTEGER,
     agent_steps       TEXT,
+    citations         TEXT,
     create_time       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted           SMALLINT    DEFAULT 0

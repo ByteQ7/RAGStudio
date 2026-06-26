@@ -14,7 +14,7 @@ interface CitationListProps {
  * </p>
  */
 export function CitationList({ message }: CitationListProps) {
-  const [open, setOpen] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const citations = message.citations;
   const answer = message.content;
 
@@ -45,46 +45,56 @@ export function CitationList({ message }: CitationListProps) {
     });
   }, [citations, answer]);
 
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   if (!matchedCitations || matchedCitations.length === 0) return null;
 
   return (
     <div className="mt-4 border-t border-gray-100 pt-3">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-      >
-        {open ? (
-          <ChevronDown className="h-3.5 w-3.5" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
-        )}
-        参考文献（{matchedCitations.length}）
-      </button>
+      <p className="mb-2 text-xs text-gray-400">
+        知识库（{matchedCitations.length}）
+      </p>
 
-      {open && (
-        <div className="mt-2 space-y-2">
-          {matchedCitations.map((citation) => (
-            <div
-              key={citation.id}
-              className="rounded-lg border border-gray-100 bg-gray-50/50 px-3 py-2"
-            >
-              <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-1">
-                <FileText className="h-3 w-3" />
-                <span className="font-mono">{citation.id}</span>
-                {citation.score > 0 && (
-                  <span className="ml-auto">
-                    相关性 {(citation.score * 100).toFixed(0)}%
-                  </span>
+      <div className="space-y-1.5">
+        {matchedCitations.map((citation) => {
+          const isExpanded = expandedIds.has(citation.id);
+          return (
+            <div key={citation.id}>
+              <button
+                type="button"
+                onClick={() => toggleExpand(citation.id)}
+                className="flex w-full items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50/50 px-3 py-1.5 text-left text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-3 w-3 flex-shrink-0" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 flex-shrink-0" />
                 )}
-              </div>
-              <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">
-                {citation.text}
-              </p>
+                <FileText className="h-3 w-3 flex-shrink-0" />
+                <span className="font-mono truncate">{citation.id}</span>
+              </button>
+
+              {isExpanded && (
+                <div className="mt-1 ml-6 rounded-lg border border-gray-100 bg-white px-3 py-2">
+                  <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">
+                    {citation.text}
+                  </p>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }

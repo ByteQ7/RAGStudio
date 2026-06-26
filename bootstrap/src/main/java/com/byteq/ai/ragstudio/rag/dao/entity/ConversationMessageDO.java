@@ -67,6 +67,9 @@ public class ConversationMessageDO {
      */
     private String agentSteps;
 
+    /** 引用溯源 JSON */
+    private String citations;
+
     /**
      * 创建时间，自动填充
      */

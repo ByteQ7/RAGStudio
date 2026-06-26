@@ -36,6 +36,7 @@ public class StreamChatEventHandler implements StreamCallback {
     private long thinkingStartMs;
     private int thinkingDurationSeconds;
     private String agentStepsJson;
+    private String citationsJson;
 
     /**
      * 使用参数对象构造（推荐）
@@ -88,7 +89,7 @@ public class StreamChatEventHandler implements StreamCallback {
             try {
                 String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
                 ChatMessage message = ChatMessage.assistant(content, thinkingContent,
-                        resolveThinkingDuration(), agentStepsJson);
+                        resolveThinkingDuration(), agentStepsJson, citationsJson);
                 messageId = memoryService.append(conversationId, userId, message);
             } catch (Exception e) {
                 log.error("取消时持久化消息失败，conversationId：{}", conversationId, e);
@@ -145,6 +146,7 @@ public class StreamChatEventHandler implements StreamCallback {
 
     @Override
     public void onCitation(String citations) {
+        this.citationsJson = citations;
         if (StrUtil.isNotBlank(citations)) {
             sender.sendEvent(SSEEventType.CITATION.value(), citations);
         }
@@ -159,7 +161,7 @@ public class StreamChatEventHandler implements StreamCallback {
         try {
             String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
             ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent,
-                    resolveThinkingDuration(), agentStepsJson);
+                    resolveThinkingDuration(), agentStepsJson, citationsJson);
             messageId = memoryService.append(conversationId, userId, message);
         } catch (Exception e) {
             log.error("对话完成时持久化消息失败，conversationId：{}", conversationId, e);

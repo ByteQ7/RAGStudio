@@ -255,7 +255,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         createdAt: item.createTime,
         feedback: mapVoteToFeedback(item.vote),
         status: "done",
-        agentSteps: item.agentSteps ? parseAgentSteps(item.agentSteps) : undefined
+        agentSteps: item.agentSteps ? parseAgentSteps(item.agentSteps) : undefined,
+        citations: item.citations
+          ? (typeof item.citations === "string" ? JSON.parse(item.citations) : item.citations)
+          : undefined
       }));
       set({ messages: mapped });
     } catch (error) {

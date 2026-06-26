@@ -51,6 +51,9 @@ public class ConversationMessageVO {
      */
     private String agentSteps;
 
+    /** 引用溯源 JSON */
+    private String citations;
+
     /**
      * 反馈值：1=点赞，-1=点踩，null=未反馈
      */

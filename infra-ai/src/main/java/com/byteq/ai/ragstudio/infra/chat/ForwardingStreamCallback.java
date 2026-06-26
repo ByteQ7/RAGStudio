@@ -93,6 +93,16 @@ public abstract class ForwardingStreamCallback implements StreamCallback {
     }
 
     /**
+     * 引用溯源回调（final）
+     * <p>
+     * 直接透传 delegate。
+     */
+    @Override
+    public final void onCitation(String citations) {
+        delegate.onCitation(citations);
+    }
+
+    /**
      * 首包钩子
      * <p>
      * 流式响应到达「第一个 onContent」时触发一次，
