@@ -171,6 +171,29 @@ Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 - Agent 在循环中自主调用，支持多次调用和链式调用
 - 工具调用失败时 Agent 可自主重试或换用其他工具
 
+### SKILL 技能系统
+
+用户写一个 YAML 文件放到 `skills/` 目录，Agent 就能多一个可调用的工具，不需要写 Java 代码或搭 MCP 服务器。
+
+- **目录结构**：`skills/{name}/skill.yaml` + `SKILL.md`（说明书）+ `scripts/`（可执行脚本）+ `references/`（参考资料）
+- **自动加载**：启动时扫描目录 → 写入 Redis 缓存，15 秒轮询热更新，增删改文件自动生效，无需重启
+- **工具类型**：`http`（调外部 API）、`script`（执行脚本）、`command`（执行命令）
+- **内置阅读器**：`skill_reader` 工具让 LLM 在 Agent 循环中读取 SKILL.md、浏览脚本和参考资料
+- **管理接口**：`GET /admin/skills` 查看列表，`POST /admin/skills/reload` 手动刷新
+
+#### 安全沙箱
+
+`script` 和 `command` 类型的 SKILL 不在宿主机上直接执行，而是在 Docker 容器中隔离运行：
+
+- `--read-only`：根文件系统只读，无法写文件
+- `--cap-drop=ALL`：剔除所有 Linux 权限
+- `--user 1000:1000`：非 root 运行
+- `--tmpfs /tmp:size=1G,noexec`：临时文件上限 1GB，禁止执行
+- `--memory=256m --cpus=0.5 --pids-limit=50`：资源上限
+- `--network=none`：默认无网络
+- 命令先经过 `SecurityAuditor` 黑名单审计（拦截 `rm -rf /`、`sudo`、反弹 Shell、内网探测等）
+- 超时 30 秒未完成自动 `docker kill`
+
 ### 管理后台
 
 - **仪表盘** — 用户量、对话量、消息量等核心 KPI 概览，延迟/成功率趋势

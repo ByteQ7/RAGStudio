@@ -169,6 +169,29 @@ Two chunking strategies available, configurable per knowledge base:
 - **Autonomous Tool Calls** — The Agent autonomously invokes tools in its loop, supporting multi-turn and chained calls
 - **Failure Retry** — On tool failure, the Agent can retry or switch to alternative tools
 
+### SKILL System
+
+Users define custom Agent tools by writing a YAML file into the `skills/` directory — no Java code or MCP server needed.
+
+- **Directory structure**: `skills/{name}/skill.yaml` + `SKILL.md` (documentation) + `scripts/` (executable scripts) + `references/` (reference materials)
+- **Auto-loading**: Scanned at startup → cached in Redis, 15-second polling hot-reload, file changes take effect without restart
+- **Tool types**: `http` (call external APIs), `script` (execute scripts), `command` (execute commands)
+- **Built-in reader**: `skill_reader` tool lets the LLM read SKILL.md, browse scripts and references during Agent loops
+- **Management API**: `GET /admin/skills` (list), `POST /admin/skills/reload` (refresh)
+
+#### Security Sandbox
+
+`script` and `command` type SKILLs run in Docker containers instead of directly on the host:
+
+- `--read-only` — root filesystem is read-only
+- `--cap-drop=ALL` — all Linux capabilities removed
+- `--user 1000:1000` — runs as non-root
+- `--tmpfs /tmp:size=1G,noexec` — temp files limited to 1GB, no execution
+- `--memory=256m --cpus=0.5 --pids-limit=50` — resource limits
+- `--network=none` — no network by default
+- Commands pass through `SecurityAuditor` blacklist check (`rm -rf /`, `sudo`, reverse shells, internal network scanning blocked)
+- 30-second timeout → automatic `docker kill`
+
 ### Admin Dashboard
 
 - **Dashboard** — Core KPIs: user count, conversation count, message volume, latency/success rate trends
