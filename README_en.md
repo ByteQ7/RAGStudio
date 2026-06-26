@@ -127,6 +127,15 @@ Default mode runs **vector search + keyword search in parallel**, fused via RRF 
 - **Keyword channel**: PostgreSQL tsvector full-text search (GIN index), `plainto_tsquery` + `ts_rank` — exact match for proper nouns, codes, model numbers
 - **RRF fusion**: `score = Σ 1/(60 + rank)` — both channels contribute, no manual weight tuning
 
+### Citation Trace
+
+When the Agent's answer references knowledge base content, source chunks are automatically displayed below the answer. After the answer completes, the backend scans for `[^chunk_{id}]` markers, matches the corresponding chunks, and pushes them via SSE `citation` event.
+
+- **Strategy A**: LLM explicitly uses `[^chunk_id]` markers in its answer (kbContext includes `[^chunk_id]` prefixes in System Prompt)
+- **Strategy B**: When markers are absent, the frontend falls back to 10-character overlap text matching
+- **Persistence**: Citations are saved in `t_message.citations` alongside the message, surviving page refreshes
+- **Interaction**: Collapsed by default, individual chunks can be expanded to view full text
+
 ### Chunking Strategies
 
 Two chunking strategies available, configurable per knowledge base:
