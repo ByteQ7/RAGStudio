@@ -67,6 +67,27 @@ public class PgRetrieverService implements RetrieverService {
         );
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<RetrievedChunk> retrieveByKeyword(String query, RetrieveRequest request) {
+        // noinspection SqlDialectInspection,SqlNoDataSourceInspection
+        return jdbcTemplate.query(
+            "SELECT id, content, " +
+            "ts_rank(to_tsvector('simple', coalesce(content, '')), plainto_tsquery('simple', ?)) AS score " +
+            "FROM t_knowledge_vector " +
+            "WHERE metadata->>'collection_name' = ? " +
+            "AND to_tsvector('simple', coalesce(content, '')) @@ plainto_tsquery('simple', ?) " +
+            "ORDER BY score DESC " +
+            "LIMIT ?",
+            (rs, rowNum) -> RetrievedChunk.builder()
+                    .id(rs.getString("id"))
+                    .text(rs.getString("content"))
+                    .score(rs.getFloat("score"))
+                    .build(),
+            query, request.getCollectionName(), query, request.getTopK()
+        );
+    }
+
     // 对向量进行 L2 归一化，使其模长为 1
     private float[] normalize(float[] vector) {
         float norm = 0;

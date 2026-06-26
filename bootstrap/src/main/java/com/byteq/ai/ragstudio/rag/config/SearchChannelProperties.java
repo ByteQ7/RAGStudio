@@ -40,6 +40,16 @@ public class SearchChannelProperties {
          * 知识库选择检索配置
          */
         private KnowledgeBaseSelection knowledgeBaseSelection = new KnowledgeBaseSelection();
+
+        /**
+         * 关键词检索配置
+         */
+        private Keyword keyword = new Keyword();
+
+        /**
+         * RRF 混合检索配置
+         */
+        private HybridRrf hybridRrf = new HybridRrf();
     }
 
     /**
@@ -77,5 +87,43 @@ public class SearchChannelProperties {
          * 知识库选择检索时，在每个选定知识库中检索的 TopK 倍数
          */
         private int topKMultiplier = 2;
+    }
+
+    @Data
+    public static class Keyword {
+
+        /**
+         * 是否启用关键词检索
+         */
+        private boolean enabled = true;
+
+        /**
+         * TopK 倍数
+         */
+        private int topKMultiplier = 2;
+
+        /**
+         * tsvector 词典（simple / english / zhparser 等）
+         */
+        private String dictionary = "simple";
+    }
+
+    @Data
+    public static class HybridRrf {
+
+        /**
+         * 是否启用 RRF 混合检索
+         */
+        private boolean enabled = true;
+
+        /**
+         * RRF 平滑常数（推荐 60）
+         */
+        private int k = 60;
+
+        /**
+         * 融合后最终返回的 topK
+         */
+        private int topK = 5;
     }
 }

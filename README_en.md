@@ -134,6 +134,14 @@ Before entering the Agent loop, a lightweight LLM call determines if the questio
 - **Scheduled Sync** — Cron-based refresh with ETag/Hash change detection
 - **Chunk Management** — View, enable/disable, and manually edit chunks
 
+### Hybrid Search
+
+Default mode runs **vector search + keyword search in parallel**, fused via RRF (Reciprocal Rank Fusion):
+
+- **Vector channel**: pgvector cosine similarity (HNSW index) — semantic matching
+- **Keyword channel**: PostgreSQL tsvector full-text search (GIN index), `plainto_tsquery` + `ts_rank` — exact match for proper nouns, codes, model numbers
+- **RRF fusion**: `score = Σ 1/(60 + rank)` — both channels contribute, no manual weight tuning
+
 ### Chunking Strategies
 
 Two chunking strategies available, configurable per knowledge base:
@@ -185,7 +193,7 @@ Two chunking strategies available, configurable per knowledge base:
 | **Backend** | Java 17, Spring Boot 3.5.7, MyBatis-Plus, RocketMQ, Sa-Token |
 | **AI Engine** | ReACT Agent Loop (Thought → Action → Observation) |
 | **LLM Integration** | Spring AI (OpenAI-compatible), Multi-Model Routing + Circuit Breaker |
-| **Vector Store** | PostgreSQL + pgvector (HNSW index) |
+| **Vector Store** | PostgreSQL + pgvector (HNSW index) + tsvector full-text search (GIN index) |
 | **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand |
 | **Cache** | Redis + Redisson (Distributed Lock) |
 | **Document Parsing** | Apache Tika 3.2 (PDF/DOCX/HTML/Markdown) |
