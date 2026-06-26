@@ -134,6 +134,16 @@ Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 - 定时刷新同步（cron 表达式 + ETag/Hash 变更检测）
 - 分块查看、启用/禁用、手动编辑
 
+### 混合检索
+
+默认同时进行**向量检索 + 关键词检索**，通过 RRF（Reciprocal Rank Fusion）算法融合排序：
+
+- **向量通道**：pgvector cosine similarity（HNSW 索引），处理语义匹配
+- **关键词通道**：PostgreSQL tsvector 全文检索（GIN 索引），`plainto_tsquery` + `ts_rank`，确保专有名词、编码、型号等精确匹配不被语义检索忽略
+- **RRF 融合**：`score = Σ 1/(60 + rank)`，两通道并行检索后融合，去重 → Rerank → 输出
+
+两条通道互补——向量找"意思相近的"，关键词找"字面匹配的"。RRF 确保两者都有贡献，不依赖人工调权重。
+
 ### 文档分块策略
 
 目前内置两种分块策略，在知识库配置中可选：
@@ -185,7 +195,7 @@ Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
 | **后端** | Java 17, Spring Boot 3.5.7, MyBatis-Plus, RocketMQ, Sa-Token |
 | **AI 引擎** | ReACT Agent Loop (Thought → Action → Observation) |
 | **LLM 集成** | Spring AI (OpenAI 兼容协议), 多模型路由 + 熔断降级 |
-| **向量存储** | PostgreSQL + pgvector (HNSW 索引) |
+| **向量存储** | PostgreSQL + pgvector (HNSW 索引) + tsvector 全文检索 (GIN 索引) |
 | **前端** | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand |
 | **缓存** | Redis + Redisson (分布式锁) |
 | **文档解析** | Apache Tika 3.2 (PDF/DOCX/HTML/Markdown) |
@@ -363,8 +373,10 @@ bootstrap/src/main/java/com/byteq/ai/ragstudio/rag/core/retrieve/
 ├── channel/
 │   ├── SearchChannel.java                  # 检索通道接口
 │   ├── SearchChannelType.java              # 通道类型枚举
-│   ├── VectorGlobalSearchChannel.java      # 向量全局检索
-│   ├── KnowledgeBaseSelectionChannel.java  # 知识库选择检索
+│   ├── VectorGlobalSearchChannel.java      # 向量全局检索（默认关闭）
+│   ├── KnowledgeBaseSelectionChannel.java  # 知识库选择检索（向量通道）
+│   ├── KeywordSearchChannel.java           # 关键词检索（tsvector 通道）← 新增
+│   ├── RrfHybridChannel.java               # RRF 混合融合通道 ← 新增
 │   └── AbstractParallelRetriever.java      # 并行检索抽象类
 ├── postprocessor/
 │   ├── SearchResultPostProcessor.java      # 后置处理器接口
@@ -373,7 +385,8 @@ bootstrap/src/main/java/com/byteq/ai/ragstudio/rag/core/retrieve/
 ├── MultiChannelRetrievalEngine.java        # 多通道检索引擎
 ├── RetrievalEngine.java                    # 检索引擎接口
 ├── RetrieverService.java                   # 检索服务接口
-├── PgRetrieverService.java                 # pgvector 检索实现
+├── PgRetrieverService.java                 # pgvector / tsvector 检索实现
+├── RrfMerger.java                          # RRF 融合算法 ← 新增
 └── RetrieveRequest.java                    # 检索请求对象
 ```
 

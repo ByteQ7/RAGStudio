@@ -80,5 +80,19 @@ public interface RetrieverService {
      * @return RetrievedChunk 列表（按相似度排序）
      */
     List<RetrievedChunk> retrieveByVector(float[] vector, RetrieveRequest retrieveParam);
+
+    /**
+     * 根据关键词执行全文检索（tsvector）
+     * <p>
+     * 使用 PostgreSQL 的 tsvector 全文搜索引擎，对 content 列进行关键词匹配。
+     * 配合向量检索一起使用，形成混合检索。
+     *
+     * @param query         用户查询文本
+     * @param retrieveParam 检索请求参数，包含 collectionName 和 topK
+     * @return 按 ts_rank 排序的 Chunk 列表
+     */
+    default List<RetrievedChunk> retrieveByKeyword(String query, RetrieveRequest retrieveParam) {
+        throw new UnsupportedOperationException("当前检索后端不支持关键词检索");
+    }
 }
 

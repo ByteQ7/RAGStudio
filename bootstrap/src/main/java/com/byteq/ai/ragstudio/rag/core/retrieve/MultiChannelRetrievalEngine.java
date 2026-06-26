@@ -3,11 +3,15 @@ package com.byteq.ai.ragstudio.rag.core.retrieve;
 import cn.hutool.core.collection.CollUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
+import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
+import com.byteq.ai.ragstudio.rag.core.retrieve.channel.RrfHybridChannel;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannel;
+import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannelType;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannelResult;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchContext;
 import com.byteq.ai.ragstudio.rag.core.retrieve.postprocessor.SearchResultPostProcessor;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,6 +40,19 @@ public class MultiChannelRetrievalEngine {
     private final List<SearchChannel> searchChannels;
     private final List<SearchResultPostProcessor> postProcessors;
     private final Executor ragRetrievalExecutor;
+    private final SearchChannelProperties searchProperties;
+
+    @PostConstruct
+    public void init() {
+        // 配置 RRF 混合通道
+        for (SearchChannel channel : searchChannels) {
+            if (channel instanceof RrfHybridChannel hybrid) {
+                SearchChannelProperties.HybridRrf config = searchProperties.getChannels().getHybridRrf();
+                hybrid.configure(config.getK(), config.getTopK());
+                log.info("RRF 混合通道已配置：k={}, topK={}", config.getK(), config.getTopK());
+            }
+        }
+    }
 
     /**
      * 执行多通道检索（基于知识库 Collection 名称）
@@ -65,10 +82,23 @@ public class MultiChannelRetrievalEngine {
      */
     private List<SearchChannelResult> executeSearchChannels(SearchContext context) {
         // 过滤启用的通道
-        List<SearchChannel> enabledChannels = searchChannels.stream()
+        List<SearchChannel> candidateChannels = searchChannels.stream()
                 .filter(channel -> channel.isEnabled(context))
                 .sorted(Comparator.comparingInt(SearchChannel::getPriority))
                 .toList();
+
+        // 如果 RRF 混合通道启用，只走它（它内部已包含向量+关键词），跳过单独的通道
+        boolean hybridEnabled = candidateChannels.stream()
+                .anyMatch(c -> c.getType() == SearchChannelType.HYBRID);
+        List<SearchChannel> enabledChannels;
+        if (hybridEnabled) {
+            enabledChannels = candidateChannels.stream()
+                    .filter(c -> c.getType() == SearchChannelType.HYBRID)
+                    .toList();
+            log.info("RRF 混合通道已启用，跳过单独的向量/关键词通道");
+        } else {
+            enabledChannels = candidateChannels;
+        }
 
         if (enabledChannels.isEmpty()) {
             return List.of();
