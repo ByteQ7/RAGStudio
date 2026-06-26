@@ -46,11 +46,9 @@
 
 ![架构图](docs/assets/architecture.svg)
 
-### 双管线设计
+### Agent 管线流程
 
-RAGStudio 采用**双管线设计**：**Agent 模式为默认（`mode=agent`）**，RAG 模式作为 `mode=rag` 备选。
-
-#### Agent 模式流程
+所有请求统一走 Agent 循环。Agent 在循环中自主推理、调用工具（包括检索工具）、观察结果，直到给出最终答案。
 
 ```
 用户提问
@@ -72,20 +70,7 @@ StreamChatPipeline.doExecuteAgent()
         └─ Thought → Action(FINISH) → Final Answer（逐字流式推送）
 ```
 
-#### RAG 模式流程
 
-```
-用户提问
-  │
-  ▼
-StreamChatPipeline.doExecuteRag()
-  │
-  ├─ 1. 记忆加载
-  ├─ 2. 查询改写 + MCP 决策
-  ├─ 3. 多通道检索 + Rerank
-  ├─ 4. MCP 工具执行（条件）
-  └─ 5. 流式回答
-```
 
 ---
 
