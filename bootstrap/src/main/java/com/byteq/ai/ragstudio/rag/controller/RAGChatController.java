@@ -57,7 +57,7 @@ public class RAGChatController {
         FlushableSseEmitter emitter = new FlushableSseEmitter(
                 ragDefaultProperties.getSseTimeoutMs(), httpResponse);
         ragChatService.streamChat(request.getQuestion(), request.getConversationId(),
-                null, request.getKnowledgeBaseIds(), emitter, request.getMode());
+                null, request.getKnowledgeBaseIds(), emitter);
         return emitter;
     }
 

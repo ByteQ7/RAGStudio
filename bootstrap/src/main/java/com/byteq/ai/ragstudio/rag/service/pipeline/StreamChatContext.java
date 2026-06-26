@@ -47,9 +47,6 @@ public class StreamChatContext {
     /** 用户选择的知识库 ID 列表 */
     private final List<String> knowledgeBaseIds;
 
-    /** 对话模式：rag（默认，现有管线）或 agent（ReACT Agent 循环） */
-    private final String mode;
-
     // ==================== 管道中填充的中间状态 ====================
 
     /** 对话历史消息列表（包含当前用户问题） */

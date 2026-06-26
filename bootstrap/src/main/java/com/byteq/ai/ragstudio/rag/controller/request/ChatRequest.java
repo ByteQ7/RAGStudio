@@ -16,7 +16,4 @@ public class ChatRequest {
     private String conversationId;
 
     private List<String> knowledgeBaseIds;
-
-    /** 对话模式：rag（默认）或 agent（ReACT Agent） */
-    private String mode;
 }

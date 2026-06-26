@@ -46,11 +46,9 @@
 
 ![Architecture](docs/assets/architecture.svg)
 
-### Dual-Pipeline Design
+### Agent Pipeline
 
-RAGStudio features a **dual-pipeline design**: **Agent mode is the default (`mode=agent`)**, with RAG mode available as `mode=rag`.
-
-#### Agent Mode Flow
+All requests go through the Agent loop. The Agent autonomously reasons, calls tools (including retrieval tools), observes results, and iterates until it produces a final answer.
 
 ```
 User Question
@@ -72,20 +70,7 @@ StreamChatPipeline.doExecuteAgent()
         └─ Thought → Action(FINISH) → Final Answer (streaming)
 ```
 
-#### RAG Mode Flow
 
-```
-User Question
-  │
-  ▼
-StreamChatPipeline.doExecuteRag()
-  │
-  ├─ 1. Memory Loading
-  ├─ 2. Query Rewriting + MCP Decision
-  ├─ 3. Multi-Channel Retrieval + Rerank
-  ├─ 4. MCP Tool Execution (conditional)
-  └─ 5. Streaming Response
-```
 
 ---
 
