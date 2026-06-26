@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.rag.service.pipeline;
 
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
+import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
 import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
 import lombok.Builder;
@@ -60,6 +61,10 @@ public class StreamChatContext {
     /** MCP 工具决策结果：非空表示需要调用该工具 */
     @Setter
     private String mcpToolId;
+
+    /** Agent 检索过程中获取的 Chunk，用于引用溯源 */
+    @Setter
+    private List<RetrievedChunk> retrievedChunks;
 
     /**
      * 获取改写后的问题，如果改写结果为空则返回原始问题

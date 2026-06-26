@@ -67,7 +67,16 @@ public enum SSEEventType {
      * 前端收到后展示 Agent 推理过程。
      * </p>
      */
-    AGENT_STEP("agent_step");
+    AGENT_STEP("agent_step"),
+
+    /**
+     * CITATION 事件：引用溯源事件
+     * <p>
+     * Agent 回答完成后，推送被引用的知识库 Chunk 列表 [{id, text, score}]。
+     * 前端收到后在答案下方展示引用来源。
+     * </p>
+     */
+    CITATION("citation");
 
     /** SSE 事件名称（与前端约定一致） */
     private final String value;

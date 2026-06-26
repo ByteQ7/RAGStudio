@@ -5,6 +5,7 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
+import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
@@ -279,10 +280,14 @@ public class StreamChatPipeline {
         AgentLoop agentLoop = new AgentLoop(llmService, toolRegistry,
                 reactResponseParser, reactPromptBuilder);
 
+        // 在 Agent 完成回答但 SSE 连接关闭前，推送引用溯源
+        agentLoop.setBeforeCompleteCallback(() -> fireCitations(ctx));
+
         traceNode("Agent循环", "AGENT_LOOP", () -> {
             agentLoop.run(agentCtx, ctx.getCallback());
             return null;
         });
+
         logPipelineComplete(ctx);
     }
 
@@ -312,6 +317,8 @@ public class StreamChatPipeline {
         if (CollUtil.isNotEmpty(kbIds)) {
             RagSearchTool ragTool = new RagSearchTool(
                     retrievalEngine, searchProperties, kbIds);
+            // 收集检索到的 Chunk 用于引用溯源
+            ragTool.setChunksConsumer(chunks -> ctx.setRetrievedChunks(chunks));
             registry.register(ragTool);
         }
 
@@ -344,6 +351,29 @@ public class StreamChatPipeline {
     }
 
     // RAG 管线已移除——所有检索由 Agent 通过 ToolRegistry 中的 RagSearchTool 自主管理
+
+    // ==================== 引用溯源 ====================
+
+    // 将检索到的 Chunk 列表推送到前端用于引用展示
+    private void fireCitations(StreamChatContext ctx) {
+        List<RetrievedChunk> chunks = ctx.getRetrievedChunks();
+        if (CollUtil.isEmpty(chunks)) return;
+
+        try {
+            String json = OBJECT_MAPPER.writeValueAsString(chunks.stream()
+                    .map(chunk -> {
+                        java.util.Map<String, Object> m = new java.util.HashMap<>();
+                        m.put("id", chunk.getId() != null ? chunk.getId() : "");
+                        m.put("text", chunk.getText() != null ? chunk.getText() : "");
+                        m.put("score", chunk.getScore() != null ? chunk.getScore() : 0f);
+                        return m;
+                    })
+                    .toList());
+            ctx.getCallback().onCitation(json);
+        } catch (Exception e) {
+            log.warn("推送引用溯源失败", e);
+        }
+    }
 
     // ==================== 链路追踪 ====================
 

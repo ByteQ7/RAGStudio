@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { AgentSteps } from "@/components/chat/AgentSteps";
+import { CitationList } from "@/components/chat/CitationList";
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import type { Message } from "@/types";
@@ -53,6 +54,9 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
           ) : null}
           {message.status === "error" ? (
             <p className="text-xs text-rose-500">生成已中断。</p>
+          ) : null}
+          {message.role === "assistant" && message.status === "done" ? (
+            <CitationList message={message} />
           ) : null}
           {showFeedback ? (
             <FeedbackButtons

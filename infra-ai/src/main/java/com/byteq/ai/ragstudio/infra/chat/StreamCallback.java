@@ -77,6 +77,16 @@ public interface StreamCallback {
     }
 
     /**
+     * 引用溯源回调
+     * <p>
+     * Agent 回答完成后，推送被引用的知识库 Chunk 列表。
+     *
+     * @param citations JSON 字符串，格式 [{id, text, score}]
+     */
+    default void onCitation(String citations) {
+    }
+
+    /**
      * 流式推送过程中出现异常
      * <p>
      * 常见场景：

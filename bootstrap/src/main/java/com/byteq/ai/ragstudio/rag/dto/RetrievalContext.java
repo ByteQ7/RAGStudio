@@ -1,8 +1,11 @@
 package com.byteq.ai.ragstudio.rag.dto;
 
 import cn.hutool.core.util.StrUtil;
+import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import lombok.Builder;
 import lombok.Data;
+
+import java.util.List;
 
 /**
  * 检索上下文
@@ -31,6 +34,11 @@ public class RetrievalContext {
      * </p>
      */
     private String kbContext;
+
+    /**
+     * 检索到的原始 Chunk 列表（含 id、text、score），用于前端引用溯源
+     */
+    private List<RetrievedChunk> chunks;
 
     /**
      * 检查是否存在 MCP 上下文

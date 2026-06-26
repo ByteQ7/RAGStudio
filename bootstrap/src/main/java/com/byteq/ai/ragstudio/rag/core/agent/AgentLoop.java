@@ -45,6 +45,9 @@ public class AgentLoop {
     /** JSON 序列化 */
     private static final Gson GSON = new Gson();
 
+    /** 在 onComplete 之前触发的回调（用于引用溯源等） */
+    private Runnable beforeCompleteCallback;
+
     public AgentLoop(LLMService llmService,
                      ToolRegistry toolRegistry,
                      ReActResponseParser responseParser,
@@ -53,6 +56,11 @@ public class AgentLoop {
         this.toolRegistry = toolRegistry;
         this.responseParser = responseParser;
         this.promptBuilder = promptBuilder;
+    }
+
+    /** 设置在 onComplete 之前触发的回调 */
+    public void setBeforeCompleteCallback(Runnable callback) {
+        this.beforeCompleteCallback = callback;
     }
 
     /**
@@ -298,6 +306,9 @@ public class AgentLoop {
         } catch (Exception e) {
             log.warn("流式输出过程中异常: {}", e.getMessage());
         } finally {
+            if (beforeCompleteCallback != null) {
+                beforeCompleteCallback.run();
+            }
             callback.onComplete();
         }
     }
