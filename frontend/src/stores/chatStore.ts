@@ -389,6 +389,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!payload || typeof payload !== "object") return;
         get().appendStreamContent(payload.delta);
       },
+      onCitation: (payload) => {
+        // citation 可能在前端标记 done 之后到达，所以不用 streamingMessageId 过滤
+        const msgId = get().streamingMessageId || assistantId;
+        if (!msgId) return;
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message.id === msgId
+              ? { ...message, citations: payload }
+              : message
+          )
+        }));
+      },
       onFinish: (payload: CompletionPayload) => {
         if (get().streamingMessageId !== assistantId) return;
         if (!payload) return;

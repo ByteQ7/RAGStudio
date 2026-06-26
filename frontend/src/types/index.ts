@@ -20,6 +20,12 @@ export interface Session {
   lastTime?: string;
 }
 
+export interface Citation {
+  id: string;
+  text: string;
+  score: number;
+}
+
 export interface Message {
   id: string;
   role: Role;
@@ -28,6 +34,7 @@ export interface Message {
   feedback?: FeedbackValue;
   status?: MessageStatus;
   agentSteps?: AgentStep[];
+  citations?: Citation[];
 }
 
 export interface StreamMetaPayload {

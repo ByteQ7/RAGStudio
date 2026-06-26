@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * 知识库检索工具
@@ -37,6 +38,8 @@ public class RagSearchTool implements Tool {
     private final RetrievalEngine retrievalEngine;
     private final SearchChannelProperties searchProperties;
     private final List<String> knowledgeBaseIds;
+    /** 检索到的 Chunk 回调（用于引用溯源） */
+    private Consumer<List<RetrievedChunk>> chunksConsumer;
 
     /**
      * @param retrievalEngine  检索引擎
@@ -49,6 +52,11 @@ public class RagSearchTool implements Tool {
         this.retrievalEngine = retrievalEngine;
         this.searchProperties = searchProperties;
         this.knowledgeBaseIds = knowledgeBaseIds != null ? List.copyOf(knowledgeBaseIds) : List.of();
+    }
+
+    /** 设置 Chunk 收集回调（Agent 模式下用于引用溯源） */
+    public void setChunksConsumer(Consumer<List<RetrievedChunk>> chunksConsumer) {
+        this.chunksConsumer = chunksConsumer;
     }
 
     @Override
@@ -111,6 +119,12 @@ public class RagSearchTool implements Tool {
             if (ctx == null || StrUtil.isBlank(ctx.getKbContext())) {
                 return ToolResult.success(TOOL_NAME, "未检索到与 \"" + query + "\" 相关的文档。");
             }
+
+            // 回调 Chunk 收集器（引用溯源用）
+            if (chunksConsumer != null && CollUtil.isNotEmpty(ctx.getChunks())) {
+                chunksConsumer.accept(ctx.getChunks());
+            }
+
             return ToolResult.success(TOOL_NAME, ctx.getKbContext());
         } catch (Exception e) {
             String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();

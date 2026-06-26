@@ -144,6 +144,13 @@ public class StreamChatEventHandler implements StreamCallback {
     }
 
     @Override
+    public void onCitation(String citations) {
+        if (StrUtil.isNotBlank(citations)) {
+            sender.sendEvent(SSEEventType.CITATION.value(), citations);
+        }
+    }
+
+    @Override
     public void onComplete() {
         if (taskManager.isCancelled(taskId)) {
             return;

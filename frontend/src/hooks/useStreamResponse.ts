@@ -1,4 +1,4 @@
-import type { AgentStepPayload, CompletionPayload, McpCallPayload, MessageDeltaPayload, StreamMetaPayload } from "@/types";
+import type { AgentStepPayload, Citation, CompletionPayload, McpCallPayload, MessageDeltaPayload, StreamMetaPayload } from "@/types";
 
 export interface StreamHandlers {
   onMeta?: (payload: StreamMetaPayload) => void;
@@ -6,6 +6,7 @@ export interface StreamHandlers {
   onMessage?: (payload: MessageDeltaPayload) => void;
   onAgentStep?: (payload: AgentStepPayload) => void;
   onFinish?: (payload: CompletionPayload) => void;
+  onCitation?: (payload: Citation[]) => void;
   onDone?: () => void;
   onCancel?: (payload: CompletionPayload) => void;
   onReject?: (payload: MessageDeltaPayload) => void;
@@ -64,6 +65,9 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
         {
           handlers.onMessage?.(payload as MessageDeltaPayload);
         }
+        break;
+      case "citation":
+        handlers.onCitation?.(payload as Citation[]);
         break;
       case "finish":
         handlers.onFinish?.(payload as CompletionPayload);

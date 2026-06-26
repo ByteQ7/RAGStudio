@@ -67,11 +67,12 @@ public class RetrievalEngine {
                 .toList();
 
         String kbContext = "";
+        List<RetrievedChunk> chunks = List.of();
         if (CollUtil.isNotEmpty(collectionNames)) {
             List<String> subQuestions = CollUtil.isNotEmpty(rewriteResult.subQuestions())
                     ? rewriteResult.subQuestions()
                     : List.of(rewriteResult.rewrittenQuestion());
-            List<RetrievedChunk> chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(
+            chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(
                     collectionNames, subQuestions, rewriteResult.rewrittenQuestion(), finalTopK);
             if (CollUtil.isNotEmpty(chunks)) {
                 kbContext = contextFormatter.formatKbContext(Map.of(MULTI_CHANNEL_KEY, chunks), finalTopK);
@@ -84,6 +85,7 @@ public class RetrievalEngine {
         return RetrievalContext.builder()
                 .mcpContext(mcpContext)
                 .kbContext(kbContext)
+                .chunks(chunks)
                 .build();
     }
 }

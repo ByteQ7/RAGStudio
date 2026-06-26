@@ -56,8 +56,9 @@ public class DefaultContextFormatter implements ContextFormatter {
             return "";
         }
 
+        // 给每个 Chunk 加上 [^chunk_{id}] 前缀，方便 LLM 引用和溯源
         String body = chunks.stream()
-                .map(RetrievedChunk::getText)
+                .map(chunk -> "[^chunk_" + (chunk.getId() != null ? chunk.getId() : "unknown") + "] " + chunk.getText())
                 .collect(Collectors.joining("\n"));
         return renderKbSection("", body);
     }
