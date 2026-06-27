@@ -233,6 +233,39 @@ export const uploadDocument = async (
   });
 };
 
+export interface BatchUploadProgress {
+  current: number;
+  total: number;
+  fileName: string;
+  status: "uploading" | "success" | "error";
+  error?: string;
+}
+
+export const batchUploadDocuments = async (
+  kbId: string,
+  files: File[],
+  basePayload: Omit<KnowledgeDocumentUploadPayload, "file" | "sourceLocation">,
+  onProgress?: (progress: BatchUploadProgress) => void
+): Promise<{ success: number; failed: number }> => {
+  let success = 0;
+  let failed = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      onProgress?.({ current: i + 1, total: files.length, fileName: file.name, status: "uploading" });
+      await uploadDocument(kbId, { ...basePayload, file, sourceType: "file" });
+      success++;
+      onProgress?.({ current: i + 1, total: files.length, fileName: file.name, status: "success" });
+    } catch (err) {
+      failed++;
+      onProgress?.({ current: i + 1, total: files.length, fileName: file.name, status: "error", error: (err as Error)?.message || "上传失败" });
+    }
+  }
+
+  return { success, failed };
+};
+
 export const getDocument = async (docId: string): Promise<KnowledgeDocument> => {
   return api.get<KnowledgeDocument, KnowledgeDocument>(`/knowledge-base/docs/${docId}`);
 };

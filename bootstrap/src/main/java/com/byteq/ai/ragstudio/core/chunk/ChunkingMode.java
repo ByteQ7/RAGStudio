@@ -38,6 +38,27 @@ public enum ChunkingMode {
     /**
      * 对Markdown友好的切分 - 保留Markdown结构
      */
+    /**
+     * 递归切分 - 多级分隔符从粗到细递归切分
+     */
+    RECURSIVE("recursive", "递归切分", true) {
+        @Override
+        public ChunkingOptions createOptions(Map<String, Object> config) {
+            return new RecursiveOptions(
+                    toInt(config, "chunkSize", 800),
+                    toInt(config, "overlapSize", 128),
+                    null);
+        }
+
+        @Override
+        public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize) {
+            return new RecursiveOptions(
+                    targetSize != null ? targetSize : 800,
+                    overlapSize != null ? overlapSize : 128,
+                    null);
+        }
+    },
+
     STRUCTURE_AWARE("structure_aware", "语义感知（Markdown友好）", true) {
         @Override
         public ChunkingOptions createOptions(Map<String, Object> config) {
