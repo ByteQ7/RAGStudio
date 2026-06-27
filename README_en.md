@@ -584,55 +584,55 @@ resources/database/
 
 | KB Management | Document Management | Search (Semantic) |
 |:-------------:|:------------------:|:-----------------:|
-| ![KB 1](docs/assets/知识库管理1.png) | ![KB 2](docs/assets/知识库管理2.png) | ![Semantic](docs/assets/知识库检索展示-语义检索.png) |
+| ![KB 1](docs/assets/后管-知识库管理1.png) | ![KB 2](docs/assets/后管-知识库管理2.png) | ![Semantic](docs/assets/对话界面-知识库检索展示-语义检索.png) |
 
 | KB Details | Search (Keyword) |
 |:----------:|:----------------:|
-| ![KB 3](docs/assets/知识库管理3.png) | ![Keyword](docs/assets/知识库检索展示-关键词检索.png) |
+| ![KB 3](docs/assets/后管-知识库管理3.png) | ![Keyword](docs/assets/对话界面-知识库检索展示-关键词检索.png) |
 
 ### Trace
 
 | Trace Overview | Trace Details |
 |:-------------:|:-------------:|
-| ![Trace 1](docs/assets/链路追踪1.png) | ![Trace 2](docs/assets/链路追踪2.png) |
+| ![Trace 1](docs/assets/后管-链路追踪1.png) | ![Trace 2](docs/assets/后管-链路追踪2.png) |
 
 ### Ingestion Pipeline
 
 | Pipeline Management | Pipeline Tasks |
 |:------------------:|:-------------:|
-| ![Pipeline 1](docs/assets/数据通道-流水线管理1.png) | ![Pipeline 2](docs/assets/数据通道-流水线管理2.png) |
+| ![Pipeline 1](docs/assets/后管-数据通道-流水线管理1.png) | ![Pipeline 2](docs/assets/后管-数据通道-流水线管理2.png) |
 
 | Task Details |
 |:-----------:|
-| ![Task](docs/assets/数据打通-流水线任务.png) |
+| ![Task](docs/assets/后管-数据通道-流水线任务.png) |
 
 ### Models
 
 | Model List |
 |:---------:|
-| ![Models](docs/assets/模型列表展示.png) |
+| ![Models](docs/assets/后管-模型列表展示.png) |
 
 ### MCP
 
 | MCP Server Management | MCP Tool Call |
 |:--------------------:|:-------------:|
-| ![MCP List](docs/assets/MCP列表展示.png) | ![MCP Call 1](docs/assets/MCP调用展示-天气查询1.png) |
+| ![MCP List](docs/assets/后管-MCP列表展示.png) | ![MCP Call 1](docs/assets/对话界面-MCP调用展示-天气查询1.png) |
 
 | MCP Call Details |
 |:---------------:|
-| ![MCP Call 2](docs/assets/MCP调用展示-天气查询2.png) |
+| ![MCP Call 2](docs/assets/对话界面-MCP调用展示-天气查询2.png) |
 
 ### SKILL
 
 | SKILL List |
 |:---------:|
-| ![SKILL](docs/assets/SKILL列表展示.png) |
+| ![SKILL](docs/assets/后管-SKILL列表展示.png) |
 
 ### Dashboard
 
 | Dashboard Overview |
 |:-----------------:|
-| ![Dashboard](docs/assets/Dashboard.png) |
+| ![Dashboard](docs/assets/后管-Dashboard.png) |
 
 ---
 
