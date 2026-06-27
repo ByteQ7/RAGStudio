@@ -589,55 +589,55 @@ resources/database/
 
 | 知识库管理 | 文档管理 | 检索展示（语义检索） |
 |:---:|:---:|:---:|
-| ![知识库管理1](docs/assets/知识库管理1.png) | ![知识库管理2](docs/assets/知识库管理2.png) | ![语义检索](docs/assets/知识库检索展示-语义检索.png) |
+| ![知识库管理1](docs/assets/后管-知识库管理1.png) | ![知识库管理2](docs/assets/后管-知识库管理2.png) | ![语义检索](docs/assets/对话界面-知识库检索展示-语义检索.png) |
 
 | 知识库详情 | 检索展示（关键词检索） |
 |:---:|:---:|
-| ![知识库管理3](docs/assets/知识库管理3.png) | ![关键词检索](docs/assets/知识库检索展示-关键词检索.png) |
+| ![知识库管理3](docs/assets/后管-知识库管理3.png) | ![关键词检索](docs/assets/对话界面-知识库检索展示-关键词检索.png) |
 
 ### 链路追踪
 
 | 链路追踪总览 | 追踪详情 |
 |:---:|:---:|
-| ![链路追踪1](docs/assets/链路追踪1.png) | ![链路追踪2](docs/assets/链路追踪2.png) |
+| ![链路追踪1](docs/assets/后管-链路追踪1.png) | ![链路追踪2](docs/assets/后管-链路追踪2.png) |
 
 ### 数据通道
 
 | 流水线管理 | 流水线任务 |
 |:---:|:---:|
-| ![数据通道1](docs/assets/数据通道-流水线管理1.png) | ![数据通道2](docs/assets/数据通道-流水线管理2.png) |
+| ![数据通道1](docs/assets/后管-数据通道-流水线管理1.png) | ![数据通道2](docs/assets/后管-数据通道-流水线管理2.png) |
 
 | 流水线任务详情 |
 |:---:|
-| ![流水线任务](docs/assets/数据打通-流水线任务.png) |
+| ![流水线任务](docs/assets/后管-数据通道-流水线任务.png) |
 
 ### 模型管理
 
 | 模型列表 |
 |:---:|
-| ![模型列表](docs/assets/模型列表展示.png) |
+| ![模型列表](docs/assets/后管-模型列表展示.png) |
 
 ### MCP
 
 | MCP 服务管理 | MCP 工具调用 |
 |:---:|:---:|
-| ![MCP列表](docs/assets/MCP列表展示.png) | ![MCP调用1](docs/assets/MCP调用展示-天气查询1.png) |
+| ![MCP列表](docs/assets/后管-MCP列表展示.png) | ![MCP调用1](docs/assets/对话界面-MCP调用展示-天气查询1.png) |
 
 | MCP 调用详情 |
 |:---:|
-| ![MCP调用2](docs/assets/MCP调用展示-天气查询2.png) |
+| ![MCP调用2](docs/assets/对话界面-MCP调用展示-天气查询2.png) |
 
 ### SKILL 技能
 
 | SKILL 列表 |
 |:---:|
-| ![SKILL列表](docs/assets/SKILL列表展示.png) |
+| ![SKILL列表](docs/assets/后管-SKILL列表展示.png) |
 
 ### 仪表盘
 
 | 仪表盘总览 |
 |:---:|
-| ![仪表盘](docs/assets/Dashboard.png) |
+| ![仪表盘](docs/assets/后管-Dashboard.png) |
 
 ---
 
