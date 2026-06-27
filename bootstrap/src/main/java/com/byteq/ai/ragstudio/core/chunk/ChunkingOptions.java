@@ -9,7 +9,7 @@ import java.util.Map;
  * @see FixedSizeOptions 固定大小切分配置
  * @see TextBoundaryOptions 文本边界切分配置（结构感知等）
  */
-public sealed interface ChunkingOptions permits FixedSizeOptions, TextBoundaryOptions {
+public sealed interface ChunkingOptions permits FixedSizeOptions, TextBoundaryOptions, RecursiveOptions {
 
     /**
      * 将配置导出为 Map，用于 API 返回和配置校验
