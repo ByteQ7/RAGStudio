@@ -579,43 +579,65 @@ resources/database/
 
 ## 截图展示
 
-### 对话与 Agent
+### 对话页面
 
-| 对话界面 | Agent 推理展示 |
-|:---:|:---:|
-| ![对话](docs/assets/img.png) | ![推理示例](docs/assets/img_1.png) |
-
-| Agent 推理步骤 |
+| 对话界面 |
 |:---:|
-| ![步骤折叠](docs/assets/img_2.png) |
+| ![问答页面](docs/assets/问答页面.png) |
 
 ### 知识库
 
-| 知识库管理 | 知识库详情 |
+| 知识库管理 | 文档管理 | 检索展示（语义检索） |
+|:---:|:---:|:---:|
+| ![知识库管理1](docs/assets/知识库管理1.png) | ![知识库管理2](docs/assets/知识库管理2.png) | ![语义检索](docs/assets/知识库检索展示-语义检索.png) |
+
+| 知识库详情 | 检索展示（关键词检索） |
 |:---:|:---:|
-| ![知识库列表](docs/assets/img_3.png) | ![知识库详情](docs/assets/img_4.png) |
+| ![知识库管理3](docs/assets/知识库管理3.png) | ![关键词检索](docs/assets/知识库检索展示-关键词检索.png) |
 
 ### 链路追踪
 
-| 链路追踪总览 |
-|:---:|
-| ![链路追踪](docs/assets/img_5.png) |
+| 链路追踪总览 | 追踪详情 |
+|:---:|:---:|
+| ![链路追踪1](docs/assets/链路追踪1.png) | ![链路追踪2](docs/assets/链路追踪2.png) |
 
-| 追踪详情 |
-|:---:|
-| ![追踪详情](docs/assets/img_6.png) |
+### 数据通道
 
-### MCP
+| 流水线管理 | 流水线任务 |
+|:---:|:---:|
+| ![数据通道1](docs/assets/数据通道-流水线管理1.png) | ![数据通道2](docs/assets/数据通道-流水线管理2.png) |
 
-| MCP 服务管理 |
+| 流水线任务详情 |
 |:---:|
-| ![MCP](docs/assets/img_7.png) |
+| ![流水线任务](docs/assets/数据打通-流水线任务.png) |
 
 ### 模型管理
 
-| 模型配置 |
+| 模型列表 |
 |:---:|
-| ![模型管理](docs/assets/img_8.png) |
+| ![模型列表](docs/assets/模型列表展示.png) |
+
+### MCP
+
+| MCP 服务管理 | MCP 工具调用 |
+|:---:|:---:|
+| ![MCP列表](docs/assets/MCP列表展示.png) | ![MCP调用1](docs/assets/MCP调用展示-天气查询1.png) |
+
+| MCP 调用详情 |
+|:---:|
+| ![MCP调用2](docs/assets/MCP调用展示-天气查询2.png) |
+
+### SKILL 技能
+
+| SKILL 列表 |
+|:---:|
+| ![SKILL列表](docs/assets/SKILL列表展示.png) |
+
+### 仪表盘
+
+| 仪表盘总览 |
+|:---:|
+| ![仪表盘](docs/assets/Dashboard.png) |
 
 ---
 

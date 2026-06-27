@@ -574,43 +574,65 @@ resources/database/
 
 ## Screenshots
 
-### Chat & Agent
+### Chat
 
-| Chat UI | Agent Reasoning |
-|:-------:|:--------------:|
-| ![Chat](docs/assets/img.png) | ![Reasoning](docs/assets/img_1.png) |
-
-| Agent Step Details |
-|:-----------------:|
-| ![Step Collapse](docs/assets/img_2.png) |
+| Chat Interface |
+|:-------------:|
+| ![Chat](docs/assets/问答页面.png) |
 
 ### Knowledge Base
 
-| KB Management | KB Details |
-|:------------:|:----------:|
-| ![KB List](docs/assets/img_3.png) | ![KB Detail](docs/assets/img_4.png) |
+| KB Management | Document Management | Search (Semantic) |
+|:-------------:|:------------------:|:-----------------:|
+| ![KB 1](docs/assets/知识库管理1.png) | ![KB 2](docs/assets/知识库管理2.png) | ![Semantic](docs/assets/知识库检索展示-语义检索.png) |
+
+| KB Details | Search (Keyword) |
+|:----------:|:----------------:|
+| ![KB 3](docs/assets/知识库管理3.png) | ![Keyword](docs/assets/知识库检索展示-关键词检索.png) |
 
 ### Trace
 
-| Trace Overview |
-|:-------------:|
-| ![Trace Overview](docs/assets/img_5.png) |
+| Trace Overview | Trace Details |
+|:-------------:|:-------------:|
+| ![Trace 1](docs/assets/链路追踪1.png) | ![Trace 2](docs/assets/链路追踪2.png) |
 
-| Trace Details |
-|:------------:|
-| ![Trace Detail](docs/assets/img_6.png) |
+### Ingestion Pipeline
+
+| Pipeline Management | Pipeline Tasks |
+|:------------------:|:-------------:|
+| ![Pipeline 1](docs/assets/数据通道-流水线管理1.png) | ![Pipeline 2](docs/assets/数据通道-流水线管理2.png) |
+
+| Task Details |
+|:-----------:|
+| ![Task](docs/assets/数据打通-流水线任务.png) |
+
+### Models
+
+| Model List |
+|:---------:|
+| ![Models](docs/assets/模型列表展示.png) |
 
 ### MCP
 
-| MCP Server Management |
-|:--------------------:|
-| ![MCP](docs/assets/img_7.png) |
+| MCP Server Management | MCP Tool Call |
+|:--------------------:|:-------------:|
+| ![MCP List](docs/assets/MCP列表展示.png) | ![MCP Call 1](docs/assets/MCP调用展示-天气查询1.png) |
 
-### Model Management
+| MCP Call Details |
+|:---------------:|
+| ![MCP Call 2](docs/assets/MCP调用展示-天气查询2.png) |
 
-| Model Configuration |
-|:------------------:|
-| ![Model Config](docs/assets/img_8.png) |
+### SKILL
+
+| SKILL List |
+|:---------:|
+| ![SKILL](docs/assets/SKILL列表展示.png) |
+
+### Dashboard
+
+| Dashboard Overview |
+|:-----------------:|
+| ![Dashboard](docs/assets/Dashboard.png) |
 
 ---
 
