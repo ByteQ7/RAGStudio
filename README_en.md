@@ -16,6 +16,7 @@
 
 - [Introduction](#introduction)
 - [Architecture Overview](#architecture-overview)
+- [Screenshots](#screenshots)
 - [Core Features](#core-features)
 - [Technology Stack](#technology-stack)
 - [Project Structure](#project-structure)
@@ -23,7 +24,6 @@
 - [Quick Start](#quick-start)
 - [API Examples](#api-examples)
 - [Configuration Guide](#configuration-guide)
-- [Screenshots](#screenshots)
 - [Documentation](#documentation)
 
 ---
