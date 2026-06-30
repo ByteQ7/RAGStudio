@@ -1,504 +1,499 @@
-# RAGStudio — 智能 Agent RAG 平台
+# RAGStudio — Agentic RAG Platform
 
 <p align="center">
-  <em>基于 ReACT Agent 循环的深度推理引擎 · 覆盖从文档入库到智能问答的完整链路</em>
+  <em>Retrieval-Augmented Generation platform powered by ReACT Agent loop</em>
 </p>
 
 <p align="center">
-  <a href="README_en.md">
-    <img src="https://img.shields.io/badge/English_Version-blue?style=for-the-badge&logoColor=white" alt="English Version"/>
+  <a href="README_cn.md">
+    <img src="https://img.shields.io/badge/中文版-blue?style=for-the-badge&logoColor=white" alt="中文版"/>
   </a>
 </p>
 
 ---
 
-## 目录
+## Table of Contents
 
-- [项目简介](#项目简介)
-- [架构总览](#架构总览)
-- [截图展示](#截图展示)
-- [核心功能](#核心功能)
-- [技术栈](#技术栈)
-- [项目结构](#项目结构)
-- [分层架构](#分层架构)
-- [快速开始](#快速开始)
-- [API 示例](#api-示例)
-- [配置说明](#配置说明)
-- [项目文档](#项目文档)
-
----
-
-## 项目简介
-
-**RAGStudio** 是一个基于 **Java 17 + Spring Boot 3.5** 构建的 AI 问答平台，采用 **ReACT Agent 循环**（Thought → Action → Observation），所有请求统一走 Agent 管线，LLM 在循环中自主推理、调用工具（包括知识库检索）、观察结果，直到给出最终答案。
-
-### 核心能力
-
-- **ReACT Agent 循环** — 用 Thought → Action → Observation 循环替代传统线性 RAG 管线，LLM 在循环中自主推理、调用工具、观察结果
-- **多文档知识库** — 支持 PDF/DOCX/HTML/Markdown 等多种格式文档的解析、向量化存储和语义检索
-- **多模型路由** — 数据库驱动的动态模型配置，支持百炼、SiliconFlow、DeepSeek 等多个 LLM 提供商，故障时秒级自动切换
-- **MCP 协议集成** — 支持运行时动态发现和调用外部工具，Agent 在循环中自主决策调用
-- **全链路追踪** — 自研轻量级分布式追踪系统，记录 RAG 管线的每个阶段
+- [Introduction](#introduction)
+- [Architecture Overview](#architecture-overview)
+- [Screenshots](#screenshots)
+- [Core Features](#core-features)
+- [Technology Stack](#technology-stack)
+- [Project Structure](#project-structure)
+- [Layered Architecture](#layered-architecture)
+- [Quick Start](#quick-start)
+- [API Examples](#api-examples)
+- [Configuration Guide](#configuration-guide)
+- [Documentation](#documentation)
 
 ---
 
-## 架构总览
+## Introduction
 
-![架构图](docs/assets/architecture.svg)
+**RAGStudio** is an AI Q&A platform built on **Java 17 + Spring Boot 3.5**. It uses the **ReACT Agent loop** (Thought → Action → Observation) for all requests. The LLM autonomously reasons, calls tools (including knowledge base retrieval), observes results, and iterates until it produces a final answer.
 
-### Agent 管线流程
+### Core Capabilities
 
-所有请求统一走 Agent 循环。Agent 在循环中自主推理、调用工具（包括检索工具）、观察结果，直到给出最终答案。
+- **ReACT Agent Loop** — Replaces traditional linear RAG pipeline with a reasoning loop where the LLM autonomously thinks, acts, and observes
+- **Multi-Document Knowledge Base** — Parses, vectorizes, and enables semantic search across PDF, DOCX, HTML, Markdown and more
+- **Multi-Model Routing** — Database-driven dynamic model config with automatic failover across providers like BaiLian, SiliconFlow, DeepSeek
+- **MCP Protocol Integration** — Dynamic discovery and invocation of external tools via MCP protocol, autonomously decided by the Agent
+- **Full-Chain Tracing** — Built-in lightweight distributed tracing capturing every stage of the RAG pipeline
+
+---
+
+## Architecture Overview
+
+![Architecture](docs/assets/architecture.svg)
+
+### Agent Pipeline
+
+All requests go through the Agent loop. The Agent autonomously reasons, calls tools (including retrieval tools), observes results, and iterates until it produces a final answer.
 
 ```
-用户提问
+User Question
   │
   ▼
-ChatQueueLimiter (分布式限流)
+ChatQueueLimiter (Distributed Rate Limiting)
   │
   ▼
 StreamChatPipeline.doExecuteAgent()
   │
-  ├─ 1. 记忆加载 ─── 并行加载对话历史 + 摘要
+  ├─ 1. Memory Loading ─── Parallel loading of conversation history + summary
   │
-  ├─ 2. 工具注册 ─── MCP 工具 + rag_search 工具注册到 ToolRegistry
+  ├─ 2. Tool Registration ─── MCP tools + rag_search registered in ToolRegistry
   │
-  ├─ 3. KB 相关性判断 ─── 轻量 LLM 判断问题是否与所选知识库相关
+  ├─ 3. KB Relevance Check ─── Lightweight LLM checks relevance to selected KBs
   │
-  └─ 4. Agent Loop ─── 迭代至 FINISH
-        ├─ Thought → Action(TOOL_CALL) → Observation → 继续
-        └─ Thought → Action(FINISH) → Final Answer（逐字流式推送）
+  └─ 4. Agent Loop ─── Iterate until FINISH
+        ├─ Thought → Action(TOOL_CALL) → Observation → Continue
+        └─ Thought → Action(FINISH) → Final Answer (streaming)
 ```
 
 
 
 ---
 
-## 截图展示
+## Screenshots
 
-### 对话页面
+### Chat
 
-| 对话界面 |
-|:---:|
-| ![问答页面](docs/assets/问答页面.png) |
+| Chat Interface |
+|:-------------:|
+| ![Chat](docs/assets/问答页面.png) |
 
-### 知识库
+### Knowledge Base
 
-| 知识库管理 | 文档管理 | 检索展示（语义检索） |
-|:---:|:---:|:---:|
-| ![知识库管理1](docs/assets/后管-知识库管理1.png) | ![知识库管理2](docs/assets/后管-知识库管理2.png) | ![语义检索](docs/assets/对话界面-知识库检索展示-语义检索.png) |
+| KB Management | Document Management | Search (Semantic) |
+|:-------------:|:------------------:|:-----------------:|
+| ![KB 1](docs/assets/后管-知识库管理1.png) | ![KB 2](docs/assets/后管-知识库管理2.png) | ![Semantic](docs/assets/对话界面-知识库检索展示-语义检索.png) |
 
-| 知识库详情 | 检索展示（关键词检索） |
-|:---:|:---:|
-| ![知识库管理3](docs/assets/后管-知识库管理3.png) | ![关键词检索](docs/assets/对话界面-知识库检索展示-关键词检索.png) |
+| KB Details | Search (Keyword) |
+|:----------:|:----------------:|
+| ![KB 3](docs/assets/后管-知识库管理3.png) | ![Keyword](docs/assets/对话界面-知识库检索展示-关键词检索.png) |
 
-### 链路追踪
+### Trace
 
-| 链路追踪总览 | 追踪详情 |
-|:---:|:---:|
-| ![链路追踪1](docs/assets/后管-链路追踪1.png) | ![链路追踪2](docs/assets/后管-链路追踪2.png) |
+| Trace Overview | Trace Details |
+|:-------------:|:-------------:|
+| ![Trace 1](docs/assets/后管-链路追踪1.png) | ![Trace 2](docs/assets/后管-链路追踪2.png) |
 
-### 数据通道
+### Ingestion Pipeline
 
-| 流水线管理 | 流水线任务 |
-|:---:|:---:|
-| ![数据通道1](docs/assets/后管-数据通道-流水线管理1.png) | ![数据通道2](docs/assets/后管-数据通道-流水线管理2.png) |
+| Pipeline Management | Pipeline Tasks |
+|:------------------:|:-------------:|
+| ![Pipeline 1](docs/assets/后管-数据通道-流水线管理1.png) | ![Pipeline 2](docs/assets/后管-数据通道-流水线管理2.png) |
 
-| 流水线任务详情 |
-|:---:|
-| ![流水线任务](docs/assets/后管-数据通道-流水线任务.png) |
+| Task Details |
+|:-----------:|
+| ![Task](docs/assets/后管-数据通道-流水线任务.png) |
 
-### 模型管理
+### Models
 
-| 模型列表 |
-|:---:|
-| ![模型列表](docs/assets/后管-模型列表展示.png) |
+| Model List |
+|:---------:|
+| ![Models](docs/assets/后管-模型列表展示.png) |
 
 ### MCP
 
-| MCP 服务管理 | MCP 工具调用 |
-|:---:|:---:|
-| ![MCP列表](docs/assets/后管-MCP列表展示.png) | ![MCP调用1](docs/assets/对话界面-MCP调用展示-天气查询1.png) |
+| MCP Server Management | MCP Tool Call |
+|:--------------------:|:-------------:|
+| ![MCP List](docs/assets/后管-MCP列表展示.png) | ![MCP Call 1](docs/assets/对话界面-MCP调用展示-天气查询1.png) |
 
-| MCP 调用详情 |
-|:---:|
-| ![MCP调用2](docs/assets/对话界面-MCP调用展示-天气查询2.png) |
+| MCP Call Details |
+|:---------------:|
+| ![MCP Call 2](docs/assets/对话界面-MCP调用展示-天气查询2.png) |
 
-### SKILL 技能
+### SKILL
 
-| SKILL 列表 |
-|:---:|
-| ![SKILL列表](docs/assets/后管-SKILL列表展示.png) |
+| SKILL List |
+|:---------:|
+| ![SKILL](docs/assets/后管-SKILL列表展示.png) |
 
-### 仪表盘
+### Dashboard
 
-| 仪表盘总览 |
-|:---:|
-| ![仪表盘](docs/assets/后管-Dashboard.png) |
-
----
-
-## 核心功能
-
-### ReACT Agent 循环
-
-Agent 模式为默认交互方式，LLM 在循环中自主推理和决策：
-
-```
-迭代 0:  Thought → 需要查日期
-          Action → time_now({})
-          Observation → 2026年6月21日
-
-迭代 1:  Thought → 知道了日期，查节日
-          Action → web_search({query: "6月21日 节日"})
-          Observation → 父亲节
-
-迭代 2:  Thought → 信息充分
-          Action → FINISH
-          Final Answer → 今天是2026年6月21日，父亲节。
-```
-
-- **Plan-then-Execute** — Agent 第一步输出 Plan 规划多步方案，后续按计划执行
-- **知识库精准检索** — LLM 判断问题与哪些知识库相关（`relevant_collection_names`），只检索相关的
-- **内置时间工具** — `time_now` 支持任意 IANA 时区（含夏令时自动处理），不依赖外部服务
-- **MCP 工具调用** — MCP 工具通过适配器接入 ToolRegistry，Agent 在循环中自主决策调用
-- **Agent 步骤持久化** — 推理步骤序列化为 JSON 存储在 `t_message.agent_steps`，前端可回放
-- **缺参数先问** — 可搜索参数（日期）→ 搜索获取；用户参数（城市）→ 反问用户
-- **格式校正** — LLM 未按要求输出 ReACT 格式时，自动注入纠正提示后重试一次
-
-### 知识库关联性判断
-
-进入 Agent 循环前，用轻量 LLM 调用判断问题与所选知识库是否相关：
-
-- **按库精准过滤** — LLM 返回 `relevant_collection_names` 字段，指定具体哪些知识库相关，只检索这些
-- **判断依据** — 知识库名称 + 知识库描述（创建/编辑时可填写）
-- **JSON 断尾修复** — 处理 LLM 输出被截断的情况，确保解析健壮
-
-### 知识库管理
-
-- 创建/编辑/删除知识库，支持配置 embedding 模型
-- **知识库描述** — 创建和编辑时可填写描述，用于 AI 关联判断
-- 文档上传（文件/URL），支持 PDF/DOCX/HTML/Markdown 格式
-- 自动分块 + embedding 向量化入库
-- 定时刷新同步（cron 表达式 + ETag/Hash 变更检测）
-- 分块查看、启用/禁用、手动编辑
-
-### 混合检索
-
-默认同时进行**向量检索 + 关键词检索**，通过 RRF（Reciprocal Rank Fusion）算法融合排序：
-
-- **向量通道**：pgvector cosine similarity（HNSW 索引），处理语义匹配
-- **关键词通道**：PostgreSQL tsvector 全文检索（GIN 索引），`plainto_tsquery` + `ts_rank`，确保专有名词、编码、型号等精确匹配不被语义检索忽略
-- **RRF 融合**：`score = Σ 1/(60 + rank)`，两通道并行检索后融合，去重 → Rerank → 输出
-
-两条通道互补——向量找"意思相近的"，关键词找"字面匹配的"。RRF 确保两者都有贡献，不依赖人工调权重。
-
-### 引用溯源
-
-Agent 回答中涉及知识库内容时，自动在答案下方展示参考文献。回答完成后，后端扫描答案中的 `[^chunk_{id}]` 标记，匹配对应的 Chunk 原文，通过 SSE 事件 `citation` 推送到前端。
-
-- **方案A**：LLM 在回答中主动使用 `[^chunk_id]` 标记引用（System Prompt 中的 kbContext 已带 `[^chunk_id]` 前缀）
-- **方案B**：LLM 未带标记时，前端自动做连续 10 字文本匹配兜底
-- **持久化**：引用的 Chunk 随消息一起存入 `t_message.citations`，刷新页面后仍可查看
-- **交互**：默认折叠，可逐个展开查看 Chunk 原文
-
-### 文档分块策略
-
-目前内置两种分块策略，在知识库配置中可选：
-
-**固定大小分块（`fixed_size`）**
-- 按固定字符数切分，默认 512 字符/块，支持配置 overlap（默认 128 字符）
-- 切块时自动对齐句子边界（中英文句号、感叹号、问号），不会从句子中间断开
-- 自动处理 URL 换行断开的问题
-
-**结构感知分块（`structure_aware`）**
-- 专为 Markdown 文档设计，识别标题、代码块、段落等结构
-- 按最小/目标/最大三级预算打包块（默认 600/1400/1800 字符）
-- 块内尽量保持语义完整，不会把标题和正文拆到两块里
-- 支持 block-level overlap、末尾小块的自动合并
-
-### 多模型路由与熔断降级
-
-- 数据库驱动的动态模型配置，运行时无重启切换
-- 优先级路由 + Circuit Breaker 状态机（CLOSED → OPEN → HALF_OPEN）
-- 单模型故障秒级自动 fallback，流式场景与同步场景共享健康检查
-
-### MCP 集成
-
-- MCP 服务器注册与管理，启动时异步加载不阻塞应用
-- Agent 在循环中自主调用，支持多次调用和链式调用
-- 工具调用失败时 Agent 可自主重试或换用其他工具
-
-### SKILL 技能系统
-
-用户写一个 YAML 文件放到 `skills/` 目录，Agent 就能多一个可调用的工具，不需要写 Java 代码或搭 MCP 服务器。
-
-- **目录结构**：`skills/{name}/skill.yaml` + `SKILL.md`（说明书）+ `scripts/`（可执行脚本）+ `references/`（参考资料）
-- **自动加载**：启动时扫描目录 → 写入 Redis 缓存，15 秒轮询热更新，增删改文件自动生效，无需重启
-- **工具类型**：`http`（调外部 API）、`script`（执行脚本）、`command`（执行命令）
-- **内置阅读器**：`skill_reader` 工具让 LLM 在 Agent 循环中读取 SKILL.md、浏览脚本和参考资料
-- **管理接口**：`GET /admin/skills` 查看列表，`POST /admin/skills/reload` 手动刷新
-
-#### 安全沙箱
-
-`script` 和 `command` 类型的 SKILL 不在宿主机上直接执行，而是在 Docker 容器中隔离运行：
-
-- `--read-only`：根文件系统只读，无法写文件
-- `--cap-drop=ALL`：剔除所有 Linux 权限
-- `--user 1000:1000`：非 root 运行
-- `--tmpfs /tmp:size=1G,noexec`：临时文件上限 1GB，禁止执行
-- `--memory=256m --cpus=0.5 --pids-limit=50`：资源上限
-- `--network=none`：默认无网络
-- 命令先经过 `SecurityAuditor` 黑名单审计（拦截 `rm -rf /`、`sudo`、反弹 Shell、内网探测等）
-- 超时 30 秒未完成自动 `docker kill`
-
-### 管理后台
-
-- **仪表盘** — 用户量、对话量、消息量等核心 KPI 概览，延迟/成功率趋势
-- **知识库管理** — 知识库列表、文档管理、分块详情、处理日志
-- **摄入管道** — 管道定义与执行任务管理
-- **RAG 链路追踪** — 全链路 trace 展示，节点级耗时查看
-- **系统设置** — 模型参数、记忆配置、限流策略
-- **MCP 服务** — 外部 MCP 服务器注册管理
-- **用户管理** — 账号管理、角色分配
-
-### 用户认证与权限
-
-- Sa-Token 登录/注销（用户名+密码）
-- 管理员 / 普通用户双角色权限
+| Dashboard Overview |
+|:-----------------:|
+| ![Dashboard](docs/assets/后管-Dashboard.png) |
 
 ---
 
-## 技术栈
+## Core Features
 
-| 层级 | 技术 |
-|------|------|
-| **后端** | Java 17, Spring Boot 3.5.7, MyBatis-Plus, RocketMQ, Sa-Token |
-| **AI 引擎** | ReACT Agent Loop (Thought → Action → Observation) |
-| **LLM 集成** | Spring AI (OpenAI 兼容协议), 多模型路由 + 熔断降级 |
-| **向量存储** | PostgreSQL + pgvector (HNSW 索引) + tsvector 全文检索 (GIN 索引) |
-| **前端** | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand |
-| **缓存** | Redis + Redisson (分布式锁) |
-| **文档解析** | Apache Tika 3.2 (PDF/DOCX/HTML/Markdown) |
-| **协议** | MCP (Model Context Protocol) 1.1.2 |
-| **对象存储** | S3 兼容存储 (RustFS / MinIO) |
+### ReACT Agent Loop
+
+Agent mode is the default interaction style — the LLM reasons and decides autonomously in a loop:
+
+```
+Iteration 0:  Thought → Need to check date
+               Action → time_now({})
+               Observation → June 21, 2026
+
+Iteration 1:  Thought → Date known, check festival
+               Action → web_search({query: "June 21 holiday"})
+               Observation → Father's Day
+
+Iteration 2:  Thought → Information sufficient
+               Action → FINISH
+               Final Answer → Today is June 21, 2026. It's Father's Day.
+```
+
+- **Plan-then-Execute** — The Agent first outputs a multi-step plan, then executes step by step
+- **Precise KB Retrieval** — LLM determines which knowledge bases are relevant (`relevant_collection_names`) and retrieves only from those
+- **Built-in Time Tool** — `time_now` supports any IANA timezone with automatic DST handling, no external service needed
+- **MCP Tool Calling** — MCP tools connect via adapters to the ToolRegistry, called autonomously by the Agent
+- **Step Persistence** — Reasoning steps are serialized as JSON in `t_message.agent_steps` for frontend replay
+- **Missing Parameters** — Searchable params (dates) are auto-retrieved; user-specific params (cities) prompt a clarifying question
+- **Format Correction** — If the LLM fails to output ReACT format, an automatic correction prompt is injected and retried once
+
+### KB Relevance Check
+
+Before entering the Agent loop, a lightweight LLM call determines if the question is relevant to the selected knowledge bases.
+
+- **Per-KB Filtering** — The LLM returns `relevant_collection_names` to specify which KBs are relevant — only those are searched
+- **Judgment Criteria** — Based on KB name and description (configurable during creation/editing)
+- **Truncation Recovery** — Handles truncated LLM responses to ensure robust parsing
+
+### Knowledge Base Management
+
+- **CRUD Operations** — Create, edit, delete knowledge bases with configurable embedding models
+- **KB Description** — Descriptions help AI determine KB relevance during Q&A
+- **Multi-format Upload** — Upload documents via file or URL in PDF, DOCX, HTML, Markdown formats
+- **Auto Chunking & Vectorization** — Automatic document chunking and embedding vectorization
+- **Scheduled Sync** — Cron-based refresh with ETag/Hash change detection
+- **Chunk Management** — View, enable/disable, and manually edit chunks
+
+### Hybrid Search
+
+Default mode runs **vector search + keyword search in parallel**, fused via RRF (Reciprocal Rank Fusion):
+
+- **Vector channel**: pgvector cosine similarity (HNSW index) — semantic matching
+- **Keyword channel**: PostgreSQL tsvector full-text search (GIN index), `plainto_tsquery` + `ts_rank` — exact match for proper nouns, codes, model numbers
+- **RRF fusion**: `score = Σ 1/(60 + rank)` — both channels contribute, no manual weight tuning
+
+### Citation Trace
+
+When the Agent's answer references knowledge base content, source chunks are automatically displayed below the answer. After the answer completes, the backend scans for `[^chunk_{id}]` markers, matches the corresponding chunks, and pushes them via SSE `citation` event.
+
+- **Strategy A**: LLM explicitly uses `[^chunk_id]` markers in its answer (kbContext includes `[^chunk_id]` prefixes in System Prompt)
+- **Strategy B**: When markers are absent, the frontend falls back to 10-character overlap text matching
+- **Persistence**: Citations are saved in `t_message.citations` alongside the message, surviving page refreshes
+- **Interaction**: Collapsed by default, individual chunks can be expanded to view full text
+
+### Chunking Strategies
+
+Two chunking strategies available, configurable per knowledge base:
+
+**Fixed-size chunking (`fixed_size`)**
+- Splits text into fixed-size chunks (default 512 chars/chunk), configurable overlap (default 128 chars)
+- Respects sentence boundaries (Chinese 。！？ and English .!?) — won't split mid-sentence
+- Handles URL line-break issues automatically
+
+**Structure-aware chunking (`structure_aware`)**
+- Designed for Markdown documents — recognizes headings, code fences, paragraphs
+- Uses min/target/max budget packing (default 600/1400/1800 chars)
+- Keeps headings and their content together, won't split them across chunks
+- Supports block-level overlap and automatic trailing-small-chunk merging
+
+### Multi-Model Routing & Circuit Breaker
+
+- **Dynamic Configuration** — Database-driven model configuration with zero-downtime runtime switching
+- **Circuit Breaker FSM** — Priority-based routing with circuit breaker state machine (CLOSED → OPEN → HALF_OPEN)
+- **Instant Failover** — Second-level automatic fallback with shared health checks for streaming and sync scenarios
+
+### MCP Integration
+
+- **MCP Server Management** — Register and manage MCP servers; async loading on startup doesn't block the app
+- **Autonomous Tool Calls** — The Agent autonomously invokes tools in its loop, supporting multi-turn and chained calls
+- **Failure Retry** — On tool failure, the Agent can retry or switch to alternative tools
+
+### SKILL System
+
+Users define custom Agent tools by writing a YAML file into the `skills/` directory — no Java code or MCP server needed.
+
+- **Directory structure**: `skills/{name}/skill.yaml` + `SKILL.md` (documentation) + `scripts/` (executable scripts) + `references/` (reference materials)
+- **Auto-loading**: Scanned at startup → cached in Redis, 15-second polling hot-reload, file changes take effect without restart
+- **Tool types**: `http` (call external APIs), `script` (execute scripts), `command` (execute commands)
+- **Built-in reader**: `skill_reader` tool lets the LLM read SKILL.md, browse scripts and references during Agent loops
+- **Management API**: `GET /admin/skills` (list), `POST /admin/skills/reload` (refresh)
+
+#### Security Sandbox
+
+`script` and `command` type SKILLs run in Docker containers instead of directly on the host:
+
+- `--read-only` — root filesystem is read-only
+- `--cap-drop=ALL` — all Linux capabilities removed
+- `--user 1000:1000` — runs as non-root
+- `--tmpfs /tmp:size=1G,noexec` — temp files limited to 1GB, no execution
+- `--memory=256m --cpus=0.5 --pids-limit=50` — resource limits
+- `--network=none` — no network by default
+- Commands pass through `SecurityAuditor` blacklist check (`rm -rf /`, `sudo`, reverse shells, internal network scanning blocked)
+- 30-second timeout → automatic `docker kill`
+
+### Admin Dashboard
+
+- **Dashboard** — Core KPIs: user count, conversation count, message volume, latency/success rate trends
+- **KB Management** — KB list, document management, chunk details, processing logs
+- **Ingestion Pipeline** — Pipeline definition and task execution management
+- **RAG Trace** — Full-chain trace visualization with node-level latency inspection
+- **System Settings** — Model parameters, memory config, rate limiting strategies
+- **MCP Services** — External MCP server registration and management
+- **User Management** — Account management and role assignment
+
+### User Authentication & Authorization
+
+- Sa-Token login/logout (username + password)
+- Admin / Regular user dual-role access control
 
 ---
 
-## 项目结构
+## Technology Stack
 
-### 多模块 Maven 架构
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | Java 17, Spring Boot 3.5.7, MyBatis-Plus, RocketMQ, Sa-Token |
+| **AI Engine** | ReACT Agent Loop (Thought → Action → Observation) |
+| **LLM Integration** | Spring AI (OpenAI-compatible), Multi-Model Routing + Circuit Breaker |
+| **Vector Store** | PostgreSQL + pgvector (HNSW index) + tsvector full-text search (GIN index) |
+| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand |
+| **Cache** | Redis + Redisson (Distributed Lock) |
+| **Document Parsing** | Apache Tika 3.2 (PDF/DOCX/HTML/Markdown) |
+| **Protocol** | MCP (Model Context Protocol) 1.1.2 |
+| **Object Storage** | S3-compatible (RustFS / MinIO) |
+
+---
+
+## Project Structure
+
+### Multi-Module Maven Architecture
 
 ```
-ragstudio（父模块）
-├── bootstrap          # 应用启动模块，包含所有业务代码
-├── framework          # 基础框架层：缓存、数据库、安全、异常处理、MQ、分布式ID
-└── infra-ai           # AI 基础设施层：LLM 客户端、Embedding、Rerank、模型路由
+ragstudio (Parent POM)
+├── bootstrap          # Application bootstrap with all business code
+├── framework          # Foundation: cache, database, security, exceptions, MQ, distributed IDs
+└── infra-ai           # AI infrastructure: LLM clients, Embedding, Rerank, model routing
 ```
 
-### 模块详解
+### Module Details
 
-#### `bootstrap` — 应用启动模块
+#### `bootstrap` — Application Bootstrap
 
-包含完整的业务代码，按功能域（package-by-feature）组织：
+Contains all business code, organized by feature domain:
 
 ```
 bootstrap/src/main/java/com/byteq/ai/ragstudio/
-├── admin/              # 管理后台仪表盘
-├── aimodel/            # AI 模型配置管理
-├── core/               # 文档解析与分块
-├── ingestion/          # 摄入管道引擎
-├── knowledge/          # 知识库管理
-├── mcp/                # MCP 服务管理
-├── rag/                # RAG 核心引擎
-│   ├── controller/     # REST 控制器
-│   ├── service/        # 业务服务层
-│   │   ├── pipeline/   # 流式聊天管线
-│   │   ├── handler/    # 流式事件处理
-│   │   ├── ratelimit/  # 分布式限流
-│   │   └── impl/       # 服务实现
-│   ├── core/           # 核心引擎
-│   │   ├── agent/      # ReACT Agent 循环
-│   │   ├── retrieve/   # 多通道检索
-│   │   ├── memory/     # 会话记忆管理
-│   │   ├── prompt/     # 提示词模板
-│   │   ├── rewrite/    # 查询改写
-│   │   ├── vector/     # 向量存储抽象
-│   │   └── mcp/        # MCP 工具注册与执行
-│   └── dao/            # 数据访问层
-│       ├── entity/     # 数据库实体
+├── admin/              # Admin Dashboard
+├── aimodel/            # AI Model Configuration
+├── core/               # Document Parsing & Chunking
+├── ingestion/          # Ingestion Pipeline Engine
+├── knowledge/          # Knowledge Base Management
+├── mcp/                # MCP Server Management
+├── rag/                # RAG Core Engine
+│   ├── controller/     # REST Controllers
+│   ├── service/        # Business Services
+│   │   ├── pipeline/   # Streaming Chat Pipeline
+│   │   ├── handler/    # Streaming Event Handlers
+│   │   ├── ratelimit/  # Distributed Rate Limiting
+│   │   └── impl/       # Service Implementations
+│   ├── core/           # Core Engine
+│   │   ├── agent/      # ReACT Agent Loop
+│   │   ├── retrieve/   # Multi-Channel Retrieval
+│   │   ├── memory/     # Conversation Memory
+│   │   ├── prompt/     # Prompt Templates
+│   │   ├── rewrite/    # Query Rewriting
+│   │   ├── vector/     # Vector Store Abstractions
+│   │   └── mcp/        # MCP Tool Registry & Execution
+│   └── dao/            # Data Access Layer
+│       ├── entity/     # Database Entities
 │       └── mapper/     # MyBatis Mapper
-├── user/               # 用户认证与权限
-└── RAGStudioApplication.java  # 启动入口
+├── user/               # User Auth & Permissions
+└── RAGStudioApplication.java  # Main Entry
 ```
 
-#### `framework` — 基础框架层
+#### `framework` — Foundation Framework
 
-公共基础能力，被 bootstrap 模块依赖：
+Shared foundation capabilities consumed by the bootstrap module:
 
 ```
 framework/src/main/java/com/byteq/ai/ragstudio/framework/
-├── cache/               # Redis 序列化
-├── config/              # 自动配置 (DB, MQ, Web)
-├── context/             # 用户上下文
-├── convention/          # 通用数据契约
-├── database/            # MyBatis-Plus 元数据处理器
-├── distributedid/       # 分布式 ID 生成器
-├── errorcode/           # 错误码定义
-├── exception/           # 统一异常体系
-├── idempotent/          # 幂等提交保证
-├── mq/                  # RocketMQ 消息队列封装
-├── security/            # 密码哈希
-├── trace/               # 轻量级分布式追踪
-└── web/                 # 全局异常处理等
+├── cache/               # Redis Serialization
+├── config/              # Auto Configuration (DB, MQ, Web)
+├── context/             # User Context
+├── convention/          # Common Data Contracts
+├── database/            # MyBatis-Plus Meta Object Handler
+├── distributedid/       # Snowflake ID Generator
+├── errorcode/           # Error Code Definitions
+├── exception/           # Unified Exception Hierarchy
+├── idempotent/          # Idempotent Submit
+├── mq/                  # RocketMQ Wrapper
+├── security/            # Password Hashing
+├── trace/               # Distributed Tracing
+└── web/                 # Global Exception Handler etc.
 ```
 
-#### `infra-ai` — AI 基础设施层
+#### `infra-ai` — AI Infrastructure
 
-AI 相关客户端与路由逻辑，被 bootstrap 模块依赖：
+AI client and routing logic consumed by the bootstrap module:
 
 ```
 infra-ai/src/main/java/com/byteq/ai/ragstudio/infra/
-├── chat/                # LLM 聊天客户端
-│   └── client/          # 各厂商实现：百炼、DeepSeek、SiliconFlow
-├── config/              # 动态模型配置
-├── embedding/           # Embedding 客户端
-├── enums/               # 模型提供商枚举
-├── http/                # HTTP 客户端封装
-├── model/               # 模型路由与健康检查
-├── rerank/              # Rerank 排序服务
-├── springai/            # Spring AI 适配器
-├── token/               # Token 计数
-└── util/                # LLM 响应清理
+├── chat/                # LLM Chat Clients
+│   └── client/          # Providers: BaiLian, DeepSeek, SiliconFlow
+├── config/              # Dynamic Model Configuration
+├── embedding/           # Embedding Clients
+├── enums/               # Model Provider Enums
+├── http/                # HTTP Client Utilities
+├── model/               # Model Routing & Health
+├── rerank/              # Rerank Services
+├── springai/            # Spring AI Adapter
+├── token/               # Token Counting
+└── util/                # LLM Response Cleaner
 ```
 
 ---
 
-## 分层架构
+## Layered Architecture
 
-RAGStudio 在每个模块内部采用标准的**四层架构**：
+Each module follows a standard **four-layer architecture**:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Controller 层                          │
-│              REST API 入口 / 请求校验 / 响应封装            │
+│                    Controller Layer                       │
+│        REST API Entry / Request Validation / Response     │
 ├─────────────────────────────────────────────────────────┤
-│                    Service 层                             │
-│              业务逻辑编排 / 事务管理 / 领域服务              │
+│                    Service Layer                          │
+│         Business Logic Orchestration / Transaction Mgmt   │
 ├─────────────────────────────────────────────────────────┤
-│                    DAO 层                                 │
-│              Mapper (MyBatis-Plus) + Entity               │
+│                    DAO Layer                              │
+│            Mapper (MyBatis-Plus) + Entity (ORM Mapping)   │
 ├─────────────────────────────────────────────────────────┤
 │                  Database (PostgreSQL)                     │
 │                       + Redis                             │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 分层职责
+### Layer Responsibilities
 
-| 层级 | 职责 | 典型注解 |
-|------|------|---------|
-| **Controller** | HTTP 请求接收、参数校验、VO 封装返回 | `@RestController`, `@RequestMapping`, `@Valid` |
-| **Service** | 业务逻辑编排、事务管理、跨领域协调 | `@Service`, `@Transactional`, `@Async` |
-| **Service.Impl** | 服务接口实现 | `@Service` |
-| **DAO.Mapper** | MyBatis 数据映射、SQL 定义 | `@Mapper`, `BaseMapper<T>` |
-| **DAO.Entity** | 数据库表映射实体 | `@TableName`, `@TableId`, `@TableField` |
-| **VO / DTO** | 视图层对象 / 数据传输对象 | `@Data` |
+| Layer | Responsibility | Typical Annotations |
+|-------|---------------|-------------------|
+| **Controller** | Receives HTTP requests, validates params, wraps VO responses | `@RestController`, `@RequestMapping`, `@Valid` |
+| **Service** | Orchestrates business logic, manages transactions, coordinates domains | `@Service`, `@Transactional`, `@Async` |
+| **Service.Impl** | Implements service interfaces | `@Service` |
+| **DAO.Mapper** | MyBatis data mapping and SQL definitions | `@Mapper`, `BaseMapper<T>` |
+| **DAO.Entity** | Database table entity mappings | `@TableName`, `@TableId`, `@TableField` |
+| **VO / DTO** | View objects / Data transfer objects | `@Data` |
 
-### 典型代码组织
+### Typical Code Organization
 
-以知识库模块为例：
+Using the Knowledge Base module as an example:
 
 ```
 knowledge/
-├── controller/                 # REST 接口层
+├── controller/                 # REST Layer
 │   ├── KnowledgeBaseController.java
-│   ├── request/                # 请求参数对象
-│   └── vo/                     # 响应视图对象
-├── service/                    # 业务服务接口
+│   ├── request/                # Request Params
+│   └── vo/                     # Response VOs
+├── service/                    # Service Interfaces
 │   ├── KnowledgeBaseService.java
 │   └── impl/
 │       └── KnowledgeBaseServiceImpl.java
-├── dao/                        # 数据访问层
-│   ├── entity/                 # 数据库实体
+├── dao/                        # Data Access Layer
+│   ├── entity/                 # Entities
 │   │   └── KnowledgeBaseDO.java
 │   └── mapper/                 # MyBatis Mapper
 │       └── KnowledgeBaseMapper.java
-├── enums/                      # 枚举定义
-├── mq/                         # 消息队列事件
-└── schedule/                   # 定时任务
+├── enums/                      # Enums
+├── mq/                         # MQ Events
+└── schedule/                   # Scheduled Jobs
 ```
 
-### 核心 Agent 系统文件
+### Core Agent System Files
 
 ```
 bootstrap/src/main/java/com/byteq/ai/ragstudio/rag/core/agent/
-├── AgentLoop.java                   # ReACT 循环引擎
-├── AgentContext.java                # 循环上下文
-├── AgentStep.java                   # 单步记录
-├── ReActResponseParser.java         # 三级降级解析器
-├── ReActPromptBuilder.java          # System Prompt 构建器
-├── Tool.java                        # 统一工具接口
-├── ToolRegistry.java                # 工具注册中心（30 秒超时）
-├── ToolResult.java                  # 工具执行结果
-├── McpToolAdapter.java              # MCP → 通用工具适配器
-├── RagSearchTool.java               # 知识库检索工具
-├── TimeTool.java                    # 时间工具
-└── KbRelevanceChecker.java          # KB 相关性判断
+├── AgentLoop.java                   # ReACT Loop Engine
+├── AgentContext.java                # Loop Context
+├── AgentStep.java                   # Step Recording
+├── ReActResponseParser.java         # 3-Level Fallback Parser
+├── ReActPromptBuilder.java          # System Prompt Builder
+├── Tool.java                        # Unified Tool Interface
+├── ToolRegistry.java                # Tool Registry (30s timeout)
+├── ToolResult.java                  # Tool Execution Result
+├── McpToolAdapter.java              # MCP to Tool Adapter
+├── RagSearchTool.java               # KB Search Tool
+├── TimeTool.java                    # Time Tool
+└── KbRelevanceChecker.java          # KB Relevance Checker
 ```
 
-### 检索系统文件
+### Retrieval System Files
 
 ```
 bootstrap/src/main/java/com/byteq/ai/ragstudio/rag/core/retrieve/
 ├── channel/
-│   ├── SearchChannel.java                  # 检索通道接口
-│   ├── SearchChannelType.java              # 通道类型枚举
-│   ├── VectorGlobalSearchChannel.java      # 向量全局检索（默认关闭）
-│   ├── KnowledgeBaseSelectionChannel.java  # 知识库选择检索（向量通道）
-│   ├── KeywordSearchChannel.java           # 关键词检索（tsvector 通道）← 新增
-│   ├── RrfHybridChannel.java               # RRF 混合融合通道 ← 新增
-│   └── AbstractParallelRetriever.java      # 并行检索抽象类
+│   ├── SearchChannel.java                  # Search Channel Interface
+│   ├── SearchChannelType.java              # Channel Type Enum
+│   ├── VectorGlobalSearchChannel.java      # Vector Global Search
+│   ├── KnowledgeBaseSelectionChannel.java  # KB Selection Search
+│   └── AbstractParallelRetriever.java      # Parallel Retriever
 ├── postprocessor/
-│   ├── SearchResultPostProcessor.java      # 后置处理器接口
-│   ├── DeduplicationPostProcessor.java     # 去重处理器
-│   └── RerankPostProcessor.java            # Rerank 重排序
-├── MultiChannelRetrievalEngine.java        # 多通道检索引擎
-├── RetrievalEngine.java                    # 检索引擎接口
-├── RetrieverService.java                   # 检索服务接口
-├── PgRetrieverService.java                 # pgvector / tsvector 检索实现
-├── RrfMerger.java                          # RRF 融合算法 ← 新增
-└── RetrieveRequest.java                    # 检索请求对象
+│   ├── SearchResultPostProcessor.java      # Post-Processor Interface
+│   ├── DeduplicationPostProcessor.java     # Deduplication
+│   └── RerankPostProcessor.java            # Rerank
+├── MultiChannelRetrievalEngine.java        # Multi-Channel Engine
+├── RetrievalEngine.java                    # Engine Interface
+├── RetrieverService.java                   # Retriever Service
+├── PgRetrieverService.java                 # pgvector Implementation
+└── RetrieveRequest.java                    # Retrieve Request
 ```
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 环境要求
+### Prerequisites
 
-| 依赖 | 版本要求 | 用途 |
-|------|---------|------|
-| **JDK** | 17+ | 后端运行 |
-| **Maven** | 3.8+ | 项目构建 |
-| **Node.js** | 18+ | 前端构建 |
-| **npm** | 9+ | 前端包管理 |
-| **PostgreSQL** | 14+（需 pgvector 扩展） | 业务数据 + 向量存储 |
-| **Redis** | 6+ | 缓存 + 分布式锁 |
-| **RocketMQ** | 5.2.0 | 异步消息队列 |
-| **Docker** | 最新 | 容器化基础设施运行 |
+| Dependency | Version | Purpose |
+|-----------|---------|---------|
+| **JDK** | 17+ | Backend Runtime |
+| **Maven** | 3.8+ | Build Tool |
+| **Node.js** | 18+ | Frontend Build |
+| **npm** | 9+ | Frontend Package Manager |
+| **PostgreSQL** | 14+ (with pgvector) | Data & Vector Store |
+| **Redis** | 6+ | Cache & Distributed Lock |
+| **RocketMQ** | 5.2.0 | Async Message Queue |
+| **Docker** | Latest | Container Infrastructure |
 
-### 启动基础设施
+### Start Infrastructure
 
-#### 方法一：使用 Docker（推荐）
+#### Method 1: Docker (Recommended)
 
-RocketMQ（消息队列）：
+RocketMQ (Message Queue):
 
 ```bash
 docker compose -f resources/docker/rocketmq-stack-5.2.0.compose.yaml up -d
 ```
 
-PostgreSQL（含 pgvector）和 Redis：
+PostgreSQL (with pgvector) and Redis:
 
 ```bash
 # PostgreSQL with pgvector
@@ -515,94 +510,94 @@ docker run -d --name redis \
   redis:7-alpine
 ```
 
-#### 方法二：手动安装
+#### Method 2: Manual Installation
 
-- **PostgreSQL 14+**：需安装 [pgvector](https://github.com/pgvector/pgvector) 扩展
-- **Redis 6+**：默认端口 6379
-- **RocketMQ 5.2.0**：参考 [官方文档](https://rocketmq.apache.org/docs/quick-start/)
+- **PostgreSQL 14+**: Requires the [pgvector](https://github.com/pgvector/pgvector) extension
+- **Redis 6+**: Default port 6379
+- **RocketMQ 5.2.0**: See the [official docs](https://rocketmq.apache.org/docs/quick-start/)
 
-### 初始化数据库
+### Initialize Database
 
 ```bash
-# 创建数据库
+# Create database
 createdb -U postgres ragstudio
 
-# 执行建表脚本
+# Run schema
 psql -U postgres -d ragstudio -f resources/database/V2/schema_pg.sql
 
-# 导入初始数据
+# Import seed data
 psql -U postgres -d ragstudio -f resources/database/V2/init_data_pg.sql
 ```
 
-### 配置环境变量
+### Configure Environment
 
 ```bash
-# 从示例复制并编辑
+# Copy and edit
 cp .env-example .env
 
-# 根据你的环境修改配置，填入实际的数据库、Redis、RocketMQ 等连接信息
+# Edit .env with your actual DB, Redis, RocketMQ connection info
 ```
 
-`.env` 文件包含以下配置项：
+The `.env` file contains the following variables:
 
-| 环境变量 | 说明 | 默认值 |
-|---------|------|--------|
-| `DB_USERNAME` | 数据库用户名 | `postgres` |
-| `DB_PASSWORD` | 数据库密码 | `postgres` |
-| `DB_URL` | 数据库连接地址 | `jdbc:postgresql://localhost:5432/ragstudio` |
-| `REDIS_HOST` | Redis 主机 | `localhost` |
-| `REDIS_PORT` | Redis 端口 | `6379` |
-| `REDIS_PASSWORD` | Redis 密码 | _(空)_ |
-| `ROCKETMQ_NAMESERVER` | RocketMQ 命名服务地址 | `localhost:9876` |
-| `RUSTFS_URL` | S3 对象存储地址 | `http://localhost:9000` |
-| `RUSTFS_ACCESS_KEY` | S3 访问密钥 | `minioadmin` |
-| `RUSTFS_SECRET_KEY` | S3 秘密密钥 | `minioadmin` |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DB_USERNAME` | DB Username | `postgres` |
+| `DB_PASSWORD` | DB Password | `postgres` |
+| `DB_URL` | JDBC URL | `jdbc:postgresql://localhost:5432/ragstudio` |
+| `REDIS_HOST` | Redis Host | `localhost` |
+| `REDIS_PORT` | Redis Port | `6379` |
+| `REDIS_PASSWORD` | Redis Password | _(empty)_ |
+| `ROCKETMQ_NAMESERVER` | RocketMQ Nameserver Address | `localhost:9876` |
+| `RUSTFS_URL` | S3 Endpoint | `http://localhost:9000` |
+| `RUSTFS_ACCESS_KEY` | S3 Access Key | `minioadmin` |
+| `RUSTFS_SECRET_KEY` | S3 Secret Key | `minioadmin` |
 
-### 启动后端
+### Start Backend
 
 ```bash
-# 方式一：Maven 直接启动
+# Option 1: Maven direct
 cd bootstrap && mvn spring-boot:run
 
-# 方式二：打包后启动
+# Option 2: Package then run
 mvn clean package -DskipTests
 cd bootstrap/target
 java -jar bootstrap-0.0.1-SNAPSHOT.jar
 ```
 
-后端启动后，API 地址：**http://localhost:9090/api/ragstudio**
+Once started, the API is available at: **http://localhost:9090/api/ragstudio**
 
-### 启动前端
+### Start Frontend
 
 ```bash
 cd frontend
-npm install   # 仅首次需要
+npm install   # first time only
 npm run dev
 ```
 
-前端启动后，访问地址：**http://localhost:5173**
+Once started, visit: **http://localhost:5173**
 
 ---
 
-## API 示例
+## API Examples
 
-### Agent 模式
+### Agent Mode
 
 ```bash
 curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: <token>" \
-  -d '{"question": "HashMap的原理是什么？"}'
+  -d '{"question": "How does HashMap work in Java?"}'
 ```
 
-### Agent + 知识库
+### Agent + Knowledge Base
 
 ```bash
 curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: <token>" \
   -d '{
-    "question": "公司年假怎么申请？",
+    "question": "How to apply for annual leave?",
     "knowledgeBaseIds": ["kb-001"]
   }'
 ```
@@ -611,42 +606,42 @@ curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
 
 ---
 
-## 配置说明
+## Configuration Guide
 
-### 应用配置
+### Application Configuration
 
-`bootstrap/src/main/resources/application.yaml` 中的核心配置段：
+Key configuration sections in `bootstrap/src/main/resources/application.yaml`:
 
-| 配置项 | 描述 | 默认值 |
-|--------|------|--------|
-| `rag.agent.max-iterations` | Agent 循环最大迭代次数 | `10` |
-| `rag.agent.tool-timeout-ms` | 单工具调用超时 | `30000` |
-| `rag.search.default-top-k` | 检索返回 Top-K 条数 | `5` |
-| `rag.memory.history-keep-turns` | 保留最近 N 轮完整对话历史 | `4` |
-| `rag.memory.compress-threshold` | 压缩触发阈值，默认按 `historyKeepTurns * 2` 自动计算 | `8` |
-| `rag.memory.summary-enabled` | 是否启用对话摘要 | `true` |
-| `rag.trace.enabled` | 是否启用全链路追踪 | `true` |
-| `rag.rate-limit.global.max-concurrent` | 全局最大并发数 | `1` |
+| Configuration | Description | Default |
+|--------------|-------------|---------|
+| `rag.agent.max-iterations` | Max Agent loop iterations | `10` |
+| `rag.agent.tool-timeout-ms` | Single tool call timeout | `30000` |
+| `rag.search.default-top-k` | Top-K retrieval results | `5` |
+| `rag.memory.history-keep-turns` | Recent conversation turns to keep | `4` |
+| `rag.memory.summary-start-turns` | Summary starts after N turns | `5` |
+| `rag.memory.summary-enabled` | Enable conversation summary | `true` |
+| `rag.trace.enabled` | Enable full-chain tracing | `true` |
+| `rag.rate-limit.global.max-concurrent` | Global max concurrent requests | `1` |
 
-### 数据库初始化脚本
+### Database Init Scripts
 
 ```bash
 resources/database/
 ├── V2/
-│   ├── schema_pg.sql          # 建表脚本
-│   └── init_data_pg.sql       # 初始数据
-├── upgrade_v1.0_to_v1.1.sql   # 版本升级 (v1.0 → v1.1)
-└── upgrade_v1.1_to_v1.2.sql   # 版本升级 (v1.1 → v1.2)
+│   ├── schema_pg.sql          # Table Schema
+│   └── init_data_pg.sql       # Initial Data
+├── upgrade_v1.0_to_v1.1.sql   # Upgrade (v1.0 → v1.1)
+└── upgrade_v1.1_to_v1.2.sql   # Upgrade (v1.1 → v1.2)
 ```
 
 ---
 
-## 项目文档
+## Documentation
 
-- [快速开始指南](docs/quick-start.md) — 更详细的启动说明
-- [多通道检索架构](docs/multi-channel-retrieval.md) — 检索系统设计文档
-- [PDF 摄入示例](docs/examples/pdf-ingestion-example.md) — PDF 文档处理示例
-- [Docker 轻量部署](resources/docker/lightweight/README.md) — 低资源环境部署
+- [Quick Start Guide](docs/quick-start.md) — More detailed startup instructions
+- [Multi-Channel Retrieval](docs/multi-channel-retrieval.md) — Retrieval system design
+- [PDF Ingestion Example](docs/examples/pdf-ingestion-example.md) — PDF processing walkthrough
+- [Lightweight Docker Deployment](resources/docker/lightweight/README.md) — Low-resource deployment guide
 
 ---
 
