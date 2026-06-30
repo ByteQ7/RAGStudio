@@ -136,11 +136,11 @@ public final class IdempotentSubmitAspect {
         if (StrUtil.isNotBlank(idempotentSubmit.key())) {
             MethodSignature signature = (MethodSignature) joinPoint.getSignature();
             Object keyValue = SpELUtil.parseKey(idempotentSubmit.key(), signature.getMethod(), joinPoint.getArgs());
-            return String.format("idempotent-submit:key:%s", keyValue);
+            return String.format("RAGStudio:idempotent-submit:key:%s", keyValue);
         }
         // 使用默认策略：请求路径 + 用户 ID + 参数 MD5
         return String.format(
-                "idempotent-submit:path:%s:currentUserId:%s:md5:%s",
+                "RAGStudio:idempotent-submit:path:%s:currentUserId:%s:md5:%s",
                 getServletPath(),
                 getCurrentUserId(),
                 calcArgsMD5(joinPoint)

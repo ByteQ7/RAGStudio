@@ -42,7 +42,7 @@ import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.CONVERSATION_SUMMA
 @RequiredArgsConstructor
 public class JdbcConversationMemorySummaryService implements ConversationMemorySummaryService {
 
-    private static final String SUMMARY_LOCK_PREFIX = "ragstudio:memory:summary:lock:";
+    private static final String SUMMARY_LOCK_PREFIX = "RAGStudio:memory:summary:lock:";
 
     private final ConversationGroupService conversationGroupService;
     private final ConversationMessageService conversationMessageService;
@@ -98,9 +98,9 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
     // 执行对话记忆压缩：获取分布式锁 → 统计消息总数 → 判断是否达到触发阈值 → 提取待摘要消息 → 调用 LLM 生成摘要 → 持久化
     private void doCompressIfNeeded(String conversationId, String userId) {
         long startTime = System.currentTimeMillis();
-        int triggerTurns = memoryProperties.getSummaryStartTurns();
         int maxTurns = memoryProperties.getHistoryKeepTurns();
-        if (maxTurns <= 0 || triggerTurns <= 0) {
+        int compressThreshold = memoryProperties.getEffectiveCompressThreshold();
+        if (maxTurns <= 0 || compressThreshold <= 0) {
             return;
         }
 
@@ -111,7 +111,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         }
         try {
             long total = conversationGroupService.countUserMessages(conversationId, userId);
-            if (total < triggerTurns) {
+            if (total < compressThreshold) {
                 return;
             }
 

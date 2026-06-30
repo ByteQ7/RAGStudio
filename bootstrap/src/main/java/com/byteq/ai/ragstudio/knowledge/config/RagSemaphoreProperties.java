@@ -27,7 +27,7 @@ public class RagSemaphoreProperties {
          * Redisson 信号量名称
          */
         @NotBlank
-        private String name = "rag:document:upload";
+        private String name = "RAGStudio:document:upload";
 
         /**
          * 最大并发数

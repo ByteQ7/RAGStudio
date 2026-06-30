@@ -45,6 +45,20 @@ public class MemoryProperties {
     private Integer summaryMaxChars = 200;
 
     /**
+     * 压缩触发阈值（轮数）
+     * <p>当用户消息轮数达到此值时触发压缩，压缩后保留 {@link #historyKeepTurns} 轮原文。
+     * 未设置时默认按 {@code historyKeepTurns * 2} 计算。</p>
+     */
+    private Integer compressThreshold;
+
+    /**
+     * 获取生效的压缩阈值
+     */
+    public int getEffectiveCompressThreshold() {
+        return compressThreshold != null ? compressThreshold : getHistoryKeepTurns() * 2;
+    }
+
+    /**
      * 会话标题最大长度（用于提示词约束）
      */
     @Min(10)
