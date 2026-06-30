@@ -622,8 +622,8 @@ curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
 | `rag.agent.max-iterations` | Agent 循环最大迭代次数 | `10` |
 | `rag.agent.tool-timeout-ms` | 单工具调用超时 | `30000` |
 | `rag.search.default-top-k` | 检索返回 Top-K 条数 | `5` |
-| `rag.memory.history-keep-turns` | 保留最近 N 轮对话历史 | `4` |
-| `rag.memory.summary-start-turns` | 从第 N 轮开始启用摘要 | `5` |
+| `rag.memory.history-keep-turns` | 保留最近 N 轮完整对话历史 | `4` |
+| `rag.memory.compress-threshold` | 压缩触发阈值，默认按 `historyKeepTurns * 2` 自动计算 | `8` |
 | `rag.memory.summary-enabled` | 是否启用对话摘要 | `true` |
 | `rag.trace.enabled` | 是否启用全链路追踪 | `true` |
 | `rag.rate-limit.global.max-concurrent` | 全局最大并发数 | `1` |
