@@ -31,8 +31,8 @@ import java.util.function.Supplier;
 @Component
 public class StreamTaskManager {
 
-    private static final String CANCEL_TOPIC = "ragstudio:stream:cancel";
-    private static final String CANCEL_KEY_PREFIX = "ragstudio:stream:cancel:";
+    private static final String CANCEL_TOPIC = "RAGStudio:stream:cancel";
+    private static final String CANCEL_KEY_PREFIX = "RAGStudio:stream:cancel:";
     private static final Duration CANCEL_TTL = Duration.ofMinutes(30);
 
     private final Cache<String, StreamTaskInfo> tasks = CacheBuilder.newBuilder()

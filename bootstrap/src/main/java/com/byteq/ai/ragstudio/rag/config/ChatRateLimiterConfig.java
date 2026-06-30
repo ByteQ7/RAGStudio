@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
 public class ChatRateLimiterConfig {
 
     /** Redis 中限流器的 key 名称 */
-    private static final String CHAT_LIMITER_NAME = "rag:global:chat";
+    private static final String CHAT_LIMITER_NAME = "RAGStudio:global:chat";
 
     /**
      * 创建分布式公平限流器 Bean

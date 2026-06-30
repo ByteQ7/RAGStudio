@@ -48,10 +48,8 @@ import java.util.stream.Stream;
 @Service
 public class SkillLoader {
 
-    private static final String REDIS_KEY_PREFIX = "skill:";
-    private static final String REDIS_LIST_KEY = "skill:list";
-    private static final String REDIS_SCRIPT_PREFIX = "skill:script:";
-    private static final String REDIS_REF_PREFIX = "skill:ref:";
+    private static final String REDIS_KEY_PREFIX = "RAGStudio:skill:";
+    private static final String REDIS_LIST_KEY = "RAGStudio:skill:list";
 
     private final RedissonClient redisson;
     private final ObjectMapper objectMapper;

@@ -1,6 +1,9 @@
 package com.byteq.ai.ragstudio.rag.service.handler;
 
 import cn.hutool.core.util.StrUtil;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentStep;
 import com.byteq.ai.ragstudio.rag.dao.entity.ConversationDO;
 import com.byteq.ai.ragstudio.rag.dto.AgentStepPayload;
@@ -88,7 +91,8 @@ public class StreamChatEventHandler implements StreamCallback {
         if (StrUtil.isNotBlank(content)) {
             try {
                 String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-                ChatMessage message = ChatMessage.assistant(content, thinkingContent,
+                String enrichedContent = enrichWithAgentTrace(content, agentStepsJson);
+                ChatMessage message = ChatMessage.assistant(enrichedContent, thinkingContent,
                         resolveThinkingDuration(), agentStepsJson, citationsJson);
                 messageId = memoryService.append(conversationId, userId, message);
             } catch (Exception e) {
@@ -152,6 +156,80 @@ public class StreamChatEventHandler implements StreamCallback {
         }
     }
 
+    /**
+     * 将 Agent 推理步骤嵌入到 assistant 内容中
+     * <p>解析 agentStepsJson 中的步骤信息，格式化为可读的推理链追加到消息内容尾部。</p>
+     *
+     * @param content        原始 assistant 内容
+     * @param agentStepsJson Agent 步骤 JSON 数组字符串
+     * @return 嵌入推理链后的内容
+     */
+    private String enrichWithAgentTrace(String content, String agentStepsJson) {
+        if (StrUtil.isBlank(agentStepsJson)) {
+            return content;
+        }
+        try {
+            JsonArray steps = JsonParser.parseString(agentStepsJson).getAsJsonArray();
+            if (steps.isEmpty()) {
+                return content;
+            }
+            StringBuilder sb = new StringBuilder(content);
+            sb.append("\n\n---\n").append("🧠 **Agent 推理过程**\n\n");
+            for (int i = 0; i < steps.size(); i++) {
+                JsonObject s = steps.get(i).getAsJsonObject();
+                int iteration = s.get("iteration").getAsInt();
+                sb.append("> **步骤 ").append(iteration + 1).append("**");
+
+                String plan = getJsonString(s, "plan");
+                if (plan != null) {
+                    sb.append("\n> 📋 ").append(plan.replace("\n", "\n> "));
+                }
+                String thought = getJsonString(s, "thought");
+                if (thought != null) {
+                    sb.append("\n> 🤔 ").append(thought.replace("\n", "\n> "));
+                }
+
+                String action = s.has("action") && !s.get("action").isJsonNull() ? s.get("action").getAsString() : null;
+                if ("TOOL_CALL".equals(action)) {
+                    String toolName = getJsonString(s, "toolName");
+                    if (toolName != null) {
+                        sb.append("\n> 🔧 调用工具: `").append(toolName).append("`");
+                    }
+                    String observation = getJsonString(s, "observation");
+                    if (observation != null) {
+                        String truncated = observation.length() > 200 ? observation.substring(0, 200) + "…" : observation;
+                        sb.append("\n> 📝 ").append(truncated.replace("\n", "\n> "));
+                    }
+                } else if ("FINISH".equals(action)) {
+                    sb.append("\n> ✅ 完成回答");
+                } else if ("ERROR".equals(action)) {
+                    sb.append("\n> ❌ 执行出错");
+                }
+
+                if (s.has("durationMs") && !s.get("durationMs").isJsonNull()) {
+                    long dur = s.get("durationMs").getAsLong();
+                    if (dur > 0) {
+                        sb.append(" （").append(dur).append("ms）");
+                    }
+                }
+                sb.append("\n\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("嵌入 Agent 推理链失败", e);
+            return content;
+        }
+    }
+
+    /**
+     * 安全获取 JSON 字符串字段
+     */
+    private static String getJsonString(JsonObject obj, String key) {
+        if (!obj.has(key) || obj.get(key).isJsonNull()) return null;
+        String val = obj.get(key).getAsString();
+        return val.isEmpty() ? null : val;
+    }
+
     @Override
     public void onComplete() {
         if (taskManager.isCancelled(taskId)) {
@@ -160,7 +238,8 @@ public class StreamChatEventHandler implements StreamCallback {
         String messageId = null;
         try {
             String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-            ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent,
+            String enrichedContent = enrichWithAgentTrace(answer.toString(), agentStepsJson);
+            ChatMessage message = ChatMessage.assistant(enrichedContent, thinkingContent,
                     resolveThinkingDuration(), agentStepsJson, citationsJson);
             messageId = memoryService.append(conversationId, userId, message);
         } catch (Exception e) {

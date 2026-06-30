@@ -25,7 +25,7 @@
 -- ============================================================================
 
 -- Redis 哈希表的 Key 名称，存储雪花算法的工作节点 ID 信息
-local hashKey = 'snowflake_work_id_key'
+local hashKey = 'RAGStudio:snowflake_work_id_key'
 -- 数据中心 ID 在哈希表中的字段名
 local dataCenterIdKey = 'dataCenterId'
 -- 工作机器 ID 在哈希表中的字段名
