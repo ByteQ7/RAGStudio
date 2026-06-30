@@ -1,0 +1,16 @@
+name: web_search
+description: 在互联网上搜索信息。当用户询问实时新闻、最新数据、不熟悉的知识点时使用此工具。
+type: http
+config:
+  url: "https://search.qbyte.top/search?q=${query}&format=json&language=zh-CN&categories=general"
+  method: GET
+  headers:
+    User-Agent: "RAGStudio-Skill/1.0"
+parameters:
+  type: object
+  properties:
+    query:
+      type: string
+      description: 搜索关键词，应提取用户问题中的核心关键词
+  required:
+    - query
