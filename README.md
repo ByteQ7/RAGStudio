@@ -193,12 +193,13 @@ Default mode runs **vector search + keyword search in parallel**, fused via RRF 
 
 ### Citation Trace
 
-When the Agent's answer references knowledge base content, source chunks are automatically displayed below the answer. After the answer completes, the backend scans for `[^chunk_{id}]` markers, matches the corresponding chunks, and pushes them via SSE `citation` event.
+When the Agent's answer references knowledge base content, `[^chunk_{id}]` markers are automatically converted to numbered `[N]` references — blue clickable links inline in the answer text. Clicking scrolls to and expands the corresponding entry in the citation list below.
 
-- **Strategy A**: LLM explicitly uses `[^chunk_id]` markers in its answer (kbContext includes `[^chunk_id]` prefixes in System Prompt)
-- **Strategy B**: When markers are absent, the frontend falls back to 10-character overlap text matching
-- **Persistence**: Citations are saved in `t_message.citations` alongside the message, surviving page refreshes
-- **Interaction**: Collapsed by default, individual chunks can be expanded to view full text
+- **Inline numbered references**: `[^chunk_{id}]` → `[N]`, numbered by first-appearance order, click to expand the chunk
+- **Citation list**: Displays `[N]`, Chunk ID, knowledge base name, and document name — expand to view full text
+- **Copy Chunk ID**: Each citation includes a copy button that copies only the Chunk ID
+- **Backend filtering**: `fireCitations()` only sends chunks actually referenced by `[^chunk_id]` markers in the answer
+- **Persistence**: Citations saved in `t_message.citations`, surviving page refreshes
 
 ### Chunking Strategies
 
