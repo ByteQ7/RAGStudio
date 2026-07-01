@@ -24,6 +24,8 @@ export interface Citation {
   id: string;
   text: string;
   score: number;
+  kbName?: string;
+  docName?: string;
 }
 
 export interface Message {

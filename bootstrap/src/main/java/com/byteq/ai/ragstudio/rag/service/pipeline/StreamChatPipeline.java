@@ -43,6 +43,7 @@ import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
 import com.byteq.ai.ragstudio.rag.dto.RetrievalContext;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
+import com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler;
 import com.byteq.ai.ragstudio.rag.service.handler.StreamTaskManager;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -177,6 +178,10 @@ public class StreamChatPipeline {
     /** 线程安全的 ObjectMapper 单例，避免每次调用都创建新实例 */
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    /** 用于从 LLM 回答中提取 [^chunk_{id}] 引用的正则 */
+    private static final java.util.regex.Pattern CHUNK_REF_PATTERN =
+            java.util.regex.Pattern.compile("\\[\\^chunk_(\\w+)\\]");
+
     /**
      * 执行流式对话流水线
      * <p>
@@ -281,7 +286,12 @@ public class StreamChatPipeline {
                 reactResponseParser, reactPromptBuilder);
 
         // 在 Agent 完成回答但 SSE 连接关闭前，推送引用溯源
-        agentLoop.setBeforeCompleteCallback(() -> fireCitations(ctx));
+        agentLoop.setBeforeCompleteCallback(() -> {
+            // 此时 final answer 已完整推送到 callback 中，提取用于过滤未引用的 chunks
+            String finalAnswer = ctx.getCallback() instanceof StreamChatEventHandler ?
+                    ((StreamChatEventHandler) ctx.getCallback()).getAnswerString() : null;
+            fireCitations(ctx, finalAnswer);
+        });
 
         traceNode("Agent循环", "AGENT_LOOP", () -> {
             agentLoop.run(agentCtx, ctx.getCallback());
@@ -355,17 +365,35 @@ public class StreamChatPipeline {
     // ==================== 引用溯源 ====================
 
     // 将检索到的 Chunk 列表推送到前端用于引用展示
-    private void fireCitations(StreamChatContext ctx) {
+    // 根据 LLM 回答中的 [^chunk_{id}] 标记过滤，只推送被实际引用的 Chunk
+    private void fireCitations(StreamChatContext ctx, String finalAnswer) {
         List<RetrievedChunk> chunks = ctx.getRetrievedChunks();
         if (CollUtil.isEmpty(chunks)) return;
 
+        // 解析 answer 中被引用的 chunk ID 集合
+        java.util.Set<String> referencedIds = new java.util.HashSet<>();
+        if (StrUtil.isNotBlank(finalAnswer)) {
+            java.util.regex.Matcher matcher = CHUNK_REF_PATTERN.matcher(finalAnswer);
+            while (matcher.find()) {
+                referencedIds.add(matcher.group(1));
+            }
+        }
+
         try {
             String json = OBJECT_MAPPER.writeValueAsString(chunks.stream()
+                    .filter(chunk -> {
+                        // finalAnswer 为空时不过滤（兼容旧逻辑）
+                        if (StrUtil.isBlank(finalAnswer)) return true;
+                        // 只保留被 [^chunk_{id}] 引用的 chunk
+                        return chunk.getId() != null && referencedIds.contains(chunk.getId());
+                    })
                     .map(chunk -> {
                         java.util.Map<String, Object> m = new java.util.HashMap<>();
                         m.put("id", chunk.getId() != null ? chunk.getId() : "");
                         m.put("text", chunk.getText() != null ? chunk.getText() : "");
                         m.put("score", chunk.getScore() != null ? chunk.getScore() : 0f);
+                        m.put("kbName", chunk.getKbName() != null ? chunk.getKbName() : "");
+                        m.put("docName", chunk.getDocName() != null ? chunk.getDocName() : "");
                         return m;
                     })
                     .toList());

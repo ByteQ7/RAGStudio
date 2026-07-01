@@ -353,10 +353,109 @@ interface MarkdownRendererProps {
    * full Markdown with syntax-highlighted code blocks.
    */
   compact?: boolean;
+  /**
+   * 知识库引用列表，用于将 [^chunk_{id}] 标记渲染为可点击的引用上标
+   */
+  citations?: Array<{ id: string; text: string; score?: number }>;
 }
 
-export function MarkdownRenderer({ content, compact = false }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, compact = false, citations }: MarkdownRendererProps) {
   const theme = useThemeStore((state) => state.theme);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // ====== 渲染后将 [^chunk_{id}] 文本替换为可点击的引用 span ======
+  // 使用 DOM TreeWalker 绕过 react-markdown 组件系统的版本兼容问题
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !citations || citations.length === 0) return;
+
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    const toReplace: Array<{ node: Text; id: string; fullMatch: string }> = [];
+    const regex = /\[\^chunk_(\w+)\]/g;
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text;
+      const text = node.textContent || '';
+      regex.lastIndex = 0;
+      let m;
+      while ((m = regex.exec(text)) !== null) {
+        toReplace.push({ node, id: m[1], fullMatch: m[0] });
+      }
+    }
+
+    // ====== 预先计算编号映射 ======
+    // 扫描 content 中 [^chunk_{id}] 出现的顺序 → [1], [2], ...
+    const numMap: Record<string, number> = {};
+    let numIdx = 0;
+    const scanRe = /\[\^chunk_(\w+)\]/g;
+    let sm;
+    while ((sm = scanRe.exec(content)) !== null) {
+      if (!(sm[1] in numMap)) {
+        numMap[sm[1]] = ++numIdx;
+      }
+    }
+
+    for (const { node, id } of toReplace) {
+      const text = node.textContent || '';
+      const parent = node.parentNode;
+      if (!parent) continue;
+
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      const re = /\[\^chunk_(\w+)\]/g;
+      re.lastIndex = 0;
+      let match;
+      while ((match = re.exec(text)) !== null) {
+        // 匹配前的文本
+        if (match.index > lastIdx) {
+          frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
+        }
+        // 引用 span — 显示为 [N] 编号
+        const chunkId = match[1];
+        const num = numMap[chunkId] || '?';
+        const citation = citations?.find((c) => c.id === chunkId);
+        const span = document.createElement('span');
+        span.className = 'citation-ref cursor-pointer text-[#0969da] dark:text-[#58a6ff] font-semibold text-xs select-none hover:underline';
+        span.setAttribute('data-citation-id', chunkId);
+        span.textContent = `[${num}]`;
+        span.title = citation?.text ?? '';
+        frag.appendChild(span);
+        lastIdx = match.index + match[0].length;
+      }
+      // 剩余文本
+      if (lastIdx < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+      }
+
+      parent.replaceChild(frag, node);
+    }
+  }, [content, citations]);
+
+  // ====== 引用点击事件委托 → 派发事件让 CitationList 展开 + 滚动 ======
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !citations || citations.length === 0) return;
+
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const ref = target.closest('[data-citation-id]') as HTMLElement | null;
+      if (ref) {
+        const chunkId = ref.getAttribute('data-citation-id');
+        if (chunkId) {
+          e.stopPropagation();
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('expand-citation', { detail: chunkId }));
+        }
+      }
+    };
+
+    container.addEventListener('click', handler);
+    return () => container.removeEventListener('click', handler);
+  }, [content, citations]);
 
   const components = React.useMemo(() => {
     const comps: Record<string, any> = {};
@@ -540,14 +639,16 @@ export function MarkdownRenderer({ content, compact = false }: MarkdownRendererP
       );
 
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeSanitize, rehypeKatex]}
-      components={components}
-      className={markdownClassName}
-    >
-      {preprocessContent(content)}
-    </ReactMarkdown>
+    <div ref={containerRef}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeSanitize, rehypeKatex]}
+        components={components}
+        className={markdownClassName}
+      >
+        {preprocessContent(content)}
+      </ReactMarkdown>
+    </div>
   );
 }
 

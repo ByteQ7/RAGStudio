@@ -5,7 +5,11 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeBaseDO;
+import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeChunkDO;
+import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeDocumentDO;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeBaseMapper;
+import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeChunkMapper;
+import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.core.prompt.ContextFormatter;
 import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
@@ -32,6 +36,8 @@ public class RetrievalEngine {
     private final SearchChannelProperties searchProperties;
     private final ContextFormatter contextFormatter;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
+    private final KnowledgeChunkMapper knowledgeChunkMapper;
+    private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final MultiChannelRetrievalEngine multiChannelRetrievalEngine;
 
     /**
@@ -66,6 +72,13 @@ public class RetrievalEngine {
                 .filter(name -> !name.isBlank())
                 .toList();
 
+        // 构建 KB ID → KB 名称映射
+        java.util.Map<String, String> kbNameMap = new java.util.HashMap<>();
+        for (KnowledgeBaseDO kb : kbList) {
+            kbNameMap.put(kb.getId(), kb.getName());
+        }
+        String joinedKbNames = String.join(", ", kbNameMap.values());
+
         String kbContext = "";
         List<RetrievedChunk> chunks = List.of();
         if (CollUtil.isNotEmpty(collectionNames)) {
@@ -75,6 +88,50 @@ public class RetrievalEngine {
             chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(
                     collectionNames, subQuestions, rewriteResult.rewrittenQuestion(), finalTopK);
             if (CollUtil.isNotEmpty(chunks)) {
+                // 为每个 Chunk 标记知识库名称
+                for (RetrievedChunk chunk : chunks) {
+                    if (chunk.getKbName() == null) {
+                        chunk.setKbName(joinedKbNames);
+                    }
+                }
+                // 批量查询文档名称
+                java.util.List<String> chunkIds = chunks.stream()
+                        .map(RetrievedChunk::getId)
+                        .filter(Objects::nonNull)
+                        .toList();
+                if (CollUtil.isNotEmpty(chunkIds)) {
+                    java.util.List<KnowledgeChunkDO> chunkDOs = knowledgeChunkMapper.selectList(
+                            com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeChunkDO.class)
+                                    .in(KnowledgeChunkDO::getId, chunkIds));
+                    if (CollUtil.isNotEmpty(chunkDOs)) {
+                        java.util.Set<String> docIds = chunkDOs.stream()
+                                .map(KnowledgeChunkDO::getDocId)
+                                .filter(Objects::nonNull)
+                                .collect(java.util.stream.Collectors.toSet());
+                        java.util.Map<String, String> docNameMap = new java.util.HashMap<>();
+                        if (CollUtil.isNotEmpty(docIds)) {
+                            java.util.List<KnowledgeDocumentDO> docs = knowledgeDocumentMapper.selectList(
+                                    com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
+                                            .in(KnowledgeDocumentDO::getId, docIds));
+                            for (KnowledgeDocumentDO doc : docs) {
+                                docNameMap.put(doc.getId(), doc.getDocName());
+                            }
+                        }
+                        java.util.Map<String, String> chunkDocMap = new java.util.HashMap<>();
+                        for (KnowledgeChunkDO c : chunkDOs) {
+                            String docName = docNameMap.get(c.getDocId());
+                            if (docName != null) {
+                                chunkDocMap.put(c.getId(), docName);
+                            }
+                        }
+                        for (RetrievedChunk chunk : chunks) {
+                            String dn = chunkDocMap.get(chunk.getId());
+                            if (dn != null) {
+                                chunk.setDocName(dn);
+                            }
+                        }
+                    }
+                }
                 kbContext = contextFormatter.formatKbContext(Map.of(MULTI_CHANNEL_KEY, chunks), finalTopK);
             }
         }
