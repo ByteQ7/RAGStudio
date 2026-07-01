@@ -66,6 +66,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         LambdaQueryWrapper<KnowledgeChunkDO> queryWrapper = new LambdaQueryWrapper<KnowledgeChunkDO>()
                 .eq(KnowledgeChunkDO::getDocId, docId)
                 .eq(requestParam.getEnabled() != null, KnowledgeChunkDO::getEnabled, requestParam.getEnabled())
+                .like(StrUtil.isNotBlank(requestParam.getKeyword()), KnowledgeChunkDO::getId, requestParam.getKeyword())
                 .orderByAsc(KnowledgeChunkDO::getChunkIndex);
 
         Page<KnowledgeChunkDO> page = new Page<>(requestParam.getCurrent(), requestParam.getSize());

@@ -14,4 +14,9 @@ public class KnowledgeChunkPageRequest extends Page {
      * 启用状态筛选：null-全部，1-已启用，0-已禁用
      */
     private Integer enabled;
+
+    /**
+     * 关键字搜索（按 Chunk ID 模糊匹配）
+     */
+    private String keyword;
 }

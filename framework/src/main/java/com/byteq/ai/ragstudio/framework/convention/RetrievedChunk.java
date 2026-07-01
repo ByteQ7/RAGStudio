@@ -41,4 +41,14 @@ public class RetrievedChunk {
      * 数值越大表示与查询的相关性越高
      */
     private Float score;
+
+    /**
+     * 所属知识库名称
+     */
+    private String kbName;
+
+    /**
+     * 所属文档名称
+     */
+    private String docName;
 }

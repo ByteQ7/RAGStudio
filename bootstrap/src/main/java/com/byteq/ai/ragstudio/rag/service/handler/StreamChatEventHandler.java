@@ -91,8 +91,7 @@ public class StreamChatEventHandler implements StreamCallback {
         if (StrUtil.isNotBlank(content)) {
             try {
                 String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-                String enrichedContent = enrichWithAgentTrace(content, agentStepsJson);
-                ChatMessage message = ChatMessage.assistant(enrichedContent, thinkingContent,
+                ChatMessage message = ChatMessage.assistant(content, thinkingContent,
                         resolveThinkingDuration(), agentStepsJson, citationsJson);
                 messageId = memoryService.append(conversationId, userId, message);
             } catch (Exception e) {
@@ -238,8 +237,7 @@ public class StreamChatEventHandler implements StreamCallback {
         String messageId = null;
         try {
             String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-            String enrichedContent = enrichWithAgentTrace(answer.toString(), agentStepsJson);
-            ChatMessage message = ChatMessage.assistant(enrichedContent, thinkingContent,
+            ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent,
                     resolveThinkingDuration(), agentStepsJson, citationsJson);
             messageId = memoryService.append(conversationId, userId, message);
         } catch (Exception e) {
@@ -282,6 +280,13 @@ public class StreamChatEventHandler implements StreamCallback {
         if (!buffer.isEmpty()) {
             sender.sendEvent(SSEEventType.MESSAGE.value(), new MessageDelta(type, buffer.toString()));
         }
+    }
+
+    /**
+     * 获取已累积的完整回答内容（在 onComplete 前调用）
+     */
+    public String getAnswerString() {
+        return answer.toString();
     }
 
     // 解析深度思考耗时，未记录则返回 null

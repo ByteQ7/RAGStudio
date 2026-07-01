@@ -206,7 +206,9 @@ public class BaiLianRerankClient implements RerankClient {
             }
 
             // 如果 API 返回了评分则创建新的 RetrievedChunk 带上评分，否则直接复用原始块
-            RetrievedChunk hit = score != null ? new RetrievedChunk(src.getId(), src.getText(), score) : src;
+            RetrievedChunk hit = score != null
+                    ? RetrievedChunk.builder().id(src.getId()).text(src.getText()).score(score).build()
+                    : src;
             reranked.add(hit);
             addedIds.add(src.getId());
 

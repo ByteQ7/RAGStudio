@@ -115,6 +115,7 @@ export interface KnowledgeChunkPageParams {
   current?: number;
   size?: number;
   enabled?: number;
+  keyword?: string;
 }
 
 // 知识库管理
@@ -308,7 +309,8 @@ export const getChunksPage = async (
       params: {
         current: params.current ?? 1,
         size: params.size ?? 10,
-        enabled: params.enabled ?? undefined
+        enabled: params.enabled ?? undefined,
+        keyword: params.keyword || undefined
       }
     }
   );

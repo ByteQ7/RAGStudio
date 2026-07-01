@@ -51,6 +51,7 @@ export function KnowledgeChunksPage() {
   const [pageNo, setPageNo] = useState(1);
   const [loading, setLoading] = useState(false);
   const [enabledFilter, setEnabledFilter] = useState<number | undefined>();
+  const [keyword, setKeyword] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
   const [editDialog, setEditDialog] = useState<{ open: boolean; chunk: KnowledgeChunk | null }>({
@@ -73,14 +74,15 @@ export function KnowledgeChunksPage() {
     }
   };
 
-  const loadChunks = async (current = pageNo, enabled = enabledFilter) => {
+  const loadChunks = async (current = pageNo, enabled = enabledFilter, kw = keyword) => {
     if (!docId) return;
     setLoading(true);
     try {
       const data = await getChunksPage(docId, {
         current,
         size: PAGE_SIZE,
-        enabled
+        enabled,
+        keyword: kw
       });
       setPageData(data);
     } catch (error) {
@@ -97,7 +99,7 @@ export function KnowledgeChunksPage() {
 
   useEffect(() => {
     loadChunks();
-  }, [docId, pageNo, enabledFilter]);
+  }, [docId, pageNo, enabledFilter, keyword]);
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -205,6 +207,15 @@ export function KnowledgeChunksPage() {
               <CardDescription>支持编辑、启停、批量操作</CardDescription>
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <Input
+                placeholder="搜索 Chunk ID..."
+                className="w-[200px] h-9"
+                value={keyword}
+                onChange={(e) => {
+                  setKeyword(e.target.value);
+                  setPageNo(1);
+                }}
+              />
               <Select
                 value={enabledFilter === undefined ? "all" : String(enabledFilter)}
                 onValueChange={(value) => {

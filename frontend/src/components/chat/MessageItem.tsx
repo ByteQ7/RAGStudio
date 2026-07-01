@@ -49,7 +49,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
           ) : null}
           {hasContent ? (
             <div className="text-[15px] leading-relaxed text-gray-800">
-              <MarkdownRenderer content={message.content} />
+              <MarkdownRenderer content={message.content} citations={message.citations} />
             </div>
           ) : null}
           {message.status === "error" ? (
