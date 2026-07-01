@@ -104,6 +104,8 @@ export function CitationList({ message }: CitationListProps) {
       }
       return next;
     });
+    // 同步派发事件，让正文高亮与展开/折叠联动
+    window.dispatchEvent(new CustomEvent('expand-citation', { detail: id }));
   };
 
   if (!matchedCitations || matchedCitations.length === 0) return null;

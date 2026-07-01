@@ -362,6 +362,20 @@ interface MarkdownRendererProps {
 export function MarkdownRenderer({ content, compact = false, citations }: MarkdownRendererProps) {
   const theme = useThemeStore((state) => state.theme);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const gramCacheRef = React.useRef<Set<string> | null>(null);
+  const highlightedRef = React.useRef<Set<string>>(new Set());
+
+  // ====== 构建回答文本的 n-gram 索引（K=15） ======
+  const getAnswerGramSet = React.useCallback(() => {
+    if (gramCacheRef.current) return gramCacheRef.current;
+    const set = new Set<string>();
+    const K = 15;
+    for (let i = 0; i <= content.length - K; i++) {
+      set.add(content.slice(i, i + K));
+    }
+    gramCacheRef.current = set;
+    return set;
+  }, [content]);
 
   // ====== 渲染后将 [^chunk_{id}] 文本替换为可点击的引用 span ======
   // 使用 DOM TreeWalker 绕过 react-markdown 组件系统的版本兼容问题
@@ -456,6 +470,120 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
     container.addEventListener('click', handler);
     return () => container.removeEventListener('click', handler);
   }, [content, citations]);
+
+  // ====== 监听展开/折叠事件 → 对 chunk 原文做文本匹配高亮 ======
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !citations || citations.length === 0) return;
+
+    const handler = (e: Event) => {
+      const chunkId = (e as CustomEvent).detail as string;
+      if (!chunkId) return;
+      const citation = citations.find((c) => c.id === chunkId);
+      if (!citation || !citation.text) return;
+
+      const hSet = highlightedRef.current;
+
+      if (hSet.has(chunkId)) {
+        // 折叠 → 移除高亮
+        container.querySelectorAll(`mark.chunk-highlight[data-citation-id="${chunkId}"]`).forEach((el) => {
+          const parent = el.parentNode;
+          if (parent) {
+            parent.replaceChild(document.createTextNode(el.textContent || ''), el);
+            parent.normalize();
+          }
+        });
+        hSet.delete(chunkId);
+      } else {
+        // 展开 → 应用高亮
+        const gramSet = getAnswerGramSet();
+        const chunkText = citation.text;
+
+        // 在 chunk text 中找到匹配的片段
+        const matches: Array<[number, number]> = [];
+        const MIN_MATCH = 15;
+        for (let i = 0; i <= chunkText.length - MIN_MATCH; i++) {
+          const gram = chunkText.slice(i, i + MIN_MATCH);
+          if (gramSet.has(gram)) {
+            if (matches.length > 0 && matches[matches.length - 1][1] >= i) {
+              matches[matches.length - 1][1] = i + MIN_MATCH;
+            } else {
+              matches.push([i, i + MIN_MATCH]);
+            }
+          }
+        }
+
+        // 扩展匹配区域 ±5 字符
+        const EXTEND = 5;
+        const spans = matches.map(([s, e]) => [
+          Math.max(0, s - EXTEND),
+          Math.min(chunkText.length, e + EXTEND),
+        ] as [number, number]);
+
+        // 合并重叠区域
+        const merged: Array<[number, number]> = [];
+        for (const [s, e] of spans) {
+          if (merged.length > 0 && merged[merged.length - 1][1] >= s) {
+            merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+          } else {
+            merged.push([s, e]);
+          }
+        }
+
+        if (merged.length === 0) return;
+
+        // 匹配比例 ≥ 30% 才生效
+        const totalMatched = merged.reduce((acc, [s, e]) => acc + (e - s), 0);
+        if (totalMatched < chunkText.length * 0.3) return;
+
+        // DOM TreeWalker 查找并包裹 <mark>
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+        const textSegments: Array<{ node: Text; start: number; end: number }> = [];
+
+        while (walker.nextNode()) {
+          const node = walker.currentNode as Text;
+          const text = node.textContent || '';
+
+          for (const [s, e] of merged) {
+            const span = chunkText.slice(s, e);
+            const idx = text.indexOf(span);
+            if (idx !== -1) {
+              textSegments.push({ node, start: idx, end: idx + span.length });
+            }
+          }
+        }
+
+        const seen = new Set<Text>();
+        for (const seg of textSegments) {
+          if (seen.has(seg.node)) continue;
+          seen.add(seg.node);
+
+          const text = seg.node.textContent || '';
+          const parent = seg.node.parentNode;
+          if (!parent) continue;
+
+          const frag = document.createDocumentFragment();
+          if (seg.start > 0) {
+            frag.appendChild(document.createTextNode(text.slice(0, seg.start)));
+          }
+          const mark = document.createElement('mark');
+          mark.className = 'chunk-highlight';
+          mark.setAttribute('data-citation-id', chunkId);
+          mark.textContent = text.slice(seg.start, seg.end);
+          frag.appendChild(mark);
+          if (seg.end < text.length) {
+            frag.appendChild(document.createTextNode(text.slice(seg.end)));
+          }
+          parent.replaceChild(frag, seg.node);
+        }
+
+        hSet.add(chunkId);
+      }
+    };
+
+    window.addEventListener('expand-citation', handler);
+    return () => window.removeEventListener('expand-citation', handler);
+  }, [content, citations, getAnswerGramSet]);
 
   const components = React.useMemo(() => {
     const comps: Record<string, any> = {};
