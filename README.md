@@ -203,12 +203,19 @@ When the Agent's answer references knowledge base content, `[^chunk_{id}]` marke
 
 ### Chunking Strategies
 
-Two chunking strategies available, configurable per knowledge base:
+Three chunking strategies available, configurable per knowledge base:
 
-**Fixed-size chunking (`fixed_size`)**
-- Splits text into fixed-size chunks (default 512 chars/chunk), configurable overlap (default 128 chars)
+**Overlap chunking (`fixed_size`)**
+- Splits text into fixed-size chunks with configurable overlap to preserve context across boundaries
+- Default chunk size: 512 chars, overlap: 128 chars
 - Respects sentence boundaries (Chinese 。！？ and English .!?) — won't split mid-sentence
 - Handles URL line-break issues automatically
+
+**Recursive chunking (`recursive`)**
+- Inspired by LangChain RecursiveCharacterTextSplitter
+- Multi-level separators, coarse-to-fine: `\n\n` → `\n` → `。` → `！` → `？` → `. ` → `，`
+- Automatically falls back to finer separators when a chunk exceeds the size limit
+- Supports configurable overlap
 
 **Structure-aware chunking (`structure_aware`)**
 - Designed for Markdown documents — recognizes headings, code fences, paragraphs
