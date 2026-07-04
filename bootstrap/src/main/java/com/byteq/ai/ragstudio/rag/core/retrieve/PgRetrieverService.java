@@ -86,7 +86,7 @@ public class PgRetrieverService implements RetrieverService {
             "SELECT id, content, 0.5 AS score FROM t_knowledge_vector " +
             "WHERE metadata->>'collection_name' = ? "
         );
-        java.util.List<String> params = new java.util.ArrayList<>();
+        java.util.List<Object> params = new java.util.ArrayList<>();
         params.add(request.getCollectionName());
 
         for (String w : meaningful) {
@@ -94,7 +94,7 @@ public class PgRetrieverService implements RetrieverService {
             params.add("%" + w + "%");
         }
         sql.append(" LIMIT ?");
-        params.add(String.valueOf(request.getTopK()));
+        params.add(request.getTopK());  // Integer, not String
 
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         return jdbcTemplate.query(
@@ -104,7 +104,7 @@ public class PgRetrieverService implements RetrieverService {
                     .text(rs.getString("content"))
                     .score(rs.getFloat("score"))
                     .build(),
-            params.toArray()
+            params.toArray(new Object[0])
         );
     }
 
