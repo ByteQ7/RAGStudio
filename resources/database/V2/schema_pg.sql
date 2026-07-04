@@ -662,7 +662,11 @@ CREATE TABLE t_knowledge_vector (
 );
 CREATE INDEX idx_kv_metadata ON t_knowledge_vector USING gin(metadata);
 CREATE INDEX idx_kv_embedding ON t_knowledge_vector USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX idx_kv_tsvector ON t_knowledge_vector USING gin(to_tsvector('simple', coalesce(content, '')));
+-- 替换说明：pg_trgm GIN 索引替代了旧的 tsvector 索引
+-- tsvector 不拆分中文词（无空格），对中文关键词检索基本失效
+-- pg_trgm 按 3 字符片段索引，配合 ILIKE 实现中文/混合文本子串匹配
+-- 建索引前需要先执行：CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX idx_kv_content_trgm ON t_knowledge_vector USING gin (content gin_trgm_ops);
 COMMENT ON TABLE t_knowledge_vector IS '知识库向量存储表';
 COMMENT ON COLUMN t_knowledge_vector.id IS '分块ID';
 COMMENT ON COLUMN t_knowledge_vector.content IS '分块文本内容';

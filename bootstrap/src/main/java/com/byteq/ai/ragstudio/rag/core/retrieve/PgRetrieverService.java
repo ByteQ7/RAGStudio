@@ -70,21 +70,41 @@ public class PgRetrieverService implements RetrieverService {
     @Override
     @Transactional(readOnly = true)
     public List<RetrievedChunk> retrieveByKeyword(String query, RetrieveRequest request) {
+        // PostgreSQL 默认分词器不拆分中文词（无空格），tsvector/tsquery 无法命中中文关键词。
+        // 改用 ILIKE 子串匹配：将 query 按标点拆成多词，所有词都必须匹配。
+        String[] words = query.split("[\\s,，。.；;：:！!？?]+");
+        java.util.List<String> meaningful = java.util.Arrays.stream(words)
+                .filter(w -> !w.isBlank() && w.length() >= 2)
+                .toList();
+
+        if (meaningful.isEmpty()) {
+            meaningful = java.util.List.of(query);
+        }
+
+        // 构建 ILIKE AND 条件
+        StringBuilder sql = new StringBuilder(
+            "SELECT id, content, 0.5 AS score FROM t_knowledge_vector " +
+            "WHERE metadata->>'collection_name' = ? "
+        );
+        java.util.List<String> params = new java.util.ArrayList<>();
+        params.add(request.getCollectionName());
+
+        for (String w : meaningful) {
+            sql.append(" AND content ILIKE ?");
+            params.add("%" + w + "%");
+        }
+        sql.append(" LIMIT ?");
+        params.add(String.valueOf(request.getTopK()));
+
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         return jdbcTemplate.query(
-            "SELECT id, content, " +
-            "ts_rank(to_tsvector('simple', coalesce(content, '')), plainto_tsquery('simple', ?)) AS score " +
-            "FROM t_knowledge_vector " +
-            "WHERE metadata->>'collection_name' = ? " +
-            "AND to_tsvector('simple', coalesce(content, '')) @@ plainto_tsquery('simple', ?) " +
-            "ORDER BY score DESC " +
-            "LIMIT ?",
+            sql.toString(),
             (rs, rowNum) -> RetrievedChunk.builder()
                     .id(rs.getString("id"))
                     .text(rs.getString("content"))
                     .score(rs.getFloat("score"))
                     .build(),
-            query, request.getCollectionName(), query, request.getTopK()
+            params.toArray()
         );
     }
 
