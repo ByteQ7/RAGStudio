@@ -340,6 +340,9 @@ function preprocessContent(md: string): string {
   //    render inline instead of as plain text links.
   md = md.replace(BARE_IMAGE_URL_RE, (url) => `![图片](${url})`);
 
+  // 5. Strip [QUOTE:chunk_id] "..." markers (metadata, already extracted by backend)
+  md = md.replace(/\[QUOTE:\w+\]\s*"[^"]*"/g, '').trim();
+
   return md;
 }
 
@@ -353,237 +356,30 @@ interface MarkdownRendererProps {
    * full Markdown with syntax-highlighted code blocks.
    */
   compact?: boolean;
-  /**
-   * 知识库引用列表，用于将 [^chunk_{id}] 标记渲染为可点击的引用上标
-   */
   citations?: Array<{ id: string; text: string; score?: number }>;
 }
 
 export function MarkdownRenderer({ content, compact = false, citations }: MarkdownRendererProps) {
   const theme = useThemeStore((state) => state.theme);
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const gramCacheRef = React.useRef<Set<string> | null>(null);
-  const highlightedRef = React.useRef<Set<string>>(new Set());
 
-  // ====== 构建回答文本的 n-gram 索引（K=15） ======
-  const getAnswerGramSet = React.useCallback(() => {
-    if (gramCacheRef.current) return gramCacheRef.current;
-    const set = new Set<string>();
-    const K = 15;
-    for (let i = 0; i <= content.length - K; i++) {
-      set.add(content.slice(i, i + K));
-    }
-    gramCacheRef.current = set;
-    return set;
-  }, [content]);
-
-  // ====== 渲染后将 [^chunk_{id}] 文本替换为可点击的引用 span ======
-  // 使用 DOM TreeWalker 绕过 react-markdown 组件系统的版本兼容问题
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !citations || citations.length === 0) return;
-
-    const walker = document.createTreeWalker(
-      container,
-      NodeFilter.SHOW_TEXT,
-      null
-    );
-
-    const toReplace: Array<{ node: Text; id: string; fullMatch: string }> = [];
-    const regex = /\[\^chunk_(\w+)\]/g;
-    while (walker.nextNode()) {
-      const node = walker.currentNode as Text;
-      const text = node.textContent || '';
-      regex.lastIndex = 0;
+  // 将 [^chunk_{id}] 转为可点击的 markdown 链接 [N](#cite:xxx)
+  const processedContent = React.useMemo(() => {
+    let md = content;
+    if (citations && citations.length > 0) {
+      const numMap: Record<string, number> = {};
+      let numIdx = 0;
+      const scanRe = /\[\^chunk_(\w+)\]/g;
       let m;
-      while ((m = regex.exec(text)) !== null) {
-        toReplace.push({ node, id: m[1], fullMatch: m[0] });
+      while ((m = scanRe.exec(md)) !== null) {
+        if (!(m[1] in numMap)) numMap[m[1]] = ++numIdx;
       }
+      md = md.replace(/\[\^chunk_(\w+)\]/g, (_, id) => {
+        const num = numMap[id] || '?';
+        return `[${num}](#cite:${id})`;
+      });
     }
-
-    // ====== 预先计算编号映射 ======
-    // 扫描 content 中 [^chunk_{id}] 出现的顺序 → [1], [2], ...
-    const numMap: Record<string, number> = {};
-    let numIdx = 0;
-    const scanRe = /\[\^chunk_(\w+)\]/g;
-    let sm;
-    while ((sm = scanRe.exec(content)) !== null) {
-      if (!(sm[1] in numMap)) {
-        numMap[sm[1]] = ++numIdx;
-      }
-    }
-
-    for (const { node, id } of toReplace) {
-      const text = node.textContent || '';
-      const parent = node.parentNode;
-      if (!parent) continue;
-
-      const frag = document.createDocumentFragment();
-      let lastIdx = 0;
-      const re = /\[\^chunk_(\w+)\]/g;
-      re.lastIndex = 0;
-      let match;
-      while ((match = re.exec(text)) !== null) {
-        // 匹配前的文本
-        if (match.index > lastIdx) {
-          frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
-        }
-        // 引用 span — 显示为 [N] 编号
-        const chunkId = match[1];
-        const num = numMap[chunkId] || '?';
-        const citation = citations?.find((c) => c.id === chunkId);
-        const span = document.createElement('span');
-        span.className = 'citation-ref cursor-pointer text-[#0969da] dark:text-[#58a6ff] font-semibold text-xs select-none hover:underline';
-        span.setAttribute('data-citation-id', chunkId);
-        span.textContent = `[${num}]`;
-        span.title = citation?.text ?? '';
-        frag.appendChild(span);
-        lastIdx = match.index + match[0].length;
-      }
-      // 剩余文本
-      if (lastIdx < text.length) {
-        frag.appendChild(document.createTextNode(text.slice(lastIdx)));
-      }
-
-      parent.replaceChild(frag, node);
-    }
+    return preprocessContent(md);
   }, [content, citations]);
-
-  // ====== 引用点击事件委托 → 派发事件让 CitationList 展开 + 滚动 ======
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !citations || citations.length === 0) return;
-
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const ref = target.closest('[data-citation-id]') as HTMLElement | null;
-      if (ref) {
-        const chunkId = ref.getAttribute('data-citation-id');
-        if (chunkId) {
-          e.stopPropagation();
-          e.preventDefault();
-          window.dispatchEvent(new CustomEvent('expand-citation', { detail: chunkId }));
-        }
-      }
-    };
-
-    container.addEventListener('click', handler);
-    return () => container.removeEventListener('click', handler);
-  }, [content, citations]);
-
-  // ====== 监听展开/折叠事件 → 对 chunk 原文做文本匹配高亮 ======
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !citations || citations.length === 0) return;
-
-    const handler = (e: Event) => {
-      const chunkId = (e as CustomEvent).detail as string;
-      if (!chunkId) return;
-      const citation = citations.find((c) => c.id === chunkId);
-      if (!citation || !citation.text) return;
-
-      const hSet = highlightedRef.current;
-
-      if (hSet.has(chunkId)) {
-        // 折叠 → 移除高亮
-        container.querySelectorAll(`mark.chunk-highlight[data-citation-id="${chunkId}"]`).forEach((el) => {
-          const parent = el.parentNode;
-          if (parent) {
-            parent.replaceChild(document.createTextNode(el.textContent || ''), el);
-            parent.normalize();
-          }
-        });
-        hSet.delete(chunkId);
-      } else {
-        // 展开 → 应用高亮
-        const gramSet = getAnswerGramSet();
-        const chunkText = citation.text;
-
-        // 在 chunk text 中找到匹配的片段
-        const matches: Array<[number, number]> = [];
-        const MIN_MATCH = 15;
-        for (let i = 0; i <= chunkText.length - MIN_MATCH; i++) {
-          const gram = chunkText.slice(i, i + MIN_MATCH);
-          if (gramSet.has(gram)) {
-            if (matches.length > 0 && matches[matches.length - 1][1] >= i) {
-              matches[matches.length - 1][1] = i + MIN_MATCH;
-            } else {
-              matches.push([i, i + MIN_MATCH]);
-            }
-          }
-        }
-
-        // 扩展匹配区域 ±5 字符
-        const EXTEND = 5;
-        const spans = matches.map(([s, e]) => [
-          Math.max(0, s - EXTEND),
-          Math.min(chunkText.length, e + EXTEND),
-        ] as [number, number]);
-
-        // 合并重叠区域
-        const merged: Array<[number, number]> = [];
-        for (const [s, e] of spans) {
-          if (merged.length > 0 && merged[merged.length - 1][1] >= s) {
-            merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
-          } else {
-            merged.push([s, e]);
-          }
-        }
-
-        if (merged.length === 0) return;
-
-        // 匹配比例 ≥ 30% 才生效
-        const totalMatched = merged.reduce((acc, [s, e]) => acc + (e - s), 0);
-        if (totalMatched < chunkText.length * 0.3) return;
-
-        // DOM TreeWalker 查找并包裹 <mark>
-        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-        const textSegments: Array<{ node: Text; start: number; end: number }> = [];
-
-        while (walker.nextNode()) {
-          const node = walker.currentNode as Text;
-          const text = node.textContent || '';
-
-          for (const [s, e] of merged) {
-            const span = chunkText.slice(s, e);
-            const idx = text.indexOf(span);
-            if (idx !== -1) {
-              textSegments.push({ node, start: idx, end: idx + span.length });
-            }
-          }
-        }
-
-        const seen = new Set<Text>();
-        for (const seg of textSegments) {
-          if (seen.has(seg.node)) continue;
-          seen.add(seg.node);
-
-          const text = seg.node.textContent || '';
-          const parent = seg.node.parentNode;
-          if (!parent) continue;
-
-          const frag = document.createDocumentFragment();
-          if (seg.start > 0) {
-            frag.appendChild(document.createTextNode(text.slice(0, seg.start)));
-          }
-          const mark = document.createElement('mark');
-          mark.className = 'chunk-highlight';
-          mark.setAttribute('data-citation-id', chunkId);
-          mark.textContent = text.slice(seg.start, seg.end);
-          frag.appendChild(mark);
-          if (seg.end < text.length) {
-            frag.appendChild(document.createTextNode(text.slice(seg.end)));
-          }
-          parent.replaceChild(frag, seg.node);
-        }
-
-        hSet.add(chunkId);
-      }
-    };
-
-    window.addEventListener('expand-citation', handler);
-    return () => window.removeEventListener('expand-citation', handler);
-  }, [content, citations, getAnswerGramSet]);
 
   const components = React.useMemo(() => {
     const comps: Record<string, any> = {};
@@ -670,6 +466,23 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
       };
 
       comps.a = ({ children, href, ...props }: any) => {
+        // 引用链接 #cite:xxx → 渲染为可点击的 span
+        if (typeof href === "string" && href.startsWith("#cite:")) {
+          const chunkId = href.slice(6);
+          return (
+            <span
+              className="citation-ref cursor-pointer text-[#0969da] dark:text-[#58a6ff] font-semibold text-xs select-none hover:underline"
+              data-citation-id={chunkId}
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                e.preventDefault();
+                window.dispatchEvent(new CustomEvent("expand-citation", { detail: chunkId }));
+              }}
+            >
+              [{children}]
+            </span>
+          );
+        }
         const hrefStr = href || "";
         // 如果链接目标是图片 URL，渲染为图片链接卡片 + 下载按钮
         if (isImageUrl(hrefStr)) {
@@ -767,16 +580,14 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
       );
 
   return (
-    <div ref={containerRef}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeSanitize, rehypeKatex]}
-        components={components}
-        className={markdownClassName}
-      >
-        {preprocessContent(content)}
-      </ReactMarkdown>
-    </div>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeSanitize, rehypeKatex]}
+      components={components}
+      className={markdownClassName}
+    >
+      {processedContent}
+    </ReactMarkdown>
   );
 }
 

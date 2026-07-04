@@ -44,6 +44,13 @@ public abstract class ForwardingStreamCallback implements StreamCallback {
     }
 
     /**
+     * 获取底层被装饰的 StreamCallback 实例
+     */
+    public StreamCallback getDelegate() {
+        return delegate;
+    }
+
+    /**
      * 接收增量内容（final）
      * <p>
      * 首次收到 onContent 时触发 onFirstContent() 钩子，

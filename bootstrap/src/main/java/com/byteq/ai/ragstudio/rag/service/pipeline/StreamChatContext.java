@@ -63,8 +63,26 @@ public class StreamChatContext {
     private String mcpToolId;
 
     /** Agent 检索过程中获取的 Chunk，用于引用溯源 */
-    @Setter
     private List<RetrievedChunk> retrievedChunks;
+
+    /**
+     * 设置检索到的 Chunk 列表
+     */
+    public void setRetrievedChunks(List<RetrievedChunk> chunks) {
+        this.retrievedChunks = chunks;
+    }
+
+    /**
+     * 追加检索到的 Chunk（Agent 可能多次调用 rag_search，每次追加而非覆盖）
+     */
+    public void addRetrievedChunks(List<RetrievedChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) return;
+        if (this.retrievedChunks == null || this.retrievedChunks.isEmpty()) {
+            this.retrievedChunks = new java.util.ArrayList<>(chunks);
+        } else {
+            this.retrievedChunks.addAll(chunks);
+        }
+    }
 
     /**
      * 获取改写后的问题，如果改写结果为空则返回原始问题

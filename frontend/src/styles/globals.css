@@ -764,14 +764,4 @@ textarea {
   margin-bottom: 0;
 }
 
-/* ── 引用原文高亮 ── */
-mark.chunk-highlight {
-  background: linear-gradient(120deg, #fde68a 0%, #fde68a 40%, #fcd34d 100%);
-  border-radius: 2px;
-  padding: 0 1px;
-  transition: background 0.3s ease;
-}
 
-.dark mark.chunk-highlight {
-  background: linear-gradient(120deg, #92400e 0%, #92400e 40%, #b45309 100%);
-}
