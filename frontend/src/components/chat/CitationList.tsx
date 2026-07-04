@@ -162,60 +162,36 @@ export function CitationList({ message }: CitationListProps) {
                       const chunkText = citation.text;
                       const cleanAnswer = answer.replace(/\[\^chunk_\w+\]/g, '');
 
-                      // pg_trgm 启发：构建 answer 的 trigram 集合
-                      const padAnswer = '  ' + cleanAnswer + '  ';
-                      const ansGrams = new Set<string>();
-                      for (let i = 0; i <= padAnswer.length - 3; i++) {
-                        ansGrams.add(padAnswer.slice(i, i + 3));
+                      // 按标点/空格拆分 chunk 原文为语义片段
+                      // 每个片段要么整段匹配要么不匹配，避免断词
+                      const segs = chunkText.split(/([，。；：、！？\n\r\s]+)/);
+                      const matched: boolean[] = new Array(segs.length).fill(false);
+
+                      for (let i = 0; i < segs.length; i += 2) {
+                        const seg = segs[i].trim();
+                        // 跳过 ≤ 2 字符的虚词（的、了、在、和等）
+                        if (!seg || seg.length <= 2) {
+                          matched[i] = false;
+                          continue;
+                        }
+                        // 整段匹配：该片段在 cleanAnswer 中出现
+                        matched[i] = cleanAnswer.includes(seg);
                       }
 
-                      // 对 chunk 逐字符打分（3 trigrams ≥ 1 命中即标记）
-                      const padChunk = '  ' + chunkText + '  ';
-                      const scores: number[] = [];
-                      for (let j = 2; j < padChunk.length - 2; j++) {
-                        let hits = 0;
-                        if (ansGrams.has(padChunk.slice(j - 2, j + 1))) hits++;
-                        if (ansGrams.has(padChunk.slice(j - 1, j + 2))) hits++;
-                        if (ansGrams.has(padChunk.slice(j, j + 3))) hits++;
-                        scores.push(hits / 3);
-                      }
-
-                      // ≥ 25% → 标记，合并段（间隙 ≤ 5），前后扩展 3
-                      const rawSegs: Array<[number, number]> = [];
-                      let i = 0;
-                      while (i < scores.length) {
-                        if (scores[i] >= 0.25) {
-                          const segStart = i;
-                          while (i < scores.length && scores[i] >= 0.25) i++;
-                          rawSegs.push([segStart, i]);
-                        } else { i++; }
-                      }
-
-                      const mergedSegs: Array<[number, number]> = [];
-                      for (const [s, e] of rawSegs) {
-                        if (mergedSegs.length > 0 && s - mergedSegs[mergedSegs.length - 1][1] <= 5) {
-                          mergedSegs[mergedSegs.length - 1][1] = e;
-                        } else { mergedSegs.push([s, e]); }
-                      }
-
-                      const merged = mergedSegs.map(([s, e]) => [
-                        Math.max(0, s - 3), Math.min(chunkText.length, e + 3)
-                      ] as [number, number]);
-
-                      const total = merged.reduce((a, [s, e]) => a + (e - s), 0);
-                      if (total < chunkText.length * 0.155) {
-                        return <mark className="rounded-sm bg-[#fde68a] dark:bg-[#92400e] px-0.5">{chunkText}</mark>;
-                      }
-
-                      const parts: React.ReactNode[] = [];
-                      let lastEnd = 0;
-                      for (const [s, e] of merged) {
-                        if (s > lastEnd) parts.push(chunkText.slice(lastEnd, s));
-                        parts.push(<mark key={s} className="rounded-sm bg-[#fde68a] dark:bg-[#92400e] px-0.5">{chunkText.slice(s, e)}</mark>);
-                        lastEnd = e;
-                      }
-                      if (lastEnd < chunkText.length) parts.push(chunkText.slice(lastEnd));
-                      return parts;
+                      // 用 <mark> 包裹匹配的片段（保留标点分隔符）
+                      return (
+                        <>
+                          {segs.map((seg, i) =>
+                            matched[i] ? (
+                              <mark key={i} className="rounded-sm bg-[#fde68a] dark:bg-[#92400e] px-0.5">
+                                {seg}
+                              </mark>
+                            ) : (
+                              seg
+                            )
+                          )}
+                        </>
+                      );
                     })()}
                   </p>
                 </div>
