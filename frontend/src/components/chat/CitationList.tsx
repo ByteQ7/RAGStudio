@@ -162,20 +162,50 @@ export function CitationList({ message }: CitationListProps) {
                       const chunkText = citation.text;
                       const cleanAnswer = answer.replace(/\[\^chunk_\w+\]/g, '');
 
-                      // 按标点/空格拆分 chunk 原文为语义片段
-                      // 每个片段要么整段匹配要么不匹配，避免断词
+                      // 按标点/空白拆分 chunk 原文为语义片段
                       const segs = chunkText.split(/([，。；：、！？\n\r\s]+)/);
                       const matched: boolean[] = new Array(segs.length).fill(false);
 
                       for (let i = 0; i < segs.length; i += 2) {
                         const seg = segs[i].trim();
-                        // 跳过 ≤ 2 字符的虚词（的、了、在、和等）
-                        if (!seg || seg.length <= 2) {
-                          matched[i] = false;
-                          continue;
-                        }
-                        // 整段匹配：该片段在 cleanAnswer 中出现
+                        if (!seg || seg.length <= 2) continue;
                         matched[i] = cleanAnswer.includes(seg);
+                      }
+
+                      // 逐行判断：≥ 50% 匹配 → 整行高亮；< 10% 匹配 → 整行无高亮
+                      let lineStart = 0;
+                      for (let i = 1; i < segs.length; i += 2) {
+                        if (/[\n\r]/.test(segs[i])) {
+                          let totalSegs = 0, hitSegs = 0;
+                          for (let j = lineStart; j < i; j += 2) {
+                            const s = segs[j].trim();
+                            if (!s || s.length <= 2) continue;
+                            totalSegs++;
+                            if (matched[j]) hitSegs++;
+                          }
+                          const ratio = totalSegs > 0 ? hitSegs / totalSegs : 0;
+                          if (ratio >= 0.5) {
+                            for (let j = lineStart; j < i; j += 2) matched[j] = true;
+                          } else if (ratio < 0.18) {
+                            for (let j = lineStart; j < i; j += 2) matched[j] = false;
+                          }
+                          lineStart = i + 1;
+                        }
+                      }
+                      if (lineStart < segs.length) {
+                        let totalSegs = 0, hitSegs = 0;
+                        for (let j = lineStart; j < segs.length; j += 2) {
+                          const s = segs[j].trim();
+                          if (!s || s.length <= 2) continue;
+                          totalSegs++;
+                          if (matched[j]) hitSegs++;
+                        }
+                        const ratio = totalSegs > 0 ? hitSegs / totalSegs : 0;
+                        if (ratio >= 0.5) {
+                          for (let j = lineStart; j < segs.length; j += 2) matched[j] = true;
+                        } else if (ratio < 0.18) {
+                          for (let j = lineStart; j < segs.length; j += 2) matched[j] = false;
+                        }
                       }
 
                       // 用 <mark> 包裹匹配的片段（保留标点分隔符）
