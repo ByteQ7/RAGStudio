@@ -172,41 +172,39 @@ export function CitationList({ message }: CitationListProps) {
                         matched[i] = cleanAnswer.includes(seg);
                       }
 
-                      // 逐行判断：≥ 50% 匹配 → 整行高亮；< 10% 匹配 → 整行无高亮
-                      let lineStart = 0;
-                      for (let i = 1; i < segs.length; i += 2) {
-                        if (/[\n\r]/.test(segs[i])) {
-                          let totalSegs = 0, hitSegs = 0;
-                          for (let j = lineStart; j < i; j += 2) {
-                            const s = segs[j].trim();
-                            if (!s || s.length <= 2) continue;
-                            totalSegs++;
-                            if (matched[j]) hitSegs++;
-                          }
-                          const ratio = totalSegs > 0 ? hitSegs / totalSegs : 0;
-                          if (ratio >= 0.5) {
-                            for (let j = lineStart; j < i; j += 2) matched[j] = true;
-                          } else if (ratio < 0.18) {
-                            for (let j = lineStart; j < i; j += 2) matched[j] = false;
-                          }
-                          lineStart = i + 1;
-                        }
-                      }
-                      if (lineStart < segs.length) {
-                        let totalSegs = 0, hitSegs = 0;
-                        for (let j = lineStart; j < segs.length; j += 2) {
+                      // 工具：是否含有效文字（中文、英文、数字）
+                      const hasText = (s: string) => { const t = s.trim(); return t.length > 0 && /[\w\u4e00-\u9fff]/.test(t); };
+
+                      // 逐行判断
+                      const processLine = (from: number, to: number) => {
+                        let totalSegs = 0, hitSegs = 0, symHits = 0;
+                        for (let j = from; j < to; j += 2) {
                           const s = segs[j].trim();
                           if (!s || s.length <= 2) continue;
                           totalSegs++;
-                          if (matched[j]) hitSegs++;
+                          if (matched[j]) {
+                            hitSegs++;
+                            if (!hasText(s)) symHits++;
+                          }
                         }
                         const ratio = totalSegs > 0 ? hitSegs / totalSegs : 0;
                         if (ratio >= 0.5) {
-                          for (let j = lineStart; j < segs.length; j += 2) matched[j] = true;
+                          for (let j = from; j < to; j += 2) matched[j] = true;
                         } else if (ratio < 0.18) {
-                          for (let j = lineStart; j < segs.length; j += 2) matched[j] = false;
+                          for (let j = from; j < to; j += 2) matched[j] = false;
+                        } else if (hitSegs > 0 && symHits / hitSegs > 0.6) {
+                          for (let j = from; j < to; j += 2) matched[j] = false;
+                        }
+                      };
+
+                      let lineStart = 0;
+                      for (let i = 1; i < segs.length; i += 2) {
+                        if (/[\n\r]/.test(segs[i])) {
+                          processLine(lineStart, i);
+                          lineStart = i + 1;
                         }
                       }
+                      if (lineStart < segs.length) processLine(lineStart, segs.length);
 
                       // 用 <mark> 包裹匹配的片段（保留标点分隔符）
                       return (
