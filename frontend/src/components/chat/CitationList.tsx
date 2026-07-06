@@ -158,69 +158,7 @@ export function CitationList({ message }: CitationListProps) {
               {isExpanded && (
                 <div className="mt-1 ml-6 rounded-lg border border-gray-100 bg-white px-3 py-2">
                   <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">
-                    {(() => {
-                      const chunkText = citation.text;
-                      const cleanAnswer = answer.replace(/\[\^chunk_\w+\]/g, '');
-
-                      // 按标点/空白拆分 chunk 原文为语义片段
-                      const segs = chunkText.split(/([，。；：、！？\n\r\s]+)/);
-                      const matched: boolean[] = new Array(segs.length).fill(false);
-
-                      for (let i = 0; i < segs.length; i += 2) {
-                        const seg = segs[i].trim();
-                        if (!seg || seg.length <= 2) continue;
-                        matched[i] = cleanAnswer.includes(seg);
-                      }
-
-                      // 工具：是否含有效文字（中文、英文、数字）
-                      const hasText = (s: string) => { const t = s.trim(); return t.length > 0 && /[\w\u4e00-\u9fff]/.test(t); };
-
-                      // 逐行判断
-                      const processLine = (from: number, to: number) => {
-                        let totalSegs = 0, hitSegs = 0, symHits = 0;
-                        for (let j = from; j < to; j += 2) {
-                          const s = segs[j].trim();
-                          if (!s || s.length <= 2) continue;
-                          totalSegs++;
-                          if (matched[j]) {
-                            hitSegs++;
-                            if (!hasText(s)) symHits++;
-                          }
-                        }
-                        const ratio = totalSegs > 0 ? hitSegs / totalSegs : 0;
-                        if (ratio >= 0.5) {
-                          for (let j = from; j < to; j += 2) matched[j] = true;
-                        } else if (ratio < 0.18) {
-                          for (let j = from; j < to; j += 2) matched[j] = false;
-                        } else if (hitSegs > 0 && symHits / hitSegs > 0.6) {
-                          for (let j = from; j < to; j += 2) matched[j] = false;
-                        }
-                      };
-
-                      let lineStart = 0;
-                      for (let i = 1; i < segs.length; i += 2) {
-                        if (/[\n\r]/.test(segs[i])) {
-                          processLine(lineStart, i);
-                          lineStart = i + 1;
-                        }
-                      }
-                      if (lineStart < segs.length) processLine(lineStart, segs.length);
-
-                      // 用 <mark> 包裹匹配的片段（保留标点分隔符）
-                      return (
-                        <>
-                          {segs.map((seg, i) =>
-                            matched[i] ? (
-                              <mark key={i} className="rounded-sm bg-[#fde68a] dark:bg-[#92400e] px-0.5">
-                                {seg}
-                              </mark>
-                            ) : (
-                              seg
-                            )
-                          )}
-                        </>
-                      );
-                    })()}
+                    {citation.text}
                   </p>
                 </div>
               )}
