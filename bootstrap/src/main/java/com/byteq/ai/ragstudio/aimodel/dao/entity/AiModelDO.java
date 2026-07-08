@@ -71,6 +71,11 @@ public class AiModelDO {
     private Integer supportsThinking;
 
     /**
+     * 是否支持多模态（图片识别）：1-是，0-否
+     */
+    private Integer supportsMultimodal;
+
+    /**
      * 向量维度（仅 embedding 模型使用）
      */
     private Integer dimension;

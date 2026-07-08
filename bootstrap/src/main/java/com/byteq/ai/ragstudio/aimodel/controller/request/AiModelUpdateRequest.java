@@ -26,6 +26,9 @@ public class AiModelUpdateRequest {
     /** 是否支持深度思考 */
     private Integer supportsThinking;
 
+    /** 是否支持多模态（图片识别） */
+    private Integer supportsMultimodal;
+
     /** 向量维度（仅 embedding） */
     private Integer dimension;
 

@@ -21,6 +21,7 @@ public class AiModelVO {
     private Integer priority;
     private Integer enabled;
     private Integer supportsThinking;
+    private Integer supportsMultimodal;
     private Integer dimension;
     private String customUrl;
     private Date createTime;

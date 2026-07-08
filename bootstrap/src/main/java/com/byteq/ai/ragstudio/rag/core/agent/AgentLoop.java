@@ -267,8 +267,12 @@ public class AgentLoop {
         }
         messages.add(ChatMessage.system(reminder.toString()));
 
-        // 4. 用户当前问题
-        messages.add(ChatMessage.user(ctx.getQuestion()));
+        // 4. 用户当前问题（含图片 URL）
+        ChatMessage userMsg = ChatMessage.user(ctx.getQuestion());
+        if (CollUtil.isNotEmpty(ctx.getImageUrls())) {
+            userMsg.setImageUrls(new java.util.ArrayList<>(ctx.getImageUrls()));
+        }
+        messages.add(userMsg);
 
         return messages;
     }

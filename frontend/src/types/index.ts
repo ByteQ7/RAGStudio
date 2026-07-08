@@ -37,6 +37,7 @@ export interface Message {
   status?: MessageStatus;
   agentSteps?: AgentStep[];
   citations?: Citation[];
+  imageUrls?: string[];
 }
 
 export interface StreamMetaPayload {

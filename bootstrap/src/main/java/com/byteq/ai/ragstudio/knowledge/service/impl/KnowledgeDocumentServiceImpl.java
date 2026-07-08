@@ -57,6 +57,7 @@ import com.byteq.ai.ragstudio.knowledge.service.KnowledgeDocumentScheduleService
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeDocumentService;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorSpaceId;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorStoreService;
+import com.byteq.ai.ragstudio.rag.constant.RAGConstant;
 import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
@@ -122,7 +123,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         SourceType sourceType = SourceType.normalize(requestParam.getSourceType());
         validateSourceAndSchedule(sourceType, requestParam);
-        StoredFileDTO stored = resolveStoredFile(kbDO.getCollectionName(), sourceType, requestParam.getSourceLocation(), file);
+        String documentPrefix = RAGConstant.S3_DOCUMENT_PREFIX + "/" + kbDO.getCollectionName();
+        StoredFileDTO stored = resolveStoredFile(RAGConstant.S3_BUCKET_NAME, documentPrefix, sourceType, requestParam.getSourceLocation(), file);
         ProcessModeConfig modeConfig = resolveProcessModeConfig(requestParam);
 
         KnowledgeDocumentDO documentDO = KnowledgeDocumentDO.builder()
@@ -840,12 +842,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     // 根据来源类型解析文件存储：本地文件直接上传，远程 URL 通过 RemoteFileFetcher 拉取
-    private StoredFileDTO resolveStoredFile(String bucketName, SourceType sourceType, String sourceLocation, MultipartFile file) {
+    // 上传到统一桶 ragstudio 下的 document/ 目录
+    private StoredFileDTO resolveStoredFile(String bucketName, String prefix, SourceType sourceType, String sourceLocation, MultipartFile file) {
         if (SourceType.FILE == sourceType) {
             Assert.notNull(file, () -> new ClientException("上传文件不能为空"));
-            return fileStorageService.upload(bucketName, file);
+            return fileStorageService.upload(bucketName, prefix, file);
         }
-        return remoteFileFetcher.fetchAndStore(bucketName, sourceLocation);
+        return remoteFileFetcher.fetchAndStore(bucketName, prefix, sourceLocation);
     }
 
     // 根据分块模式和文档的分块参数 JSON 构建分块配置选项

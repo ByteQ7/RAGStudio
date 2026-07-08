@@ -16,6 +16,13 @@ public interface FileStorageService {
     StoredFileDTO upload(String bucketName, MultipartFile file);
 
     /**
+     * 上传文件到指定前缀目录（流式，低内存）
+     * <p>
+     * 例如 prefix="document/" → 生成的 key 为 document/uuid.ext
+     */
+    StoredFileDTO upload(String bucketName, String prefix, MultipartFile file);
+
+    /**
      * 上传文件（流式，低内存）
      * <p>
      * 通过 S3Presigner 预签名 URL + HttpURLConnection 流式上传，堆内存开销近似为零
@@ -24,12 +31,22 @@ public interface FileStorageService {
     StoredFileDTO upload(String bucketName, InputStream content, long size, String originalFilename, String contentType);
 
     /**
+     * 上传文件到指定前缀目录（流式，低内存）
+     */
+    StoredFileDTO upload(String bucketName, String prefix, InputStream content, long size, String originalFilename, String contentType);
+
+    /**
      * 上传文件（流式，低内存）
      * <p>
      * 通过 S3Presigner 预签名 URL + HttpURLConnection 流式上传，堆内存开销近似为零
      * 适用于大文件上传、高并发场景。不具备 SDK 内置的自动重试能力，失败需业务层自行重试
      */
     StoredFileDTO upload(String bucketName, byte[] content, String originalFilename, String contentType);
+
+    /**
+     * 上传文件到指定前缀目录（流式，低内存）
+     */
+    StoredFileDTO upload(String bucketName, String prefix, byte[] content, String originalFilename, String contentType);
 
     /**
      * 上传文件（SDK 原生，带自动重试）
@@ -57,4 +74,17 @@ public interface FileStorageService {
      * @param url 文件的访问 URL
      */
     void deleteByUrl(String url);
+
+    /**
+     * 生成 S3 预签名 GET URL（临时可访问的 HTTP URL）
+     * <p>
+     * 将 s3://bucket/key 格式的内部 URL 转换为带签名的 HTTP URL，
+     * 浏览器和 LLM API 可以通过此 URL 直接访问图片内容。
+     * 适用于前端图片渲染、多模态模型图片输入等场景。
+     * </p>
+     *
+     * @param s3Url s3:// 协议的内部 URL
+     * @return 预签名 HTTP URL，有效期 1 小时
+     */
+    String generatePresignedGetUrl(String s3Url);
 }

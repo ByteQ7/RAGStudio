@@ -70,6 +70,9 @@ public class ConversationMessageDO {
     /** 引用溯源 JSON */
     private String citations;
 
+    /** 图片 URL 列表 JSON（用于多模态消息） */
+    private String imageUrls;
+
     /**
      * 创建时间，自动填充
      */

@@ -9,11 +9,13 @@ import java.util.List;
 @Data
 public class ChatRequest {
 
-    @NotBlank(message = "问题不能为空")
     @Size(max = 10000, message = "问题长度不能超过10000个字符")
     private String question;
 
     private String conversationId;
 
     private List<String> knowledgeBaseIds;
+
+    /** 图片 S3 URL 列表（用于多模态识别） */
+    private List<String> imageUrls;
 }

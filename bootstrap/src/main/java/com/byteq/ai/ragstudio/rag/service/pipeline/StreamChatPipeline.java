@@ -270,7 +270,7 @@ public class StreamChatPipeline {
         ToolRegistry toolRegistry = traceNode("工具注册", "TOOL_REGISTRY", () -> buildAgentToolRegistry(ctx, finalKbIds));
         checkCancellation(ctx);
 
-        // 3. 构建 AgentContext 并执行 AgentLoop
+        // 3. 构建 AgentContext 并执行 AgentLoop（含图片 URL 支持）
         AgentContext agentCtx = new AgentContext(
                 ctx.getQuestion(),
                 ctx.getHistory(),
@@ -278,7 +278,8 @@ public class StreamChatPipeline {
                 kbRelevant,
                 toolRegistry.listAll(),
                 10,        // maxIterations
-                120_000L   // timeoutMs
+                120_000L,  // timeoutMs
+                ctx.getImageUrls()
         );
 
         // 构建 AgentLoop（per-request 实例，因为 ToolRegistry 是 per-request 的）
@@ -350,12 +351,16 @@ public class StreamChatPipeline {
         return registry;
     }
 
-    // 加载对话历史记忆并将当前用户问题追加到上下文中
+    // 加载对话历史记忆并将当前用户问题（含图片 URL）追加到上下文中
     private void loadMemory(StreamChatContext ctx) {
+        ChatMessage userMsg = ChatMessage.user(ctx.getQuestion());
+        if (CollUtil.isNotEmpty(ctx.getImageUrls())) {
+            userMsg.setImageUrls(ctx.getImageUrls());
+        }
         List<ChatMessage> history = memoryService.loadAndAppend(
                 ctx.getConversationId(),
                 ctx.getUserId(),
-                ChatMessage.user(ctx.getQuestion())
+                userMsg
         );
         ctx.setHistory(history);
     }

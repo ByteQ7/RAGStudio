@@ -13,6 +13,8 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 
 import java.io.ByteArrayInputStream;
@@ -48,6 +50,12 @@ public class S3FileStorageService implements FileStorageService {
     @Override
     @SneakyThrows
     public StoredFileDTO upload(String bucketName, MultipartFile file) {
+        return upload(bucketName, null, file);
+    }
+
+    @Override
+    @SneakyThrows
+    public StoredFileDTO upload(String bucketName, String prefix, MultipartFile file) {
         validateBucketName(bucketName);
         Assert.isFalse(file == null || file.isEmpty(), "上传文件不能为空");
 
@@ -62,7 +70,7 @@ public class S3FileStorageService implements FileStorageService {
 
         // MultipartFile.getInputStream() 每次调用都返回新流（从底层临时文件重新打开），无需再创建临时文件
         try (InputStream is = file.getInputStream()) {
-            return streamUploadToS3(bucketName, is, size, originalFilename, detectedContentType);
+            return streamUploadToS3(bucketName, prefix, is, size, originalFilename, detectedContentType);
         }
     }
 
@@ -70,22 +78,34 @@ public class S3FileStorageService implements FileStorageService {
     @Override
     @SneakyThrows
     public StoredFileDTO upload(String bucketName, InputStream content, long size, String originalFilename, String contentType) {
+        return upload(bucketName, null, content, size, originalFilename, contentType);
+    }
+
+    @Override
+    @SneakyThrows
+    public StoredFileDTO upload(String bucketName, String prefix, InputStream content, long size, String originalFilename, String contentType) {
         validateBucketName(bucketName);
         Assert.notNull(content, "上传内容不能为空");
         Assert.isTrue(size >= 0, "上传内容大小不能小于 0");
         String detected = resolveContentType(originalFilename, contentType);
-        return streamUploadToS3(bucketName, content, size, originalFilename, detected);
+        return streamUploadToS3(bucketName, prefix, content, size, originalFilename, detected);
     }
 
     // 通过预签名 URL 流式上传字节数组
     @Override
     @SneakyThrows
     public StoredFileDTO upload(String bucketName, byte[] content, String originalFilename, String contentType) {
+        return upload(bucketName, null, content, originalFilename, contentType);
+    }
+
+    @Override
+    @SneakyThrows
+    public StoredFileDTO upload(String bucketName, String prefix, byte[] content, String originalFilename, String contentType) {
         validateBucketName(bucketName);
         Assert.notNull(content, "上传内容不能为空");
         String detected = resolveContentType(originalFilename, contentType);
         // byte[] 本身已在内存中，ByteArrayInputStream 不产生额外拷贝
-        return streamUploadToS3(bucketName, new ByteArrayInputStream(content), content.length, originalFilename, detected);
+        return streamUploadToS3(bucketName, prefix, new ByteArrayInputStream(content), content.length, originalFilename, detected);
     }
 
     // 解析 S3 URL 并通过 SDK 获取文件输入流
@@ -103,6 +123,19 @@ public class S3FileStorageService implements FileStorageService {
         s3Client.deleteObject(b -> b.bucket(loc.bucket()).key(loc.key()));
     }
 
+    // 生成 S3 预签名 GET URL（有效期 1 小时）
+    @Override
+    public String generatePresignedGetUrl(String s3Url) {
+        S3Location loc = parseS3Url(s3Url);
+        PresignedGetObjectRequest presignedReq = s3Presigner.presignGetObject(p -> p
+                .signatureDuration(Duration.ofHours(1))
+                .getObjectRequest(GetObjectRequest.builder()
+                        .bucket(loc.bucket())
+                        .key(loc.key())
+                        .build()));
+        return presignedReq.url().toString();
+    }
+
     /**
      * 通过 S3Presigner 生成预签名 URL，配合 HttpURLConnection 流式上传
      * <p>
@@ -118,7 +151,14 @@ public class S3FileStorageService implements FileStorageService {
     private StoredFileDTO streamUploadToS3(String bucketName, InputStream inputStream,
                                            long size, String originalFilename,
                                            String detectedContentType) {
-        String s3Key = generateS3Key(originalFilename);
+        return streamUploadToS3(bucketName, null, inputStream, size, originalFilename, detectedContentType);
+    }
+
+    @SneakyThrows
+    private StoredFileDTO streamUploadToS3(String bucketName, String prefix, InputStream inputStream,
+                                           long size, String originalFilename,
+                                           String detectedContentType) {
+        String s3Key = generateS3Key(prefix, originalFilename);
 
         // 1. 生成预签名 URL（纯 CPU 计算，无 IO）
         PresignedPutObjectRequest presignedReq = s3Presigner.presignPutObject(p -> p
@@ -142,12 +182,18 @@ public class S3FileStorageService implements FileStorageService {
     @SneakyThrows
     public StoredFileDTO reliableUpload(String bucketName, InputStream content, long size,
                                         String originalFilename, String contentType) {
+        return reliableUpload(bucketName, content, size, originalFilename, contentType, null);
+    }
+
+    // 带前缀的 SDK 原生上传
+    private StoredFileDTO reliableUpload(String bucketName, InputStream content, long size,
+                                         String originalFilename, String contentType, String prefix) {
         validateBucketName(bucketName);
         Assert.notNull(content, "上传内容不能为空");
         Assert.isTrue(size >= 0, "上传内容大小不能小于 0");
         String detected = resolveContentType(originalFilename, contentType);
 
-        String s3Key = generateS3Key(originalFilename);
+        String s3Key = generateS3Key(prefix, originalFilename);
 
         s3Client.putObject(
                 PutObjectRequest.builder()
@@ -243,10 +289,16 @@ public class S3FileStorageService implements FileStorageService {
 
     // 生成唯一的 S3 对象 Key（UUID + 后缀）
     private String generateS3Key(String originalFilename) {
+        return generateS3Key(null, originalFilename);
+    }
+
+    // 生成带前缀的 S3 对象 Key（prefix/uuid.ext）
+    private String generateS3Key(String prefix, String originalFilename) {
         String suffix = extractSuffix(originalFilename);
         UUID uuid = UUID.randomUUID();
         String key = String.format("%016x%016x", uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
-        return suffix.isBlank() ? key : key + "." + suffix;
+        String filename = suffix.isBlank() ? key : key + "." + suffix;
+        return (prefix != null && !prefix.isBlank()) ? prefix + "/" + filename : filename;
     }
 
     // 校验 bucket 名称不为空

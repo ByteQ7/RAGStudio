@@ -108,6 +108,8 @@ public class DynamicModelConfig {
         private Boolean enabled = true;
         @Builder.Default
         private Boolean supportsThinking = false;
+        @Builder.Default
+        private Boolean supportsMultimodal = false;
         private Boolean isDefault;
         private String capability;
     }

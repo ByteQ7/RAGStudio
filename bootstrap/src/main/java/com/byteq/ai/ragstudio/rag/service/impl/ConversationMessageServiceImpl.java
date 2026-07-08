@@ -11,11 +11,13 @@ import com.byteq.ai.ragstudio.rag.dao.mapper.ConversationMapper;
 import com.byteq.ai.ragstudio.rag.dao.mapper.ConversationMessageMapper;
 import com.byteq.ai.ragstudio.rag.dao.mapper.ConversationSummaryMapper;
 import com.byteq.ai.ragstudio.rag.enums.ConversationMessageOrder;
+import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import com.byteq.ai.ragstudio.rag.service.MessageFeedbackService;
 import com.byteq.ai.ragstudio.rag.service.ConversationMessageService;
 import com.byteq.ai.ragstudio.rag.service.bo.ConversationMessageBO;
 import com.byteq.ai.ragstudio.rag.service.bo.ConversationSummaryBO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -30,6 +32,7 @@ import java.util.Map;
  * 同时整合用户反馈（点赞/点踩）信息到消息列表中。
  * </p>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ConversationMessageServiceImpl implements ConversationMessageService {
@@ -38,6 +41,7 @@ public class ConversationMessageServiceImpl implements ConversationMessageServic
     private final ConversationSummaryMapper conversationSummaryMapper;
     private final ConversationMapper conversationMapper;
     private final MessageFeedbackService feedbackService;
+    private final FileStorageService fileStorageService;
 
     // 将对话消息（用户问题或 AI 回答）持久化到数据库，返回新消息 ID
     @Override
@@ -102,9 +106,19 @@ public class ConversationMessageServiceImpl implements ConversationMessageServic
                     .thinkingDuration(record.getThinkingDuration())
                     .agentSteps(record.getAgentSteps())
                     .citations(record.getCitations())
+                    .imageUrls(record.getImageUrls())
                     .vote(votesByMessageId.get(record.getId()))
                     .createTime(record.getCreateTime())
                     .build();
+            // 将 s3:// 协议 URL 转换为预签名 HTTP URL（有效 1 小时），方便前端直接渲染
+            if (StrUtil.isNotBlank(vo.getImageUrls())) {
+                try {
+                    String converted = convertImageUrlsToPresigned(vo.getImageUrls());
+                    vo.setImageUrls(converted);
+                } catch (Exception e) {
+                    log.warn("转换 imageUrls 预签名 URL 失败: {}", vo.getImageUrls(), e);
+                }
+            }
             result.add(vo);
         }
 
@@ -116,5 +130,31 @@ public class ConversationMessageServiceImpl implements ConversationMessageServic
     public void addMessageSummary(ConversationSummaryBO conversationSummary) {
         ConversationSummaryDO conversationSummaryDO = BeanUtil.toBean(conversationSummary, ConversationSummaryDO.class);
         conversationSummaryMapper.insert(conversationSummaryDO);
+    }
+
+    // 将 imageUrls JSON 数组中的 s3:// URL 替换为预签名 HTTP URL
+    private String convertImageUrlsToPresigned(String imageUrlsJson) {
+        if (StrUtil.isBlank(imageUrlsJson)) return imageUrlsJson;
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            java.util.List<String> urls = mapper.readValue(imageUrlsJson,
+                    new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {});
+            if (urls == null || urls.isEmpty()) return imageUrlsJson;
+
+            boolean changed = false;
+            for (int i = 0; i < urls.size(); i++) {
+                String url = urls.get(i);
+                if (url != null && url.startsWith("s3://")) {
+                    urls.set(i, fileStorageService.generatePresignedGetUrl(url));
+                    changed = true;
+                }
+            }
+            if (changed) {
+                return mapper.writeValueAsString(urls);
+            }
+        } catch (Exception e) {
+            log.warn("转换 imageUrls 预签名 URL 失败，保留原始 URL", e);
+        }
+        return imageUrlsJson;
     }
 }

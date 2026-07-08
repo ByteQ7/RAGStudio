@@ -38,7 +38,7 @@ public interface RAGChatService {
      * @param knowledgeBaseIds 用户选定的知识库 ID 列表（可选，为空时不检索知识库）
      * @param emitter         SSE 发射器，用于向客户端推送流式响应
      */
-    void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, SseEmitter emitter);
+    void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, List<String> imageUrls, SseEmitter emitter);
 
     /**
      * 停止指定任务 ID 的流式会话

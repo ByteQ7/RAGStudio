@@ -54,6 +54,9 @@ public class ConversationMessageVO {
     /** 引用溯源 JSON */
     private String citations;
 
+    /** 图片 URL 列表 JSON（数组格式，用于多模态消息） */
+    private String imageUrls;
+
     /**
      * 反馈值：1=点赞，-1=点踩，null=未反馈
      */

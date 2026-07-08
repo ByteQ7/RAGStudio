@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 对话消息实体
  *
@@ -67,6 +69,11 @@ public class ChatMessage {
      * 消息的具体文本内容
      */
     private String content;
+
+    /**
+     * 图片 URL 列表（仅 USER 角色携带，用于多模态识别）
+     */
+    private List<String> imageUrls;
 
     /**
      * 深度思考内容（仅 ASSISTANT 角色可能携带）

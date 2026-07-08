@@ -16,6 +16,7 @@ import com.byteq.ai.ragstudio.knowledge.enums.ScheduleRunStatus;
 import com.byteq.ai.ragstudio.knowledge.enums.SourceType;
 import com.byteq.ai.ragstudio.knowledge.handler.RemoteFileFetcher;
 import com.byteq.ai.ragstudio.knowledge.service.impl.KnowledgeDocumentServiceImpl;
+import com.byteq.ai.ragstudio.rag.constant.RAGConstant;
 import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
@@ -194,8 +195,10 @@ public class ScheduleRefreshProcessor {
 
                 state.oldFileUrl = state.document.getFileUrl();
                 try (InputStream tempIn = Files.newInputStream(fetchResult.tempFile())) {
+                    String documentPrefix = RAGConstant.S3_DOCUMENT_PREFIX + "/" + kbDO.getCollectionName();
                     state.stored = fileStorageService.upload(
-                            kbDO.getCollectionName(),
+                            RAGConstant.S3_BUCKET_NAME,
+                            documentPrefix,
                             tempIn,
                             fetchResult.size(),
                             fetchResult.fileName(),

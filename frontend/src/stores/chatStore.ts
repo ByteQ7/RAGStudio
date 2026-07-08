@@ -34,7 +34,7 @@ interface ChatState {
   selectSession: (sessionId: string) => Promise<void>;
   updateSessionTitle: (sessionId: string, title: string) => void;
   setKnowledgeBaseIds: (ids: string[]) => void;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, imageUrls?: string[], previewUrls?: string[]) => Promise<void>;
   cancelGeneration: () => void;
   appendStreamContent: (delta: string) => void;
   submitFeedback: (messageId: string, feedback: FeedbackValue) => Promise<void>;
@@ -258,6 +258,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agentSteps: item.agentSteps ? parseAgentSteps(item.agentSteps) : undefined,
         citations: item.citations
           ? (typeof item.citations === "string" ? JSON.parse(item.citations) : item.citations)
+          : undefined,
+        imageUrls: item.imageUrls
+          ? (typeof item.imageUrls === "string" ? JSON.parse(item.imageUrls) : item.imageUrls)
           : undefined
       }));
       set({ messages: mapped });
@@ -285,9 +288,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       )
     }));
   },
-  sendMessage: async (content) => {
+  sendMessage: async (content, imageUrls, previewUrls) => {
     const trimmed = content.trim();
-    if (!trimmed) return;
+    if (!trimmed && (!imageUrls || imageUrls.length === 0)) return;
+    // 纯图片无文本时使用占位文本
+    const questionText = trimmed || (imageUrls ? `[图片]` : "");
     if (get().isStreaming) return;
     const knowledgeBaseIds = get().knowledgeBaseIds;
     // 清除旧缓冲，防止残留字符泄漏到新消息
@@ -298,12 +303,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     const inputFocusKey = Date.now();
 
+    const displayContent = trimmed || (imageUrls ? `[图片 ${imageUrls.length} 张]` : "");
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: trimmed,
+      content: displayContent,
       status: "done",
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      // 优先使用预览 URL（presigned HTTP），回退到原始 s3:// URL
+      imageUrls: previewUrls && previewUrls.length > 0 ? previewUrls : (imageUrls && imageUrls.length > 0 ? imageUrls : undefined)
     };
     const assistantId = `assistant-${Date.now()}`;
     const assistantMessage: Message = {
@@ -519,10 +527,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         url,
         method: "POST",
         body: {
-          question: trimmed,
+          question: questionText,
           conversationId: conversationId || undefined,
           knowledgeBaseIds:
-            knowledgeBaseIds && knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined
+            knowledgeBaseIds && knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined,
+          imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined
         },
         headers: token ? { Authorization: token } : undefined,
         retryCount: 1

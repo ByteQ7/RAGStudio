@@ -43,8 +43,8 @@ const formSchema = z.object({
   collectionName: z
     .string()
     .min(1, "请输入Collection名称")
-    .max(50, "名称不能超过50个字符")
-    .regex(/^[a-z0-9]+$/, "只能包含小写英文字母和数字"),
+    .max(128, "名称不能超过128个字符")
+    .regex(/^[a-zA-Z0-9_\-.]+$/, "只能包含英文字母、数字、下划线、短横线和点"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -246,7 +246,7 @@ export function CreateKnowledgeBaseDialog({
                     <Input placeholder="例如：productdocs" {...field} />
                   </FormControl>
                   <FormDescription>
-                    只能包含小写英文字母和数字
+                    只能包含英文字母、数字、下划线、短横线和点
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

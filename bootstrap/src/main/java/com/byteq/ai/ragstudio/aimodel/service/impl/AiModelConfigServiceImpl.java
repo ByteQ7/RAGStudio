@@ -203,6 +203,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 .priority(request.getPriority() != null ? request.getPriority() : 100)
                 .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                 .supportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0)
+                .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
                 .dimension(request.getDimension())
                 .customUrl(request.getCustomUrl())
                 .build();
@@ -261,6 +262,9 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
         if (request.getSupportsThinking() != null) {
             existing.setSupportsThinking(request.getSupportsThinking());
+        }
+        if (request.getSupportsMultimodal() != null) {
+            existing.setSupportsMultimodal(request.getSupportsMultimodal());
         }
         if (request.getDimension() != null) {
             existing.setDimension(request.getDimension());

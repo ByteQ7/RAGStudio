@@ -36,13 +36,24 @@ public class ModelSelector {
      * @return 按优先级排序的可用模型列表
      */
     public List<ModelTarget> selectChatCandidates(boolean deepThinking) {
+        return selectChatCandidates(deepThinking, false);
+    }
+
+    /**
+     * 选择 Chat 模型候选列表（支持多模态过滤）
+     *
+     * @param deepThinking 是否要求深度思考能力
+     * @param multimodal   是否要求多模态（图片识别）能力
+     * @return 按优先级排序的可用模型列表
+     */
+    public List<ModelTarget> selectChatCandidates(boolean deepThinking, boolean multimodal) {
         DynamicModelConfig config = configProvider.getConfig();
         DynamicModelConfig.ModelGroup group = config.getChatGroup();
         if (group == null || group.getCandidates().isEmpty()) {
             return List.of();
         }
         String firstChoiceModelId = resolveFirstChoiceModel(group, deepThinking);
-        return selectCandidates(group, firstChoiceModelId, deepThinking, config.getProviders());
+        return selectCandidates(group, firstChoiceModelId, deepThinking, multimodal, config.getProviders());
     }
 
     /**
@@ -82,13 +93,23 @@ public class ModelSelector {
             String firstChoiceModelId,
             boolean deepThinking,
             Map<String, DynamicModelConfig.ProviderEntry> providers) {
+        return selectCandidates(group, firstChoiceModelId, deepThinking, false, providers);
+    }
+
+    // 从模型分组中筛选并排序候选模型（支持多模态过滤），构建可用的 ModelTarget 列表
+    private List<ModelTarget> selectCandidates(
+            DynamicModelConfig.ModelGroup group,
+            String firstChoiceModelId,
+            boolean deepThinking,
+            boolean multimodal,
+            Map<String, DynamicModelConfig.ProviderEntry> providers) {
 
         if (group == null || group.getCandidates() == null) {
             return List.of();
         }
 
         List<DynamicModelConfig.ModelEntry> orderedCandidates =
-                filterAndSortCandidates(group.getCandidates(), firstChoiceModelId, deepThinking);
+                filterAndSortCandidates(group.getCandidates(), firstChoiceModelId, deepThinking, multimodal);
 
         return buildAvailableTargets(orderedCandidates, providers);
     }
@@ -96,15 +117,26 @@ public class ModelSelector {
     // 候选模型筛选与排序:
     // 1. 过滤掉已禁用的模型
     // 2. 深度思考模式下过滤不支持 thinking 的模型
-    // 3. 按首选模型优先、优先级升序、ID 字典序排列
+    // 3. 多模态模式下过滤不支持 multimodial 的模型
+    // 4. 按首选模型优先、优先级升序、ID 字典序排列
     private List<DynamicModelConfig.ModelEntry> filterAndSortCandidates(
             List<DynamicModelConfig.ModelEntry> candidates,
             String firstChoiceModelId,
             boolean deepThinking) {
+        return filterAndSortCandidates(candidates, firstChoiceModelId, deepThinking, false);
+    }
+
+    // 候选模型筛选与排序（支持多模态过滤）
+    private List<DynamicModelConfig.ModelEntry> filterAndSortCandidates(
+            List<DynamicModelConfig.ModelEntry> candidates,
+            String firstChoiceModelId,
+            boolean deepThinking,
+            boolean multimodal) {
 
         List<DynamicModelConfig.ModelEntry> enabled = candidates.stream()
                 .filter(c -> c != null && !Boolean.FALSE.equals(c.getEnabled()))
                 .filter(c -> !deepThinking || Boolean.TRUE.equals(c.getSupportsThinking()))
+                .filter(c -> !multimodal || Boolean.TRUE.equals(c.getSupportsMultimodal()))
                 .sorted(Comparator
                         .comparing((DynamicModelConfig.ModelEntry c) ->
                                 !Objects.equals(resolveId(c), firstChoiceModelId))
@@ -116,6 +148,9 @@ public class ModelSelector {
 
         if (deepThinking && enabled.isEmpty()) {
             log.warn("深度思考模式没有可用候选模型");
+        }
+        if (multimodal && enabled.isEmpty()) {
+            log.warn("多模态模式没有可用候选模型");
         }
         return enabled;
     }
