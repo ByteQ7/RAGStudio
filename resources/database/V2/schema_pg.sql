@@ -4,6 +4,7 @@
 -- ============================================
 
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- ============================================
 -- User & Conversation
@@ -85,6 +86,7 @@ CREATE TABLE t_message (
     content           TEXT        NOT NULL,
     thinking_content  TEXT,
     thinking_duration INTEGER,
+    image_urls        TEXT,
     agent_steps       TEXT,
     citations         TEXT,
     create_time       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -720,7 +722,7 @@ COMMENT ON COLUMN t_mcp_server.deleted IS '是否删除 0：正常 1：删除';
 -- Entity: AiProviderDO (@TableName="t_ai_provider", @TableId=ASSIGN_ID, @TableLogic)
 -- endpoints 使用 JsonbTypeHandler
 CREATE TABLE t_ai_provider (
-    id           VARCHAR(20)  NOT NULL PRIMARY KEY,
+    id           VARCHAR(64)  NOT NULL PRIMARY KEY,
     name         VARCHAR(50)  NOT NULL,
     display_name VARCHAR(100),
     base_url     VARCHAR(500) NOT NULL,
@@ -746,16 +748,17 @@ COMMENT ON COLUMN t_ai_provider.deleted IS '是否删除 0：正常 1：删除';
 
 -- Entity: AiModelDO (@TableName="t_ai_model", @TableId=ASSIGN_ID, @TableLogic)
 CREATE TABLE t_ai_model (
-    id                VARCHAR(20)  NOT NULL PRIMARY KEY,
-    provider_id       VARCHAR(20)  NOT NULL,
-    model_id          VARCHAR(100) NOT NULL,
-    model_name        VARCHAR(200) NOT NULL,
-    capability        VARCHAR(20)  NOT NULL,
-    is_default        SMALLINT     NOT NULL DEFAULT 0,
-    priority          INTEGER      NOT NULL DEFAULT 100,
-    enabled           SMALLINT     NOT NULL DEFAULT 1,
-    supports_thinking SMALLINT     NOT NULL DEFAULT 0,
-    dimension         INTEGER,
+    id                  VARCHAR(64)  NOT NULL PRIMARY KEY,
+    provider_id         VARCHAR(64)  NOT NULL,
+    model_id            VARCHAR(100) NOT NULL,
+    model_name          VARCHAR(200) NOT NULL,
+    capability          VARCHAR(20)  NOT NULL,
+    is_default          SMALLINT     NOT NULL DEFAULT 0,
+    priority            INTEGER      NOT NULL DEFAULT 100,
+    enabled             SMALLINT     NOT NULL DEFAULT 1,
+    supports_thinking   SMALLINT     NOT NULL DEFAULT 0,
+    supports_multimodal SMALLINT     NOT NULL DEFAULT 0,
+    dimension           INTEGER,
     custom_url        VARCHAR(500),
     create_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -774,6 +777,7 @@ COMMENT ON COLUMN t_ai_model.is_default IS '是否为该capability的默认模�
 COMMENT ON COLUMN t_ai_model.priority IS '优先级，数字越小优先级越高';
 COMMENT ON COLUMN t_ai_model.enabled IS '是否启用 1：启用 0：禁用';
 COMMENT ON COLUMN t_ai_model.supports_thinking IS '是否支持深度思考 1：是 0：否';
+COMMENT ON COLUMN t_ai_model.supports_multimodal IS '是否支持多模态(图片识别) 1：是 0：否';
 COMMENT ON COLUMN t_ai_model.dimension IS '向量维度（仅embedding模型）';
 COMMENT ON COLUMN t_ai_model.custom_url IS '自定义URL（覆盖供应商地址）';
 COMMENT ON COLUMN t_ai_model.create_time IS '创建时间';

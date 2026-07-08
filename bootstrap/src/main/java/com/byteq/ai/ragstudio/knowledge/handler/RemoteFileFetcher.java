@@ -51,6 +51,18 @@ public class RemoteFileFetcher {
      * @return 上传后的文件存储信息
      */
     public StoredFileDTO fetchAndStore(String bucketName, String url) {
+        return fetchAndStore(bucketName, null, url);
+    }
+
+    /**
+     * 流式拉取远程文件并上传到指定前缀目录（用于文档上传场景）
+     *
+     * @param bucketName 存储桶名称
+     * @param prefix     目录前缀（如 "document"）
+     * @param url        远程文件 URL
+     * @return 上传后的文件存储信息
+     */
+    public StoredFileDTO fetchAndStore(String bucketName, String prefix, String url) {
         long maxBytes = maxFileSize.toBytes();
         url = url.trim();
         SsrfGuard.validate(url);
@@ -63,7 +75,7 @@ public class RemoteFileFetcher {
             String contentType = firstHasText(response.contentType(), headResponse == null ? null : headResponse.contentType(), null);
             // 部分源站的 Content-Length/HEAD 响应并不可靠，固定长度上传会在字节数不一致时失败
             // 远程导入统一先落临时文件，以实际读取到的字节数作为上传大小
-            return uploadViaTemp(bucketName, response.bodyStream(), fileName, contentType, maxBytes);
+            return uploadViaTemp(bucketName, prefix, response.bodyStream(), fileName, contentType, maxBytes);
         }
     }
 
@@ -151,7 +163,7 @@ public class RemoteFileFetcher {
     }
 
     // 将远程流先写入临时文件，再以实际大小上传到文件存储，最后清理临时文件
-    private StoredFileDTO uploadViaTemp(String bucketName, InputStream remoteStream, String fileName,
+    private StoredFileDTO uploadViaTemp(String bucketName, String prefix, InputStream remoteStream, String fileName,
                                         String contentType, long maxBytes) {
         Path tempFile = null;
         try {
@@ -161,7 +173,7 @@ public class RemoteFileFetcher {
                 throw new ClientException("远程文件内容为空");
             }
             try (InputStream tempInputStream = Files.newInputStream(tempFile)) {
-                return fileStorageService.upload(bucketName, tempInputStream, size, fileName, contentType);
+                return fileStorageService.upload(bucketName, prefix, tempInputStream, size, fileName, contentType);
             }
         } catch (IOException e) {
             throw new ServiceException("远程文件上传失败: " + e.getMessage());

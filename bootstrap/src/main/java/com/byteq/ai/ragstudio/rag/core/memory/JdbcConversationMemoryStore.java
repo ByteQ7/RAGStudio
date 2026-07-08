@@ -68,6 +68,16 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
      */
     @Override
     public String append(String conversationId, String userId, ChatMessage message) {
+        // 将 imageUrls 序列化为 JSON 数组字符串
+        String imageUrlsJson = null;
+        if (message.getImageUrls() != null && !message.getImageUrls().isEmpty()) {
+            try {
+                imageUrlsJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(message.getImageUrls());
+            } catch (Exception e) {
+                log.warn("序列化 imageUrls 失败", e);
+            }
+        }
+
         ConversationMessageBO conversationMessage = ConversationMessageBO.builder()
                 .conversationId(conversationId)
                 .userId(userId)
@@ -77,6 +87,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
                 .thinkingDuration(message.getThinkingDuration())
                 .agentSteps(message.getAgentSteps())
                 .citations(message.getCitations())
+                .imageUrls(imageUrlsJson)
                 .build();
         String messageId = conversationMessageService.addMessage(conversationMessage);
 
@@ -102,14 +113,25 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         if (record == null || StrUtil.isBlank(record.getContent())) {
             return null;
         }
-        return new ChatMessage(
-                ChatMessage.Role.fromString(record.getRole()),
-                record.getContent(),
-                record.getThinkingContent(),
-                record.getThinkingDuration(),
-                record.getAgentSteps(),
-                record.getCitations()
-        );
+        ChatMessage msg = new ChatMessage();
+        msg.setRole(ChatMessage.Role.fromString(record.getRole()));
+        msg.setContent(record.getContent());
+        msg.setThinkingContent(record.getThinkingContent());
+        msg.setThinkingDuration(record.getThinkingDuration());
+        msg.setAgentSteps(record.getAgentSteps());
+        msg.setCitations(record.getCitations());
+        // 反序列化 imageUrls JSON
+        if (StrUtil.isNotBlank(record.getImageUrls())) {
+            try {
+                java.util.List<String> urls = new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readValue(record.getImageUrls(),
+                                new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {});
+                msg.setImageUrls(urls);
+            } catch (Exception e) {
+                log.warn("反序列化 imageUrls 失败: {}", record.getImageUrls(), e);
+            }
+        }
+        return msg;
     }
 
     // 规范化历史记录列表，移除开头没有 user 消息的孤立 assistant 消息

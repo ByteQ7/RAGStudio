@@ -25,6 +25,7 @@ export interface AiModel {
   priority: number;
   enabled: number;
   supportsThinking: number;
+  supportsMultimodal?: number;
   dimension?: number | null;
   customUrl?: string | null;
   createTime?: string | null;
@@ -49,6 +50,7 @@ export interface AiModelPayload {
   priority?: number;
   enabled?: number;
   supportsThinking?: number;
+  supportsMultimodal?: number;
   dimension?: number;
   customUrl?: string;
 }

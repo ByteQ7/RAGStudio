@@ -1,4 +1,5 @@
 import * as React from "react";
+import { X } from "lucide-react";
 
 import { AgentSteps } from "@/components/chat/AgentSteps";
 import { CitationList } from "@/components/chat/CitationList";
@@ -20,13 +21,60 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
     !message.id.startsWith("assistant-");
   const hasContent = message.content.trim().length > 0;
   const isWaiting = message.status === "streaming" && !hasContent;
+  const [expandedImage, setExpandedImage] = React.useState<string | null>(null);
 
   if (isUser) {
+    const hasImages = message.imageUrls && message.imageUrls.length > 0;
     return (
       <div className="flex justify-end">
-        <div className="user-message">
-          <MarkdownRenderer content={message.content} compact />
+        <div className="user-message space-y-2">
+          {message.content && <MarkdownRenderer content={message.content} compact />}
+          {hasImages && (
+            <div className="flex flex-wrap gap-2">
+              {message.imageUrls!.map((url, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setExpandedImage(url)}
+                  className="overflow-hidden rounded-lg border border-gray-200 transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                >
+                  <img
+                    src={url}
+                    alt={`图片 ${idx + 1}`}
+                    className="h-20 w-20 object-cover sm:h-24 sm:w-24"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* 图片灯箱 */}
+        {expandedImage && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={() => setExpandedImage(null)}
+            onKeyDown={(e) => e.key === "Escape" && setExpandedImage(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="图片预览"
+          >
+            <button
+              type="button"
+              onClick={() => setExpandedImage(null)}
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={expandedImage}
+              alt="预览大图"
+              className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
       </div>
     );
   }

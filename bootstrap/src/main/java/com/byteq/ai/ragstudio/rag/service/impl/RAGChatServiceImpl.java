@@ -38,7 +38,7 @@ public class RAGChatServiceImpl implements RAGChatService {
     // 2. 创建 SSE 回调处理器
     // 3. 通过限流器入队，在链路追踪中构建上下文并执行对话管线
     @Override
-    public void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, SseEmitter emitter) {
+    public void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, List<String> imageUrls, SseEmitter emitter) {
         String actualConversationId = StrUtil.isBlank(conversationId) ? IdUtil.getSnowflakeNextIdStr() : conversationId;
         String taskId = IdUtil.getSnowflakeNextIdStr();
         StreamCallback callback = callbackFactory.createChatEventHandler(emitter, actualConversationId, taskId);
@@ -53,6 +53,7 @@ public class RAGChatServiceImpl implements RAGChatService {
                             .userId(UserContext.getUserId())
                             .callback(traceAware)
                             .knowledgeBaseIds(CollUtil.isEmpty(knowledgeBaseIds) ? List.of() : knowledgeBaseIds)
+                            .imageUrls(CollUtil.isEmpty(imageUrls) ? List.of() : imageUrls)
                             .build();
                     chatPipeline.execute(ctx);
                 }));

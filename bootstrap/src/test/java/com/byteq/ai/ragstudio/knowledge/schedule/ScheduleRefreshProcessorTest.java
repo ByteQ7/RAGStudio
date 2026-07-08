@@ -146,7 +146,7 @@ class ScheduleRefreshProcessorTest {
         when(remoteFileFetcher.fetchIfChanged(anyString(), anyString(), anyString(), anyString(), anyString())).thenReturn(fetchResult);
         when(documentStatusHelper.tryMarkRunning("doc-1")).thenReturn(true);
         when(kbMapper.selectById("kb-1")).thenReturn(kb);
-        when(fileStorageService.upload(eq("kb-collection"), any(InputStream.class), anyLong(), eq("remote.pdf"), eq("application/pdf")))
+        when(fileStorageService.upload(eq("ragstudio"), eq("document/kb-collection"), any(InputStream.class), anyLong(), eq("remote.pdf"), eq("application/pdf")))
                 .thenReturn(stored);
         when(stateManager.markFailedIfOwned(eq(lease), any(ScheduleStateContext.class), eq("分块失败"))).thenReturn(true);
 
@@ -175,7 +175,7 @@ class ScheduleRefreshProcessorTest {
         when(remoteFileFetcher.fetchIfChanged(anyString(), anyString(), anyString(), anyString(), anyString())).thenReturn(fetchResult);
         when(documentStatusHelper.tryMarkRunning("doc-1")).thenReturn(true);
         when(kbMapper.selectById("kb-1")).thenReturn(kb);
-        when(fileStorageService.upload(eq("kb-collection"), any(InputStream.class), anyLong(), eq("remote.pdf"), eq("application/pdf")))
+        when(fileStorageService.upload(eq("ragstudio"), eq("document/kb-collection"), any(InputStream.class), anyLong(), eq("remote.pdf"), eq("application/pdf")))
                 .thenReturn(stored);
 
         processor.process(lease);
@@ -202,7 +202,7 @@ class ScheduleRefreshProcessorTest {
         when(remoteFileFetcher.fetchIfChanged(anyString(), anyString(), anyString(), anyString(), anyString())).thenReturn(fetchResult);
         when(documentStatusHelper.tryMarkRunning("doc-1")).thenReturn(true);
         when(kbMapper.selectById("kb-1")).thenReturn(kb);
-        when(fileStorageService.upload(eq("kb-collection"), any(InputStream.class), anyLong(), eq("remote.pdf"), eq("application/pdf")))
+        when(fileStorageService.upload(eq("ragstudio"), eq("document/kb-collection"), any(InputStream.class), anyLong(), eq("remote.pdf"), eq("application/pdf")))
                 .thenReturn(stored);
         doNothing().when(documentStatusHelper).applyRefreshedFileMetadata("doc-1", stored);
         when(stateManager.markSuccessIfOwned(eq(lease), any(ScheduleStateContext.class), same(fetchResult), same(stored)))

@@ -13,6 +13,9 @@ export interface ConversationMessageVO {
   content: string;
   thinkingContent?: string | null;
   thinkingDuration?: number | null;
+  agentSteps?: string | null;
+  citations?: string | null;
+  imageUrls?: string | null;
   vote: number | null;
   createTime?: string;
 }

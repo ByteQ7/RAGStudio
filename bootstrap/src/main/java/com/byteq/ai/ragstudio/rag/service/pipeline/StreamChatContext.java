@@ -48,6 +48,9 @@ public class StreamChatContext {
     /** 用户选择的知识库 ID 列表 */
     private final List<String> knowledgeBaseIds;
 
+    /** 图片 S3 URL 列表（用于多模态识别） */
+    private final List<String> imageUrls;
+
     // ==================== 管道中填充的中间状态 ====================
 
     /** 对话历史消息列表（包含当前用户问题） */

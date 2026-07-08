@@ -97,6 +97,7 @@ const emptyModelForm = (): AiModelPayload => ({
   priority: 100,
   enabled: 1,
   supportsThinking: 0,
+  supportsMultimodal: 0,
   dimension: undefined,
   customUrl: ""
 });
@@ -302,6 +303,7 @@ export function AiModelConfigPage() {
       priority: model.priority,
       enabled: model.enabled,
       supportsThinking: model.supportsThinking,
+      supportsMultimodal: model.supportsMultimodal ?? 0,
       dimension: model.dimension ?? undefined,
       customUrl: model.customUrl || ""
     });
@@ -332,6 +334,7 @@ export function AiModelConfigPage() {
       priority: modelForm.priority ?? 0,
       enabled: modelForm.enabled ?? 1,
       supportsThinking: modelForm.supportsThinking ?? 0,
+      supportsMultimodal: modelForm.supportsMultimodal ?? 0,
       dimension: modelForm.dimension,
       customUrl: modelForm.customUrl?.trim() || undefined
     };
@@ -635,6 +638,9 @@ export function AiModelConfigPage() {
                                 <TableHead className="w-[90px] px-5 text-center">
                                   深度思考
                                 </TableHead>
+                                <TableHead className="w-[90px] px-5 text-center">
+                                  多模态
+                                </TableHead>
                                 <TableHead className="w-[80px] px-5 text-center">
                                   启用
                                 </TableHead>
@@ -714,6 +720,17 @@ export function AiModelConfigPage() {
                                   <TableCell className="px-5 py-3.5 text-center">
                                     {model.supportsThinking === 1 ? (
                                       <Badge className="bg-violet-50 text-violet-600 border-violet-200 hover:bg-violet-50 text-[11px]">
+                                        支持
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-xs text-gray-400">
+                                        -
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="px-5 py-3.5 text-center">
+                                    {model.supportsMultimodal === 1 ? (
+                                      <Badge className="bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-50 text-[11px]">
                                         支持
                                       </Badge>
                                     ) : (
@@ -1063,6 +1080,25 @@ export function AiModelConfigPage() {
                   setModelForm({
                     ...modelForm,
                     supportsThinking: checked ? 1 : 0
+                  })
+                }
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-gray-200 px-4 py-3">
+              <div>
+                <Label className="text-sm font-medium text-gray-700">
+                  多模态
+                </Label>
+                <p className="text-xs text-gray-400">
+                  该模型是否支持图片识别 / 多模态理解
+                </p>
+              </div>
+              <Switch
+                checked={modelForm.supportsMultimodal === 1}
+                onCheckedChange={(checked) =>
+                  setModelForm({
+                    ...modelForm,
+                    supportsMultimodal: checked ? 1 : 0
                   })
                 }
               />

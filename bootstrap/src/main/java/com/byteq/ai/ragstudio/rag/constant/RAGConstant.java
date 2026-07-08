@@ -72,6 +72,23 @@ public class RAGConstant {
      */
     public static final String MCP_PARAMETER_EXTRACT_USER_PROMPT_PATH = "prompt/mcp-parameter-extract-user.st";
 
+    // ==================== S3 文件存储常量 ====================
+
+    /**
+     * 统一 S3 存储桶名称
+     */
+    public static final String S3_BUCKET_NAME = "ragstudio";
+
+    /**
+     * 知识库文档在 S3 中的前缀目录
+     */
+    public static final String S3_DOCUMENT_PREFIX = "document";
+
+    /**
+     * 对话图片在 S3 中的前缀目录
+     */
+    public static final String S3_CHAT_IMAGE_PREFIX = "chat-img";
+
     // ==================== 上下文格式化模板（单文件多 section） ====================
 
     /**

@@ -29,15 +29,15 @@ VALUES
 -- AI Model 初始数据 - Chat
 -- ============================================
 
-INSERT INTO t_ai_model (id, provider_id, model_id, model_name, capability, is_default, priority, enabled, supports_thinking, dimension, custom_url, create_time, update_time, deleted)
+INSERT INTO t_ai_model (id, provider_id, model_id, model_name, capability, is_default, priority, enabled, supports_thinking, supports_multimodal, dimension, custom_url, create_time, update_time, deleted)
 VALUES
 -- Chat 模型
-(2000000000000000001, 1000000000000000002, 'qwen-plus',          'qwen-plus-latest',               'CHAT', 0, 1,  1, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
-(2000000000000000003, 1000000000000000002, 'qwen3-max',          'qwen3-max',                      'CHAT', 0, 2,  1, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
-(2000000000000000004, 1000000000000000004, 'glm-4.7',            'Pro/zai-org/GLM-4.7',           'CHAT', 0, 3,  1, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
-(2000000000000000006, 1000000000000000005, 'deepseek-v4-flash',  'deepseek-v4-flash',              'CHAT', 1, 4,  1, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(2000000000000000001, 1000000000000000002, 'qwen-plus',          'qwen-plus-latest',               'CHAT', 0, 1,  1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(2000000000000000003, 1000000000000000002, 'qwen3-max',          'qwen3-max',                      'CHAT', 0, 2,  1, 1, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(2000000000000000004, 1000000000000000004, 'glm-4.7',            'Pro/zai-org/GLM-4.7',           'CHAT', 0, 3,  1, 1, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(2000000000000000006, 1000000000000000005, 'deepseek-v4-flash',  'deepseek-v4-flash',              'CHAT', 1, 4,  1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 -- Embedding 模型
-(2000000000000000007, 1000000000000000004, 'qwen-emb-8b',        'Qwen/Qwen3-Embedding-8B',       'EMBEDDING', 1, 1,  1, 0, 1536, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(2000000000000000007, 1000000000000000004, 'qwen-emb-8b',        'Qwen/Qwen3-Embedding-8B',       'EMBEDDING', 1, 1,  1, 0, 0, 1536, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 -- Rerank 模型
-(2000000000000000010, 1000000000000000002, 'qwen3-rerank',       'qwen3-rerank',                   'RERANK', 1, 1,   1, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
-(2000000000000000011, 1000000000000000006, 'rerank-noop',        'noop',                           'RERANK', 0, 100, 1, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
+(2000000000000000010, 1000000000000000002, 'qwen3-rerank',       'qwen3-rerank',                   'RERANK', 1, 1,   1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(2000000000000000011, 1000000000000000006, 'rerank-noop',        'noop',                           'RERANK', 0, 100, 1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);

@@ -8,11 +8,14 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.content.Media;
+import org.springframework.util.MimeTypeUtils;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
+import software.amazon.awssdk.services.s3.S3Client;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
@@ -20,6 +23,8 @@ import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +49,12 @@ public class SpringAiChatModelFactory {
      * 缓存上限，超过后驱逐最早的条目，防止无界增长导致文件描述符和内存泄漏
      */
     private static final int MAX_CACHE_SIZE = 64;
+
+    private final S3Client s3Client;
+
+    public SpringAiChatModelFactory(S3Client s3Client) {
+        this.s3Client = s3Client;
+    }
 
     private final Map<String, ChatModel> chatModelCache = new ConcurrentHashMap<>();
     private final Map<String, EmbeddingModel> embeddingModelCache = new ConcurrentHashMap<>();
@@ -317,10 +328,33 @@ public class SpringAiChatModelFactory {
     }
 
     // 将项目内部的 ChatMessage 转换为 Spring AI 的 Message，支持 SYSTEM/USER/ASSISTANT 角色映射
+    // USER 消息若包含图片 URL，则从 S3 读取图片并编码为 data URI，
+    // 以 Spring AI Media 对象的形式附加到 UserMessage，确保 LLM API 能收到结构化 image_url 内容
     private Message convertMessage(ChatMessage msg) {
         return switch (msg.getRole()) {
             case SYSTEM -> new SystemMessage(msg.getContent());
-            case USER -> new UserMessage(msg.getContent());
+            case USER -> {
+                String text = msg.getContent() != null ? msg.getContent() : "";
+                List<String> imageUrls = msg.getImageUrls();
+                if (imageUrls != null && !imageUrls.isEmpty()) {
+                    List<Media> mediaList = new ArrayList<>();
+                    for (String url : imageUrls) {
+                        String dataUri = resolveImageDataUri(url);
+                        if (dataUri != null && !dataUri.isEmpty() && !dataUri.equals(url)) {
+                            // 成功转为 data URI → 作为 Media 对象附加
+                            String mimeType = detectMimeTypeFromUri(dataUri);
+                            mediaList.add(new Media(MimeTypeUtils.parseMimeType(mimeType), java.net.URI.create(dataUri)));
+                        }
+                    }
+                    if (!mediaList.isEmpty()) {
+                        yield UserMessage.builder()
+                                .text(text)
+                                .media(mediaList)
+                                .build();
+                    }
+                }
+                yield new UserMessage(text);
+            }
             case ASSISTANT -> {
                 if (msg.getThinkingContent() != null) {
                     Map<String, Object> metadata = new HashMap<>();
@@ -334,5 +368,51 @@ public class SpringAiChatModelFactory {
                         msg.getContent() != null ? msg.getContent() : "");
             }
         };
+    }
+
+    // 从 data URI 中提取 MIME 类型
+    private String detectMimeTypeFromUri(String dataUri) {
+        if (dataUri == null || !dataUri.startsWith("data:")) return "image/jpeg";
+        int semi = dataUri.indexOf(';');
+        if (semi < 0) return "image/jpeg";
+        return dataUri.substring(5, semi);
+    }
+
+    // 将图片 URL 转换为 data URI（base64 编码），确保 LLM 能直接读取
+    // 支持格式: s3://bucket/key。已转换为 HTTP/HTTPS 的 URL 直接返回（如预签名 URL）
+    private String resolveImageDataUri(String url) {
+        if (url == null) return "";
+        try {
+            if (!url.startsWith("s3://")) {
+                // 非 s3:// URL（如预签名 HTTP URL），直接使用
+                return url;
+            }
+
+            // s3://bucket/key → 从 S3 读取图片并转为 data URI
+            String path = url.substring(5);
+            int slashIdx = path.indexOf('/');
+            if (slashIdx < 0) return url;
+            String bucket = path.substring(0, slashIdx);
+            String key = path.substring(slashIdx + 1);
+
+            byte[] imageBytes = s3Client.getObject(b -> b.bucket(bucket).key(key)).readAllBytes();
+            String mimeType = detectMimeType(key);
+            String base64 = Base64.getEncoder().encodeToString(imageBytes);
+            return "data:" + mimeType + ";base64," + base64;
+        } catch (Exception e) {
+            log.warn("读取 S3 图片失败，回退到原始 URL: {}", url, e);
+            return url;
+        }
+    }
+
+    // 根据文件名后缀推断 MIME 类型
+    private String detectMimeType(String key) {
+        if (key == null) return "image/jpeg";
+        String lower = key.toLowerCase();
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".bmp")) return "image/bmp";
+        return "image/jpeg";
     }
 }

@@ -40,6 +40,9 @@ public class AgentContext {
     /** 总超时时间（ms，默认 120_000） */
     private final long timeoutMs;
 
+    /** 图片 S3 URL 列表（用于多模态识别） */
+    private final List<String> imageUrls;
+
     // ==================== 运行时累积 ====================
 
     /** Agent 推理步骤记录（用于前端回放和日志） */
@@ -54,6 +57,13 @@ public class AgentContext {
     public AgentContext(String question, List<ChatMessage> history,
                         String kbContext, boolean kbRelevant,
                         List<Tool> tools, int maxIterations, long timeoutMs) {
+        this(question, history, kbContext, kbRelevant, tools, maxIterations, timeoutMs, List.of());
+    }
+
+    public AgentContext(String question, List<ChatMessage> history,
+                        String kbContext, boolean kbRelevant,
+                        List<Tool> tools, int maxIterations, long timeoutMs,
+                        List<String> imageUrls) {
         this.question = question;
         this.history = history != null ? List.copyOf(history) : List.of();
         this.kbContext = kbContext != null ? kbContext : "";
@@ -61,6 +71,7 @@ public class AgentContext {
         this.tools = tools != null ? List.copyOf(tools) : List.of();
         this.maxIterations = maxIterations > 0 ? maxIterations : 10;
         this.timeoutMs = timeoutMs > 0 ? timeoutMs : 120_000L;
+        this.imageUrls = imageUrls != null ? List.copyOf(imageUrls) : List.of();
     }
 
     /** 标记循环开始 */
@@ -92,6 +103,7 @@ public class AgentContext {
     public List<Tool> getTools() { return tools; }
     public int getMaxIterations() { return maxIterations; }
     public long getTimeoutMs() { return timeoutMs; }
+    public List<String> getImageUrls() { return imageUrls; }
     public List<AgentStep> getSteps() { return List.copyOf(steps); }
     public List<ChatMessage> getMessages() { return messages; }
     public long getStartTimeMs() { return startTimeMs; }

@@ -11,6 +11,7 @@ import com.byteq.ai.ragstudio.infra.model.ModelHealthStore;
 import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
@@ -84,7 +85,9 @@ public class RoutingLLMService implements LLMService {
     @Override
     @RagTraceNode(name = "llm-chat-routing", type = "LLM_ROUTING")
     public String chat(ChatRequest request) {
-        List<ModelTarget> targets = selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking()));
+        boolean hasImages = hasImageContent(request);
+        List<ModelTarget> targets = selector.selectChatCandidates(
+                Boolean.TRUE.equals(request.getThinking()), hasImages);
         validateTargets(targets);
         return executor.executeWithFallback(
                 ModelCapability.CHAT,
@@ -134,10 +137,18 @@ public class RoutingLLMService implements LLMService {
      * @return 流式取消句柄
      * @throws RemoteException 所有候选模型均启动失败时抛出
      */
+    // 检查请求是否包含图片
+    private boolean hasImageContent(ChatRequest request) {
+        return request.getMessages() != null && request.getMessages().stream()
+                .anyMatch(m -> m.getImageUrls() != null && !m.getImageUrls().isEmpty());
+    }
+
     @Override
     @RagTraceNode(name = "llm-stream-routing", type = "LLM_ROUTING")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback) {
-        List<ModelTarget> targets = selector.selectChatCandidates(Boolean.TRUE.equals(request.getThinking()));
+        boolean hasImages = hasImageContent(request);
+        List<ModelTarget> targets = selector.selectChatCandidates(
+                Boolean.TRUE.equals(request.getThinking()), hasImages);
         validateTargets(targets);
 
         String label = ModelCapability.CHAT.getDisplayName();

@@ -126,6 +126,7 @@ public class AiModelConfigCache implements ModelConfigProvider {
                             .priority(m.getPriority() != null ? m.getPriority() : 100)
                             .enabled(true)
                             .supportsThinking(m.getSupportsThinking() != null && m.getSupportsThinking() == 1)
+                            .supportsMultimodal(m.getSupportsMultimodal() != null && m.getSupportsMultimodal() == 1)
                             .isDefault(m.getIsDefault() != null && m.getIsDefault() == 1)
                             .capability(m.getCapability())
                             .build();
