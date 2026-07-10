@@ -185,6 +185,7 @@ export function AdminLayout() {
   const blurTimeoutRef = useRef<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const isDashboardRoute = location.pathname.startsWith("/admin/dashboard");
+  const isAiModelsRoute = location.pathname.startsWith("/admin/ai-models");
 
   const handleLogout = async () => {
     await logout();
@@ -535,160 +536,121 @@ export function AdminLayout() {
 
       <div
         className={cn(
-          "admin-main flex min-h-screen flex-1 flex-col overflow-auto",
-          isDashboardRoute && "dashboard-scroll-shell"
+          "admin-main flex flex-1 flex-col",
+          isDashboardRoute && "dashboard-scroll-shell",
+          isAiModelsRoute
+            ? "h-screen overflow-hidden"
+            : "min-h-screen overflow-auto"
         )}
       >
-        <header className="admin-topbar">
-          <div className="admin-topbar-inner">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="lg:hidden"
-                onClick={() => setCollapsed((prev) => !prev)}
-                aria-label="切换侧边栏"
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-              <div className="admin-topbar-search">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  ref={searchInputRef}
-                  value={kbQuery}
-                  onChange={(event) => {
-                    setKbQuery(event.target.value);
-                  }}
-                  onFocus={handleSearchFocus}
-                  onBlur={handleSearchBlur}
-                  onKeyDown={handleSearchKeyDown}
-                  name="kb-search"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  placeholder="筛选知识库..."
-                  className="pl-10 pr-16"
-                />
-                <span className="admin-topbar-kbd">Ctrl K</span>
-                {showSuggest ? (
-                  <div
-                    className="admin-topbar-suggest"
-                    onMouseDown={(event) => event.preventDefault()}
-                  >
-                    {searchLoading && kbOptions.length === 0 && docOptions.length === 0 ? (
-                      <div className="admin-topbar-suggest-item text-gray-400">搜索中...</div>
-                    ) : null}
-                    {kbOptions.length > 0 ? (
-                      <div className="admin-topbar-suggest-section">
-                        <div className="admin-topbar-suggest-group">知识库</div>
-                        {kbOptions.map((kb) => (
-                          <button
-                            key={kb.id}
-                            type="button"
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              handleSearchSelect(kb);
-                            }}
-                            className="admin-topbar-suggest-item"
-                          >
-                            <span className="font-medium text-gray-900">{kb.name}</span>
-                            <span className="text-xs text-gray-400">
-                              {kb.collectionName || "未设置 Collection"}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                    {docOptions.length > 0 ? (
-                      <div className="admin-topbar-suggest-section">
-                        <div className="admin-topbar-suggest-group">文档</div>
-                        {docOptions.map((doc) => (
-                          <button
-                            key={doc.id}
-                            type="button"
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              handleDocumentSelect(doc);
-                            }}
-                            className="admin-topbar-suggest-item"
-                          >
-                            <span className="font-medium text-gray-900">{doc.docName}</span>
-                            <span className="text-xs text-gray-400">
-                              {doc.kbName || `知识库 ${doc.kbId}`}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                    {!searchLoading && kbOptions.length === 0 && docOptions.length === 0 ? (
-                      <div className="admin-topbar-suggest-item text-gray-400">暂无匹配结果</div>
-                    ) : null}
-                  </div>
-                ) : null}
+        {!isAiModelsRoute && (
+          <header className="admin-topbar">
+            <div className="admin-topbar-inner">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="lg:hidden"
+                  onClick={() => setCollapsed((prev) => !prev)}
+                  aria-label="切换侧边栏"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+                <div className="admin-topbar-search">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    ref={searchInputRef}
+                    value={kbQuery}
+                    onChange={(event) => { setKbQuery(event.target.value); }}
+                    onFocus={handleSearchFocus}
+                    onBlur={handleSearchBlur}
+                    onKeyDown={handleSearchKeyDown}
+                    name="kb-search"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    placeholder="筛选知识库..."
+                    className="pl-10 pr-16"
+                  />
+                  <span className="admin-topbar-kbd">Ctrl K</span>
+                  {showSuggest ? (
+                    <div className="admin-topbar-suggest" onMouseDown={(event) => event.preventDefault()}>
+                      {searchLoading && kbOptions.length === 0 && docOptions.length === 0 ? (
+                        <div className="admin-topbar-suggest-item text-gray-400">搜索中...</div>
+                      ) : null}
+                      {kbOptions.length > 0 ? (
+                        <div className="admin-topbar-suggest-section">
+                          <div className="admin-topbar-suggest-group">知识库</div>
+                          {kbOptions.map((kb) => (
+                            <button key={kb.id} type="button" onMouseDown={(event) => { event.preventDefault(); handleSearchSelect(kb); }} className="admin-topbar-suggest-item">
+                              <span className="font-medium text-gray-900">{kb.name}</span>
+                              <span className="text-xs text-gray-400">{kb.collectionName || "未设置 Collection"}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {docOptions.length > 0 ? (
+                        <div className="admin-topbar-suggest-section">
+                          <div className="admin-topbar-suggest-group">文档</div>
+                          {docOptions.map((doc) => (
+                            <button key={doc.id} type="button" onMouseDown={(event) => { event.preventDefault(); handleDocumentSelect(doc); }} className="admin-topbar-suggest-item">
+                              <span className="font-medium text-gray-900">{doc.docName}</span>
+                              <span className="text-xs text-gray-400">{doc.kbName || `知识库 ${doc.kbId}`}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {!searchLoading && kbOptions.length === 0 && docOptions.length === 0 ? (
+                        <div className="admin-topbar-suggest-item text-gray-400">暂无匹配结果</div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" className="hidden items-center gap-2 sm:inline-flex" onClick={() => navigate("/chat")}>
+                  <MessageSquare className="h-4 w-4" />
+                  返回聊天
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-600 shadow-sm" aria-label="用户菜单">
+                      <Avatar name={user?.username || "管理员"} src={showAvatar ? avatarUrl : undefined} className="h-8 w-8 border-gray-200 bg-indigo-50 text-xs font-semibold text-indigo-600" />
+                      <span className="hidden sm:inline">{user?.username || "管理员"}</span>
+                      <ChevronDown className="h-4 w-4 text-gray-400" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={8} className="w-44">
+                    <div className="px-3 py-2 text-xs text-gray-500">{user?.username || "管理员"} · {roleLabel}</div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setPasswordOpen(true)}><KeyRound className="mr-2 h-4 w-4" />修改密码</DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleLogout} className="text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />退出登录</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                className="hidden items-center gap-2 sm:inline-flex"
-                onClick={() => navigate("/chat")}
-              >
-                <MessageSquare className="h-4 w-4" />
-                返回聊天
-              </Button>
+          </header>
+        )}
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-600 shadow-sm"
-                    aria-label="用户菜单"
-                  >
-                    <Avatar
-                      name={user?.username || "管理员"}
-                      src={showAvatar ? avatarUrl : undefined}
-                      className="h-8 w-8 border-gray-200 bg-indigo-50 text-xs font-semibold text-indigo-600"
-                    />
-                    <span className="hidden sm:inline">{user?.username || "管理员"}</span>
-                    <ChevronDown className="h-4 w-4 text-gray-400" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" sideOffset={8} className="w-44">
-                  <div className="px-3 py-2 text-xs text-gray-500">
-                    {user?.username || "管理员"} · {roleLabel}
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
-                    <KeyRound className="mr-2 h-4 w-4" />
-                    修改密码
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleLogout} className="text-rose-600 focus:text-rose-600">
-                    <LogOut className="mr-2 h-4 w-4" />
-                    退出登录
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        </header>
-
-        <div className="admin-content">
-          <nav className="admin-breadcrumbs" aria-label="面包屑">
-            {breadcrumbs.map((item, index) => {
-              const isLast = index === breadcrumbs.length - 1;
-              return (
-                <span key={`${item.label}-${index}`} className="flex items-center gap-2">
-                  {item.to && !isLast ? (
-                    <Link to={item.to}>{item.label}</Link>
-                  ) : (
-                    <span className={isLast ? "text-gray-700" : undefined}>{item.label}</span>
-                  )}
-                  {!isLast && <span>/</span>}
-                </span>
-              );
-            })}
-          </nav>
+        <div className={cn("admin-content", isAiModelsRoute && "admin-content--full")}>
+          {!isAiModelsRoute && (
+            <nav className="admin-breadcrumbs" aria-label="面包屑">
+              {breadcrumbs.map((item, index) => {
+                const isLast = index === breadcrumbs.length - 1;
+                return (
+                  <span key={`${item.label}-${index}`} className="flex items-center gap-2">
+                    {item.to && !isLast ? (
+                      <Link to={item.to}>{item.label}</Link>
+                    ) : (
+                      <span className={isLast ? "text-gray-700" : undefined}>{item.label}</span>
+                    )}
+                    {!isLast && <span>/</span>}
+                  </span>
+                );
+              })}
+            </nav>
+          )}
           <Outlet />
         </div>
       </div>

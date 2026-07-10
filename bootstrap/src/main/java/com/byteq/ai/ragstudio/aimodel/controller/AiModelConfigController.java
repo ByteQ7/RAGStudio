@@ -7,8 +7,14 @@ import com.byteq.ai.ragstudio.aimodel.controller.request.AiProviderUpdateRequest
 import com.byteq.ai.ragstudio.aimodel.controller.request.ModelPriorityItem;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.AiModelVO;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.AiProviderVO;
+import com.byteq.ai.ragstudio.aimodel.controller.vo.ConnectivityResultVO;
+import com.byteq.ai.ragstudio.aimodel.controller.vo.FetchModelsResultVO;
 import com.byteq.ai.ragstudio.aimodel.service.AiModelConfigService;
 import com.byteq.ai.ragstudio.framework.convention.Result;
+import com.byteq.ai.ragstudio.framework.exception.ClientException;
+import com.byteq.ai.ragstudio.rag.constant.RAGConstant;
+import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
+import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,8 +29,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * AI 模型配置管理控制器
@@ -39,6 +47,7 @@ import java.util.List;
 public class AiModelConfigController {
 
     private final AiModelConfigService aiModelConfigService;
+    private final FileStorageService fileStorageService;
 
     // ==================== 供应商接口 ====================
 
@@ -186,5 +195,83 @@ public class AiModelConfigController {
     public Result<Void> updatePriorities(@Valid @RequestBody List<ModelPriorityItem> items) {
         aiModelConfigService.updatePriorities(items);
         return Results.success();
+    }
+
+    // ==================== 连通性检查 & 远程模型 ====================
+
+    /**
+     * 检查指定 AI 供应商的连通性
+     * <p>
+     * 根据供应商类型自动选择对应的适配器，发送空对话到供应商 API 验证连接是否正常。
+     * </p>
+     *
+     * @param id 供应商 ID
+     * @return 连通性检查结果（成功/失败、延迟、错误信息）
+     */
+    @PostMapping("/providers/{id}/check-connectivity")
+    public Result<ConnectivityResultVO> checkConnectivity(@PathVariable("id") String id) {
+        return Results.success(aiModelConfigService.checkConnectivity(id));
+    }
+
+    /**
+     * 从远程供应商拉取可用模型列表
+     * <p>
+     * 根据供应商类型自动选择对应的适配器，调用供应商的模型列表 API，
+     * 获取其支持的所有模型信息。
+     * </p>
+     *
+     * @param id 供应商 ID
+     * @return 远程模型列表
+     */
+    @PostMapping("/providers/{id}/fetch-models")
+    public Result<FetchModelsResultVO> fetchRemoteModels(@PathVariable("id") String id) {
+        return Results.success(aiModelConfigService.fetchRemoteModels(id));
+    }
+
+    /**
+     * 批量创建模型
+     * <p>
+     * 用于从远程拉取模型列表后批量导入，会自动跳过已存在的模型。
+     * </p>
+     *
+     * @param requests 模型创建请求列表
+     * @return 新创建的模型 ID 列表
+     */
+    @PostMapping("/models/batch-create")
+    public Result<List<String>> batchCreateModels(@RequestBody List<AiModelCreateRequest> requests) {
+        return Results.success(aiModelConfigService.batchCreateModels(requests));
+    }
+
+    // ==================== 图标上传 ====================
+
+    /**
+     * 上传 AI 供应商图标
+     * <p>
+     * 将图标文件上传到 S3 ragstudio/AIProviderIcons/ 目录，
+     * 并更新供应商的 icon_url 字段。
+     * </p>
+     *
+     * @param id   供应商 ID
+     * @param file 图标文件（支持 PNG/JPG/SVG）
+     * @return 图标 URL
+     */
+    @PostMapping("/providers/{id}/icon")
+    public Result<Map<String, String>> uploadIcon(
+            @PathVariable("id") String id,
+            @RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            throw new ClientException("上传文件不能为空");
+        }
+
+        // 上传到 S3
+        StoredFileDTO stored = fileStorageService.upload(
+                RAGConstant.S3_BUCKET_NAME,
+                RAGConstant.S3_AI_PROVIDER_ICON_PREFIX,
+                file);
+
+        // 更新供应商的 icon_url
+        aiModelConfigService.updateProviderIcon(id, stored.getUrl());
+
+        return Results.success(Map.of("iconUrl", stored.getUrl()));
     }
 }

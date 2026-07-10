@@ -58,6 +58,11 @@ public class AiProviderDO {
     private String endpoints;
 
     /**
+     * 供应商图标 URL
+     */
+    private String iconUrl;
+
+    /**
      * 是否启用：1-启用，0-禁用
      */
     private Integer enabled;

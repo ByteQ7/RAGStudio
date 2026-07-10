@@ -19,6 +19,10 @@ public class AiProviderVO {
     private String apiKey;
     private Map<String, String> endpoints;
     private Integer enabled;
+    /** 供应商图标 URL */
+    private String iconUrl;
+    /** 关联的模型数量 */
+    private Integer modelCount;
     private Date createTime;
     private Date updateTime;
 }

@@ -10,20 +10,26 @@ VALUES (2001523723396308993, 'admin', 'admin', 'admin',
 -- AI Provider 初始数据
 -- ============================================
 
-INSERT INTO t_ai_provider (id, name, display_name, base_url, api_key, endpoints, enabled, create_time, update_time, deleted)
+INSERT INTO t_ai_provider (id, name, display_name, base_url, api_key, endpoints, enabled, icon_url, create_time, update_time, deleted)
 VALUES
 (1000000000000000002, 'bailian', '百炼 (阿里云)', 'https://dashscope.aliyuncs.com', NULL,
  '{"chat":"/compatible-mode/v1/chat/completions","rerank":"/api/v1/services/rerank/text-rerank/text-rerank"}'::jsonb,
- 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+ 1, 's3://ragstudio/provider-icons/bailian.svg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1000000000000000004, 'siliconflow', 'SiliconFlow', 'https://api.siliconflow.cn', NULL,
  '{"chat":"/v1/chat/completions","embedding":"/v1/embeddings"}'::jsonb,
- 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+ 1, 's3://ragstudio/provider-icons/siliconflow.svg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1000000000000000005, 'deepseek', 'DeepSeek', 'https://api.deepseek.com', NULL,
  '{"chat":"/v1/chat/completions"}'::jsonb,
- 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+ 1, 's3://ragstudio/provider-icons/deepseek.svg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1000000000000000006, 'noop', 'NOOP (占位)', 'http://localhost', NULL,
  '{}'::jsonb,
- 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
+ 1, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(1000000000000000007, 'zhipu', '智谱 AI', 'https://open.bigmodel.cn/api/paas/v4/', NULL,
+ '{}'::jsonb,
+ 1, 's3://ragstudio/provider-icons/zhipu.svg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(1000000000000000008, 'volcengine', '火山引擎', 'https://ark.cn-beijing.volces.com/api/v3/', NULL,
+ '{}'::jsonb,
+ 1, 's3://ragstudio/provider-icons/volcengine.svg', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
 
 -- ============================================
 -- AI Model 初始数据 - Chat
