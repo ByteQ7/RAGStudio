@@ -463,25 +463,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (payload?.title && get().currentSessionId) {
           get().updateSessionTitle(get().currentSessionId as string, payload.title);
         }
+        // content 已在后端持久化时写好，前端只需标记状态并保留已累积的内容
+        // 若 abort 先到达则由 AbortError 处理器更新 content
+        const nextId = payload?.messageId ? String(payload.messageId) : undefined;
+        const cancelSuffix = "\n\n---\n> **对话被用户关闭** ❗";
         set((state) => ({
-          messages: state.messages.map((message) => {
-            if (message.id !== state.streamingMessageId) return message;
-            const suffix = message.content.includes("（已停止生成）")
-              ? ""
-              : "\n\n（已停止生成）";
-            const nextId = payload?.messageId ? String(payload.messageId) : message.id;
-            return {
-              ...message,
-              id: nextId,
-              content: message.content + suffix,
-              status: "cancelled"
-            };
-          }),
           isStreaming: false,
           streamTaskId: null,
           streamAbort: null,
           streamingMessageId: null,
-          cancelRequested: false
+          cancelRequested: false,
+          messages: state.messages.map((message) => {
+            if (message.id !== state.streamingMessageId) return message;
+            return {
+              ...message,
+              id: nextId || message.id,
+              content: message.content.trim()
+                ? message.content + cancelSuffix
+                : cancelSuffix.trim(),
+              status: "cancelled"
+            };
+          })
         }));
       },
       onDone: () => {
@@ -545,6 +547,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await start();
     } catch (error) {
       if ((error as Error).name === "AbortError") {
+        // 用户主动取消：立即更新内容（防止 onCancel SSE 未到达）
+        set((state) => ({
+          isStreaming: false,
+          streamTaskId: null,
+          streamAbort: null,
+          streamingMessageId: null,
+          cancelRequested: false,
+          messages: state.messages.map((message) => {
+            if (message.id !== state.streamingMessageId) return message;
+            // 如果 onCancel 已经处理过（内容已含标记），跳过
+            if (message.content.includes("对话被用户关闭")) return { ...message, status: "cancelled" };
+            const cancelSuffix = "\n\n---\n> **对话被用户关闭** ❗";
+            return {
+              ...message,
+              content: message.content.trim()
+                ? message.content + cancelSuffix
+                : cancelSuffix.trim(),
+              status: "cancelled"
+            };
+          })
+        }));
         return;
       }
       handlers.onError?.(error as Error);

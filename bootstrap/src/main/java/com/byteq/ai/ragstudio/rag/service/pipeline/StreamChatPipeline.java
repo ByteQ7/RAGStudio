@@ -284,7 +284,8 @@ public class StreamChatPipeline {
 
         // 构建 AgentLoop（per-request 实例，因为 ToolRegistry 是 per-request 的）
         AgentLoop agentLoop = new AgentLoop(llmService, toolRegistry,
-                reactResponseParser, reactPromptBuilder);
+                reactResponseParser, reactPromptBuilder,
+                () -> taskManager.isCancelled(ctx.getTaskId()));
 
         // 在 Agent 完成回答但 SSE 连接关闭前，推送引用溯源
         agentLoop.setBeforeCompleteCallback(() -> {
@@ -404,7 +405,10 @@ public class StreamChatPipeline {
                     .toList());
             ctx.getCallback().onCitation(json);
         } catch (Exception e) {
-            log.warn("推送引用溯源失败", e);
+            // 取消状态下不警告（SSE 连接已关闭）
+            if (!taskManager.isCancelled(ctx.getTaskId())) {
+                log.warn("推送引用溯源失败", e);
+            }
         }
     }
 
@@ -460,7 +464,12 @@ public class StreamChatPipeline {
             return result;
         } catch (Throwable ex) {
             long duration = System.currentTimeMillis() - startMillis;
-            log.error("流水线阶段 [{}] 失败，耗时 {}ms", name, duration, ex);
+            // 用户取消导致的异常降级为 info，不刷 error
+            if (ex instanceof IllegalStateException && ex.getMessage() != null && ex.getMessage().startsWith("任务已被用户取消")) {
+                log.info("流水线阶段 [{}] 被取消，耗时 {}ms", name, duration);
+            } else {
+                log.error("流水线阶段 [{}] 失败，耗时 {}ms", name, duration, ex);
+            }
             String errorMsg = ex.getClass().getSimpleName() + ": "
                     + StrUtil.blankToDefault(ex.getMessage(), "");
             safeFinishNode(tracing, traceId, nodeId, TRACE_STATUS_ERROR, errorMsg, duration);

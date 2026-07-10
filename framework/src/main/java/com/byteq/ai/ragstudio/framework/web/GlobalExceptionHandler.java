@@ -20,6 +20,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.Optional;
@@ -159,6 +160,20 @@ public class GlobalExceptionHandler {
             message = "上传请求大小超过限制，单次请求最大允许 " + maxRequestSize;
         }
         return Results.failure(BaseErrorCode.CLIENT_ERROR.code(), message);
+    }
+
+    /**
+     * 拦截 SSE 断连异常
+     * <p>用户主动取消对话或关闭页面时，SSE 连接断开，写入响应时会抛出
+     * {@link AsyncRequestNotUsableException}（断开的管道）。这是预期行为，降级为 debug。</p>
+     *
+     * @param request 当前 HTTP 请求
+     * @param ex      {@link AsyncRequestNotUsableException} SSE 连接不可用异常
+     * @return null（无需返回响应体）
+     */
+    @ExceptionHandler(value = AsyncRequestNotUsableException.class)
+    public void asyncRequestNotUsableException(HttpServletRequest request, AsyncRequestNotUsableException ex) {
+        log.debug("[{}] {} SSE 连接已断开（用户取消或关闭页面）", request.getMethod(), getUrl(request));
     }
 
     /**

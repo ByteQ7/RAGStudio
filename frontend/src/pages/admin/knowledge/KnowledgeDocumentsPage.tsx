@@ -26,6 +26,7 @@ import {
   getDocument,
   updateDocument,
   startDocumentChunk,
+  startBatchDocumentChunk,
   uploadDocument,
   batchUploadDocuments,
   type BatchUploadProgress,
@@ -122,6 +123,7 @@ export function KnowledgeDocumentsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeDocument | null>(null);
   const [chunkTarget, setChunkTarget] = useState<KnowledgeDocument | null>(null);
+  const [batchChunkLoading, setBatchChunkLoading] = useState(false);
   const [detailTarget, setDetailTarget] = useState<KnowledgeDocument | null>(null);
   const [detailName, setDetailName] = useState("");
   const [detailSaving, setDetailSaving] = useState(false);
@@ -262,6 +264,27 @@ export function KnowledgeDocumentsPage() {
     } catch (error) {
       toast.error(getErrorMessage(error, "分块失败"));
       console.error(error);
+    }
+  };
+
+  const handleBatchChunk = async () => {
+    setBatchChunkLoading(true);
+    try {
+      const docIds = (pageData?.records || [])
+        .filter((doc) => doc.status !== "running")
+        .map((doc) => String(doc.id));
+      if (docIds.length === 0) {
+        toast.info("没有需要分块的文档");
+        return;
+      }
+      await startBatchDocumentChunk(docIds);
+      toast.success(`已提交 ${docIds.length} 个文档的分块任务`);
+      await loadDocuments(current, statusFilter, keyword);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "批量分块失败"));
+      console.error(error);
+    } finally {
+      setBatchChunkLoading(false);
     }
   };
 
@@ -419,6 +442,14 @@ export function KnowledgeDocumentsPage() {
           <Button className="admin-primary-gradient" onClick={() => setUploadOpen(true)}>
             <FileUp className="mr-2 h-4 w-4" />
             上传文档
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleBatchChunk}
+            disabled={batchChunkLoading}
+          >
+            <PlayCircle className={`mr-2 h-4 w-4 ${batchChunkLoading ? 'animate-spin' : ''}`} />
+            {batchChunkLoading ? "分块中..." : "全部分块"}
           </Button>
         </div>
       </div>

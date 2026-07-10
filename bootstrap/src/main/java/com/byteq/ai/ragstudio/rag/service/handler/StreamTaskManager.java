@@ -148,9 +148,11 @@ public class StreamTaskManager {
         RBucket<Boolean> bucket = redissonClient.getBucket(cancelKey(taskId));
         bucket.set(Boolean.TRUE, CANCEL_TTL);
 
-        // 发布消息通知所有节点（包括本地）
-        // 本地节点也通过监听器统一处理，避免重复调用 cancelLocal
+        // 发布消息通知所有节点
         redissonClient.getTopic(CANCEL_TOPIC).publish(taskId);
+
+        // 立即执行本地取消（不等 Redis 监听器异步触发，避免时序竞争）
+        cancelLocal(taskId);
     }
 
     /**

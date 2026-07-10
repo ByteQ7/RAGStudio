@@ -48,14 +48,26 @@ public class AgentLoop {
     /** 在 onComplete 之前触发的回调（用于引用溯源等） */
     private Runnable beforeCompleteCallback;
 
+    /** 取消检查回调 */
+    private final java.util.function.Supplier<Boolean> cancellationChecker;
+
     public AgentLoop(LLMService llmService,
                      ToolRegistry toolRegistry,
                      ReActResponseParser responseParser,
                      ReActPromptBuilder promptBuilder) {
+        this(llmService, toolRegistry, responseParser, promptBuilder, () -> false);
+    }
+
+    public AgentLoop(LLMService llmService,
+                     ToolRegistry toolRegistry,
+                     ReActResponseParser responseParser,
+                     ReActPromptBuilder promptBuilder,
+                     java.util.function.Supplier<Boolean> cancellationChecker) {
         this.llmService = llmService;
         this.toolRegistry = toolRegistry;
         this.responseParser = responseParser;
         this.promptBuilder = promptBuilder;
+        this.cancellationChecker = cancellationChecker;
     }
 
     /** 设置在 onComplete 之前触发的回调 */
@@ -93,6 +105,12 @@ public class AgentLoop {
                     return;
                 }
 
+                // 取消检查
+                if (cancellationChecker.get()) {
+                    log.info("Agent 循环被用户取消，iteration={}", iteration);
+                    return;
+                }
+
                 log.info("Agent 迭代 {}/{} - 消息数: {}", iteration, ctx.getMaxIterations(),
                         ctx.getMessages().size());
 
@@ -105,12 +123,23 @@ public class AgentLoop {
                             .thinking(false)
                             .build());
                 } catch (Exception e) {
-                    log.error("Agent 迭代 {} LLM 调用失败: {}", iteration, e.getMessage());
+                    // 用户取消时不刷 error
+                    if (cancellationChecker.get()) {
+                        log.info("Agent 迭代 {} LLM 调用被取消: {}", iteration, e.getMessage());
+                    } else {
+                        log.error("Agent 迭代 {} LLM 调用失败: {}", iteration, e.getMessage());
+                    }
                     AgentStep errorStep = AgentStep.error(iteration, "",
                             "模型调用失败: " + e.getMessage());
                     pushStep(errorStep, callback);
                     pushStepsComplete(ctx, callback);
                     streamFallbackAnswer("抱歉，模型服务暂时不可用，请稍后重试。", callback);
+                    return;
+                }
+
+                // LLM 调用完成后立即检查取消（防止取消发生在此次调用期间）
+                if (cancellationChecker.get()) {
+                    log.info("Agent 迭代 {} LLM 调用后检测到取消, 终止循环", iteration);
                     return;
                 }
 
@@ -230,7 +259,11 @@ public class AgentLoop {
             }
             throw e;
         } catch (Exception e) {
-            log.error("Agent 循环异常", e);
+            if (cancellationChecker.get()) {
+                log.info("Agent 循环被取消", e);
+            } else {
+                log.error("Agent 循环异常", e);
+            }
             callback.onError(e);
         }
     }

@@ -77,3 +77,25 @@ export async function getRagTraceDetail(traceId: string): Promise<RagTraceDetail
 export async function getRagTraceNodes(traceId: string): Promise<RagTraceNode[]> {
   return api.get<RagTraceNode[], RagTraceNode[]>(`/rag/traces/runs/${traceId}/nodes`);
 }
+
+export interface RagTraceRunStats {
+  totalCount: number;
+  successCount: number;
+  failCount: number;
+  successRate: number;
+  avgDurationMs: number;
+  p95DurationMs: number;
+}
+
+export async function getRagTraceStats(
+  query: RagTraceRunQuery = {}
+): Promise<RagTraceRunStats> {
+  return api.get<RagTraceRunStats, RagTraceRunStats>("/rag/traces/runs/stats", {
+    params: {
+      traceId: query.traceId || undefined,
+      conversationId: query.conversationId || undefined,
+      taskId: query.taskId || undefined,
+      status: query.status || undefined
+    }
+  });
+}

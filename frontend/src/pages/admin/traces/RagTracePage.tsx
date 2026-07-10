@@ -5,14 +5,12 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getRagTraceRuns, type PageResult, type RagTraceRun } from "@/services/ragTraceService";
+import { getRagTraceRuns, getRagTraceStats, type PageResult, type RagTraceRun, type RagTraceRunStats } from "@/services/ragTraceService";
 import { getErrorMessage } from "@/utils/error";
 import { RunsTable } from "@/pages/admin/traces/components/RunsTable";
 import { StatCard, type StatCardTone } from "@/pages/admin/traces/components/StatCard";
 import {
   PAGE_SIZE,
-  normalizeStatus,
-  percentile,
 } from "@/pages/admin/traces/traceUtils";
 
 type DurationMetric = {
@@ -38,6 +36,7 @@ export function RagTracePage() {
   const [queryTraceId, setQueryTraceId] = useState("");
   const [pageNo, setPageNo] = useState(1);
   const [pageData, setPageData] = useState<PageResult<RagTraceRun> | null>(null);
+  const [statsData, setStatsData] = useState<RagTraceRunStats | null>(null);
   const [loading, setLoading] = useState(false);
 
   const runs = pageData?.records || [];
@@ -46,13 +45,19 @@ export function RagTracePage() {
     const requestId = ++runsRequestRef.current;
     setLoading(true);
     try {
-      const result = await getRagTraceRuns({
-        current,
-        size: PAGE_SIZE,
-        traceId: nextTraceId.trim() || undefined
-      });
+      const [result, stats] = await Promise.all([
+        getRagTraceRuns({
+          current,
+          size: PAGE_SIZE,
+          traceId: nextTraceId.trim() || undefined
+        }),
+        getRagTraceStats({
+          traceId: nextTraceId.trim() || undefined
+        })
+      ]);
       if (runsRequestRef.current !== requestId) return;
       setPageData(result);
+      setStatsData(stats);
     } catch (error) {
       if (runsRequestRef.current !== requestId) return;
       toast.error(getErrorMessage(error, "加载链路运行列表失败"));
@@ -76,28 +81,19 @@ export function RagTracePage() {
     loadRuns(pageNo, queryTraceId);
   };
 
+  // 统计信息来自后端全量数据（而非当前页 10 条）
   const traceStats = useMemo(() => {
-    const durations = runs
-      .map((item) => Number(item.durationMs ?? 0))
-      .filter((value) => Number.isFinite(value) && value > 0);
-    const successCount = runs.filter((item) => normalizeStatus(item.status) === "success").length;
-    const failedCount = runs.filter((item) => normalizeStatus(item.status) === "failed").length;
-    const runningCount = runs.filter((item) => normalizeStatus(item.status) === "running").length;
-    const avgDuration = durations.length
-      ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
-      : 0;
-    const p95Duration = Math.round(percentile(durations, 0.95));
-    const successRate = runs.length ? Math.round((successCount / runs.length) * 1000) / 10 : 0;
+    const s = statsData;
     return {
-      totalRuns: pageData?.total ?? runs.length,
-      successCount,
-      failedCount,
-      runningCount,
-      avgDuration,
-      p95Duration,
-      successRate
+      totalRuns: s?.totalCount ?? pageData?.total ?? 0,
+      successCount: s?.successCount ?? 0,
+      failedCount: s?.failCount ?? 0,
+      runningCount: Math.max(0, (s?.totalCount ?? 0) - (s?.successCount ?? 0) - (s?.failCount ?? 0)),
+      avgDuration: s?.avgDurationMs ?? 0,
+      p95Duration: s?.p95DurationMs ?? 0,
+      successRate: s?.successRate ?? 0,
     };
-  }, [runs, pageData?.total]);
+  }, [statsData, pageData?.total]);
 
   const current = pageData?.current || pageNo;
   const pages = pageData?.pages || 1;

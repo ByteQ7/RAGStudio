@@ -6,6 +6,7 @@ import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.rag.controller.request.RagTraceRunPageRequest;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceDetailVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceNodeVO;
+import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceRunStatsVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceRunVO;
 import com.byteq.ai.ragstudio.rag.service.RagTraceQueryService;
 import lombok.RequiredArgsConstructor;
@@ -71,5 +72,20 @@ public class RagTraceController {
     @GetMapping("/rag/traces/runs/{traceId}/nodes")
     public Result<List<RagTraceNodeVO>> nodes(@PathVariable String traceId) {
         return Results.success(ragTraceQueryService.listNodes(traceId));
+    }
+
+    /**
+     * 查询链路运行统计（全量数据）
+     * <p>
+     * 基于全量运行记录计算统计指标，不参与分页。
+     * 包括总记录数、成功/失败数、成功率、平均耗时、P95 耗时。
+     * </p>
+     *
+     * @param request 过滤条件（与分页查询一致）
+     * @return 运行统计信息
+     */
+    @GetMapping("/rag/traces/runs/stats")
+    public Result<RagTraceRunStatsVO> stats(RagTraceRunPageRequest request) {
+        return Results.success(ragTraceQueryService.stats(request));
     }
 }

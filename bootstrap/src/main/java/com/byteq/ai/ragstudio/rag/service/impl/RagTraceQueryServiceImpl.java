@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.byteq.ai.ragstudio.rag.controller.request.RagTraceRunPageRequest;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceDetailVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceNodeVO;
+import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceRunStatsVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceRunVO;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceRunDO;
@@ -160,6 +161,69 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
                 .durationMs(node.getDurationMs())
                 .startTime(node.getStartTime())
                 .endTime(node.getEndTime())
+                .build();
+    }
+
+    // 查询链路运行全量统计（含 P95、平均耗时等），不参与分页
+    @Override
+    public RagTraceRunStatsVO stats(RagTraceRunPageRequest request) {
+        // 构建过滤条件（与 pageRuns 一致，但不分页、不排序）
+        LambdaQueryWrapper<RagTraceRunDO> wrapper = Wrappers.lambdaQuery(RagTraceRunDO.class);
+
+        if (StrUtil.isNotBlank(request.getTraceId())) {
+            wrapper.eq(RagTraceRunDO::getTraceId, request.getTraceId());
+        }
+        if (StrUtil.isNotBlank(request.getConversationId())) {
+            wrapper.eq(RagTraceRunDO::getConversationId, request.getConversationId());
+        }
+        if (StrUtil.isNotBlank(request.getTaskId())) {
+            wrapper.eq(RagTraceRunDO::getTaskId, request.getTaskId());
+        }
+        if (StrUtil.isNotBlank(request.getStatus())) {
+            wrapper.eq(RagTraceRunDO::getStatus, request.getStatus());
+        }
+
+        // 查询所有符合条件的记录（只取状态和耗时字段）
+        wrapper.select(RagTraceRunDO::getStatus, RagTraceRunDO::getDurationMs);
+        List<RagTraceRunDO> allRuns = runMapper.selectList(wrapper);
+
+        long totalCount = allRuns.size();
+        long successCount = allRuns.stream()
+                .filter(r -> "SUCCESS".equalsIgnoreCase(r.getStatus()))
+                .count();
+        long failCount = allRuns.stream()
+                .filter(r -> "ERROR".equalsIgnoreCase(r.getStatus()))
+                .count();
+        double successRate = totalCount > 0 ? Math.round((double) successCount / totalCount * 1000.0) / 10.0 : 0.0;
+
+        // 提取成功记录的耗时
+        List<Long> durations = allRuns.stream()
+                .filter(r -> "SUCCESS".equalsIgnoreCase(r.getStatus()))
+                .map(RagTraceRunDO::getDurationMs)
+                .filter(Objects::nonNull)
+                .filter(d -> d > 0)
+                .sorted()
+                .toList();
+
+        long avgDurationMs = durations.isEmpty() ? 0L : (long) durations.stream()
+                .mapToLong(Long::longValue)
+                .average()
+                .orElse(0.0);
+
+        long p95DurationMs = 0L;
+        if (!durations.isEmpty()) {
+            int index = (int) Math.ceil(durations.size() * 0.95) - 1;
+            index = Math.max(0, Math.min(index, durations.size() - 1));
+            p95DurationMs = durations.get(index);
+        }
+
+        return RagTraceRunStatsVO.builder()
+                .totalCount(totalCount)
+                .successCount(successCount)
+                .failCount(failCount)
+                .successRate(successRate)
+                .avgDurationMs(avgDurationMs)
+                .p95DurationMs(p95DurationMs)
                 .build();
     }
 }

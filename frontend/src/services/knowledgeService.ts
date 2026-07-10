@@ -288,6 +288,10 @@ export const startDocumentChunk = async (docId: string): Promise<void> => {
   await api.post(`/knowledge-base/docs/${docId}/chunk`);
 };
 
+export const startBatchDocumentChunk = async (docIds: string[]): Promise<void> => {
+  await api.post(`/knowledge-base/docs/batch-chunk`, docIds);
+};
+
 export const enableDocument = async (docId: string, enabled: boolean): Promise<void> => {
   await api.patch(`/knowledge-base/docs/${docId}/enable`, null, {
     params: { value: enabled }

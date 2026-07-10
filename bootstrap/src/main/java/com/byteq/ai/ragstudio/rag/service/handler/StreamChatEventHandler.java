@@ -88,15 +88,19 @@ public class StreamChatEventHandler implements StreamCallback {
     private CompletionPayload buildCompletionPayloadOnCancel() {
         String content = answer.toString();
         String messageId = null;
-        if (StrUtil.isNotBlank(content)) {
-            try {
-                String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
-                ChatMessage message = ChatMessage.assistant(content, thinkingContent,
-                        resolveThinkingDuration(), agentStepsJson, citationsJson);
-                messageId = memoryService.append(conversationId, userId, message);
-            } catch (Exception e) {
-                log.error("取消时持久化消息失败，conversationId：{}", conversationId, e);
+        try {
+            String displayContent;
+            if (StrUtil.isNotBlank(content)) {
+                displayContent = content + "\n\n---\n> **对话被用户关闭** ❗";
+            } else {
+                displayContent = "> **对话被用户关闭** ❗";
             }
+            String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
+            ChatMessage message = ChatMessage.assistant(displayContent, thinkingContent,
+                    resolveThinkingDuration(), agentStepsJson, citationsJson);
+            messageId = memoryService.append(conversationId, userId, message);
+        } catch (Exception e) {
+            log.error("取消时持久化消息失败，conversationId：{}", conversationId, e);
         }
         String title = resolveTitleForEvent();
         return new CompletionPayload(messageId, title);
@@ -232,6 +236,8 @@ public class StreamChatEventHandler implements StreamCallback {
     @Override
     public void onComplete() {
         if (taskManager.isCancelled(taskId)) {
+            // content 已在 buildCompletionPayloadOnCancel 中持久化，不再重复保存
+            sender.sendEvent(SSEEventType.DONE.value(), "");
             return;
         }
         String messageId = null;

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.byteq.ai.ragstudio.rag.controller.request.RagTraceRunPageRequest;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceDetailVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceNodeVO;
+import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceRunStatsVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceRunVO;
 
 import java.util.List;
@@ -50,4 +51,16 @@ public interface RagTraceQueryService {
      * @return 链路节点视图对象列表
      */
     List<RagTraceNodeVO> listNodes(String traceId);
+
+    /**
+     * 查询链路运行统计（全量数据）
+     * <p>
+     * 根据过滤条件查询所有匹配的链路运行记录，返回全量统计信息，
+     * 包括成功率、平均耗时、P95 耗时等。不参与分页。
+     * </p>
+     *
+     * @param request 过滤条件（traceId / conversationId / taskId / status）
+     * @return 运行统计视图对象
+     */
+    RagTraceRunStatsVO stats(RagTraceRunPageRequest request);
 }
