@@ -729,6 +729,7 @@ CREATE TABLE t_ai_provider (
     api_key      VARCHAR(500),
     endpoints    JSONB,
     enabled      SMALLINT     NOT NULL DEFAULT 1,
+    icon_url     VARCHAR(500),
     create_time  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted      SMALLINT     NOT NULL DEFAULT 0,
@@ -742,6 +743,7 @@ COMMENT ON COLUMN t_ai_provider.base_url IS 'API基础地址';
 COMMENT ON COLUMN t_ai_provider.api_key IS 'API密钥';
 COMMENT ON COLUMN t_ai_provider.endpoints IS '端点映射JSON';
 COMMENT ON COLUMN t_ai_provider.enabled IS '是否启用 1：启用 0：禁用';
+COMMENT ON COLUMN t_ai_provider.icon_url IS '供应商图标URL';
 COMMENT ON COLUMN t_ai_provider.create_time IS '创建时间';
 COMMENT ON COLUMN t_ai_provider.update_time IS '更新时间';
 COMMENT ON COLUMN t_ai_provider.deleted IS '是否删除 0：正常 1：删除';

@@ -12,6 +12,12 @@ import com.byteq.ai.ragstudio.aimodel.controller.request.AiProviderUpdateRequest
 import com.byteq.ai.ragstudio.aimodel.controller.request.ModelPriorityItem;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.AiModelVO;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.AiProviderVO;
+import com.byteq.ai.ragstudio.aimodel.controller.vo.ConnectivityResultVO;
+import com.byteq.ai.ragstudio.aimodel.controller.vo.FetchModelsResultVO;
+import com.byteq.ai.ragstudio.aimodel.controller.vo.RemoteModelInfoVO;
+import com.byteq.ai.ragstudio.aimodel.adapter.ProviderAdapter;
+import com.byteq.ai.ragstudio.aimodel.adapter.ProviderAdapterRegistry;
+import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import com.byteq.ai.ragstudio.aimodel.dao.entity.AiModelDO;
 import com.byteq.ai.ragstudio.aimodel.dao.entity.AiProviderDO;
 import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiModelMapper;
@@ -46,6 +52,8 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     private final AiModelConfigCache configCache;
     private final SpringAiChatModelFactory chatModelFactory;
     private final ObjectMapper objectMapper;
+    private final ProviderAdapterRegistry adapterRegistry;
+    private final FileStorageService fileStorageService;
 
     // ==================== 供应商管理 ====================
 
@@ -107,14 +115,14 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
         if (request.getEnabled() != null) {
             if (request.getEnabled() == 0) {
-                Long enabledModelCount = modelMapper.selectCount(
-                        new LambdaQueryWrapper<AiModelDO>()
+                // 自动禁用该供应商下的所有模型
+                modelMapper.update(null,
+                        new LambdaUpdateWrapper<AiModelDO>()
                                 .eq(AiModelDO::getProviderId, id)
                                 .eq(AiModelDO::getEnabled, 1)
+                                .set(AiModelDO::getEnabled, 0)
                 );
-                if (enabledModelCount > 0) {
-                    throw new ClientException("该供应商下有 " + enabledModelCount + " 个已启用的模型，请先禁用后再禁用供应商");
-                }
+                log.info("禁用供应商 {} 时自动禁用其下所有模型", id);
             }
             existing.setEnabled(request.getEnabled());
         }
@@ -397,6 +405,20 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 CopyOptions.create().setIgnoreProperties("endpoints"));
         // 解析 endpoints JSON
         vo.setEndpoints(parseEndpoints(provider.getEndpoints()));
+        // 统计该供应商下的模型数量
+        Long modelCount = modelMapper.selectCount(
+                new LambdaQueryWrapper<AiModelDO>()
+                        .eq(AiModelDO::getProviderId, provider.getId())
+        );
+        vo.setModelCount(modelCount.intValue());
+        // 将 s3:// 内部 URL 转换为前端可访问的 HTTP URL
+        if (StrUtil.isNotBlank(vo.getIconUrl()) && vo.getIconUrl().startsWith("s3://")) {
+            try {
+                vo.setIconUrl(fileStorageService.generatePresignedGetUrl(vo.getIconUrl()));
+            } catch (Exception e) {
+                log.warn("转换图标 URL 失败: {}", vo.getIconUrl(), e);
+            }
+        }
         return vo;
     }
 
@@ -446,5 +468,121 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             log.warn("解析 endpoints JSON 失败: {}", json, e);
             return new HashMap<>();
         }
+    }
+
+    // ==================== 连通性检查 & 远程模型 ====================
+
+    @Override
+    public ConnectivityResultVO checkConnectivity(String providerId) {
+        AiProviderDO provider = providerMapper.selectById(providerId);
+        if (provider == null) {
+            throw new ClientException("供应商不存在：" + providerId);
+        }
+
+        ProviderAdapter adapter = adapterRegistry.getAdapter(provider.getName());
+        if (adapter == null) {
+            throw new ServiceException("不支持的供应商类型：" + provider.getName());
+        }
+
+        log.info("检查供应商连通性: name={}, adapter={}", provider.getName(), adapter.getClass().getSimpleName());
+        ProviderAdapter.ConnectivityResult result = adapter.checkConnectivity(
+                provider.getBaseUrl(),
+                provider.getApiKey()
+        );
+
+        ConnectivityResultVO vo = new ConnectivityResultVO();
+        vo.setSuccess(result.success());
+        vo.setLatencyMs(result.latencyMs());
+        vo.setError(result.error());
+        return vo;
+    }
+
+    @Override
+    public FetchModelsResultVO fetchRemoteModels(String providerId) {
+        AiProviderDO provider = providerMapper.selectById(providerId);
+        if (provider == null) {
+            throw new ClientException("供应商不存在：" + providerId);
+        }
+
+        ProviderAdapter adapter = adapterRegistry.getAdapter(provider.getName());
+        if (adapter == null) {
+            throw new ServiceException("不支持的供应商类型：" + provider.getName());
+        }
+
+        log.info("拉取远程模型列表: name={}, adapter={}", provider.getName(), adapter.getClass().getSimpleName());
+        List<ProviderAdapter.RemoteModelInfo> remoteModels = adapter.fetchModels(
+                provider.getBaseUrl(),
+                provider.getApiKey()
+        );
+
+        List<RemoteModelInfoVO> voList = remoteModels.stream()
+                .map(m -> new RemoteModelInfoVO(
+                        m.modelId(),
+                        m.modelName(),
+                        m.capabilities(),
+                        m.supportsThinking(),
+                        m.supportsMultimodal(),
+                        m.dimension()
+                ))
+                .collect(Collectors.toList());
+
+        return new FetchModelsResultVO(voList);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<String> batchCreateModels(List<AiModelCreateRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> ids = new java.util.ArrayList<>();
+        for (AiModelCreateRequest request : requests) {
+            // 复用单个创建的校验逻辑，但不重复抛出异常，跳过已存在的模型
+            if (StrUtil.isBlank(request.getProviderId())
+                    || StrUtil.isBlank(request.getModelId())
+                    || StrUtil.isBlank(request.getModelName())) {
+                log.warn("批量创建模型跳过无效请求: {}", request);
+                continue;
+            }
+
+            // 校验是否已存在
+            Long count = modelMapper.selectCount(
+                    new LambdaQueryWrapper<AiModelDO>()
+                            .eq(AiModelDO::getModelId, request.getModelId())
+                            .eq(AiModelDO::getProviderId, request.getProviderId())
+            );
+            if (count > 0) {
+                log.info("模型已存在，跳过: providerId={}, modelId={}", request.getProviderId(), request.getModelId());
+                continue;
+            }
+
+            try {
+                String id = createModel(request);
+                ids.add(id);
+            } catch (Exception e) {
+                log.warn("批量创建模型失败: modelId={}, error={}", request.getModelId(), e.getMessage());
+            }
+        }
+
+        log.info("批量创建模型完成: 请求={} 成功={}", requests.size(), ids.size());
+        configCache.reload();
+        return ids;
+    }
+
+    // ==================== 图标管理 ====================
+
+    @Override
+    public void updateProviderIcon(String providerId, String iconUrl) {
+        AiProviderDO existing = providerMapper.selectById(providerId);
+        if (existing == null) {
+            throw new ClientException("供应商不存在：" + providerId);
+        }
+
+        existing.setIconUrl(iconUrl);
+        providerMapper.updateById(existing);
+        log.info("更新供应商图标: id={}, iconUrl={}", providerId, iconUrl);
+
+        configCache.reload();
     }
 }

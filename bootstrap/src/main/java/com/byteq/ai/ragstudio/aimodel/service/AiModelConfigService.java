@@ -7,6 +7,8 @@ import com.byteq.ai.ragstudio.aimodel.controller.request.AiProviderUpdateRequest
 import com.byteq.ai.ragstudio.aimodel.controller.request.ModelPriorityItem;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.AiModelVO;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.AiProviderVO;
+import com.byteq.ai.ragstudio.aimodel.controller.vo.ConnectivityResultVO;
+import com.byteq.ai.ragstudio.aimodel.controller.vo.FetchModelsResultVO;
 
 import java.util.List;
 
@@ -115,4 +117,40 @@ public interface AiModelConfigService {
      * @param items 优先级调整列表
      */
     void updatePriorities(List<ModelPriorityItem> items);
+
+    // ==================== 连通性检查 & 远程模型 ====================
+
+    /**
+     * 检查指定供应商的连通性
+     *
+     * @param providerId 供应商 ID
+     * @return 连通性检查结果
+     */
+    ConnectivityResultVO checkConnectivity(String providerId);
+
+    /**
+     * 从远程供应商拉取模型列表
+     *
+     * @param providerId 供应商 ID
+     * @return 远程模型列表
+     */
+    FetchModelsResultVO fetchRemoteModels(String providerId);
+
+    /**
+     * 批量创建模型
+     *
+     * @param requests 模型创建请求列表
+     * @return 新创建的模型 ID 列表
+     */
+    List<String> batchCreateModels(List<AiModelCreateRequest> requests);
+
+    // ==================== 图标管理 ====================
+
+    /**
+     * 更新供应商图标 URL
+     *
+     * @param providerId 供应商 ID
+     * @param iconUrl    图标 URL
+     */
+    void updateProviderIcon(String providerId, String iconUrl);
 }
