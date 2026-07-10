@@ -125,5 +125,10 @@ sa-token:
   is-log: false
   is-print: false
 
+logging:
+  level:
+    # MCP SDK 在连接某些 SSE 端点时会打印非关键警告，降级以避免干扰
+    io.modelcontextprotocol: ERROR
+
 app:
   demo-mode: false

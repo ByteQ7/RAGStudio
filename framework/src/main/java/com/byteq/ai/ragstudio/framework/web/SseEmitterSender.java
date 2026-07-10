@@ -56,7 +56,7 @@ public class SseEmitterSender {
 
     public void fail(Throwable throwable) {
         closeWithError(throwable);
-        log.warn("SSE send failed", throwable);
+        log.debug("SSE send failed", throwable);
     }
 
     private void closeWithError(Throwable throwable) {
@@ -64,7 +64,7 @@ public class SseEmitterSender {
             try {
                 emitter.completeWithError(throwable);
             } catch (Exception e) {
-                log.warn("SSE closeWithError failed", e);
+                log.debug("SSE closeWithError failed", e);
             }
         }
     }

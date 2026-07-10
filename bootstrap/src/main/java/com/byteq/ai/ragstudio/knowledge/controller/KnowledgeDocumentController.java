@@ -73,6 +73,26 @@ public class KnowledgeDocumentController {
     }
 
     /**
+     * 批量分块
+     * <p>
+     * 批量触发指定文档的分块处理，每个文档通过 MQ 消息异步执行。
+     * </p>
+     *
+     * @param docIds 文档 ID 列表
+     * @return 操作结果
+     */
+    @PostMapping("/knowledge-base/docs/batch-chunk")
+    public Result<Void> startBatchChunk(@RequestBody List<String> docIds) {
+        if (docIds == null || docIds.isEmpty()) {
+            return Results.success();
+        }
+        for (String docId : docIds) {
+            documentService.startChunk(docId);
+        }
+        return Results.success();
+    }
+
+    /**
      * 删除文档
      * <p>逻辑删除文档记录，并可选删除该文档关联的所有分块记录和向量库中的向量数据。</p>
      *
