@@ -46,6 +46,8 @@ export interface KnowledgeChunk {
   charCount?: number | null;
   tokenCount?: number | null;
   enabled?: number | null;
+  kbName?: string | null;
+  docName?: string | null;
   createTime?: string | null;
   updateTime?: string | null;
 }
@@ -381,3 +383,22 @@ export const getChunkLogsPage = async (
     }
   );
 };
+
+// ==================== 全局 Chunk 搜索（顶栏搜索栏使用） ====================
+
+/**
+ * 全局按 Chunk ID 搜索分片
+ * @param keyword 搜索关键词
+ * @param current 页码
+ * @param size 每页条数
+ */
+export async function searchChunks(
+  keyword: string,
+  current = 1,
+  size = 10
+): Promise<PageResult<KnowledgeChunk>> {
+  return api.get<PageResult<KnowledgeChunk>, PageResult<KnowledgeChunk>>(
+    "/knowledge-base/chunks/search",
+    { params: { keyword, current, size } }
+  );
+}

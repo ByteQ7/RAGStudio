@@ -35,6 +35,23 @@ public class KnowledgeChunkController {
     private final KnowledgeChunkService knowledgeChunkService;
 
     /**
+     * 全局按 Chunk ID 搜索分片
+     * <p>跨所有知识库和文档，按 Chunk ID 模糊搜索。用于顶栏搜索栏快速定位 Chunk。</p>
+     *
+     * @param keyword 搜索关键词
+     * @param current 页码（默认 1）
+     * @param size    每页条数（默认 10）
+     * @return 包含分片分页结果的响应
+     */
+    @GetMapping("/knowledge-base/chunks/search")
+    public Result<IPage<KnowledgeChunkVO>> searchGlobally(
+            @RequestParam("keyword") String keyword,
+            @RequestParam(value = "current", defaultValue = "1") int current,
+            @RequestParam(value = "size", defaultValue = "10") int size) {
+        return Results.success(knowledgeChunkService.searchChunksGlobally(keyword, current, size));
+    }
+
+    /**
      * 分页查询分片列表
      * <p>按文档 ID 分页查询该文档下的所有分片，支持按启用状态筛选。</p>
      *

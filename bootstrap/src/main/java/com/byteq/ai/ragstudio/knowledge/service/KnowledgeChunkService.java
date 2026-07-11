@@ -18,6 +18,17 @@ import java.util.List;
 public interface KnowledgeChunkService {
 
     /**
+     * 全局按 Chunk ID 搜索分片
+     * <p>跨所有知识库和文档，按 Chunk ID 模糊搜索。返回结果中填充 kbName、docName 字段。</p>
+     *
+     * @param keyword 搜索关键词（Chunk ID 模糊匹配）
+     * @param current 页码
+     * @param size    每页条数
+     * @return 分片分页信息（含所属知识库名称和文档名称）
+     */
+    IPage<KnowledgeChunkVO> searchChunksGlobally(String keyword, int current, int size);
+
+    /**
      * 分页查询指定文档的分片列表
      * <p>按文档 ID 分页查询分片列表，支持按启用状态筛选过滤。</p>
      *

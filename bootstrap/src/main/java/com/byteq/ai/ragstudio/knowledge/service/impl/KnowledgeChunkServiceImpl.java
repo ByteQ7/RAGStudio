@@ -75,6 +75,39 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     }
 
     /**
+     * 全局按 Chunk ID 搜索分片
+     * <p>跨所有知识库和文档搜索，返回结果中填充知识库名称和文档名称。</p>
+     */
+    @Override
+    public IPage<KnowledgeChunkVO> searchChunksGlobally(String keyword, int current, int size) {
+        LambdaQueryWrapper<KnowledgeChunkDO> queryWrapper = new LambdaQueryWrapper<KnowledgeChunkDO>()
+                .like(StrUtil.isNotBlank(keyword), KnowledgeChunkDO::getId, keyword)
+                .orderByDesc(KnowledgeChunkDO::getUpdateTime);
+
+        Page<KnowledgeChunkDO> page = new Page<>(current, size);
+        IPage<KnowledgeChunkDO> result = chunkMapper.selectPage(page, queryWrapper);
+
+        return result.convert(each -> {
+            KnowledgeChunkVO vo = BeanUtil.toBean(each, KnowledgeChunkVO.class);
+            // 查询文档名称
+            if (StrUtil.isNotBlank(each.getDocId())) {
+                KnowledgeDocumentDO doc = documentMapper.selectById(each.getDocId());
+                if (doc != null) {
+                    vo.setDocName(doc.getDocName());
+                }
+            }
+            // 查询知识库名称
+            if (StrUtil.isNotBlank(each.getKbId())) {
+                KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(each.getKbId());
+                if (kb != null) {
+                    vo.setKbName(kb.getName());
+                }
+            }
+            return vo;
+        });
+    }
+
+    /**
      * 新增分片
      * <p>
      * 处理流程：校验文档状态 → 自动计算分片序号 → 创建分片记录 →
