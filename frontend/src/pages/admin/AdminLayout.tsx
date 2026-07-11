@@ -547,7 +547,7 @@ export function AdminLayout() {
                     autoCorrect="off"
                     autoCapitalize="off"
                     spellCheck={false}
-                    placeholder="筛选知识库..."
+                    placeholder="搜索 Chunk ID..."
                     className="pl-10 pr-16"
                   />
                   <span className="admin-topbar-kbd">Ctrl K</span>
