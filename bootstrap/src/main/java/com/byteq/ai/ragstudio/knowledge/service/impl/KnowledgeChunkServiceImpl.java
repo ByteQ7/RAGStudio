@@ -81,7 +81,8 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     @Override
     public IPage<KnowledgeChunkVO> searchChunksGlobally(String keyword, int current, int size) {
         LambdaQueryWrapper<KnowledgeChunkDO> queryWrapper = new LambdaQueryWrapper<KnowledgeChunkDO>()
-                .like(StrUtil.isNotBlank(keyword), KnowledgeChunkDO::getId, keyword)
+                // 前缀匹配而非模糊匹配，利用主键 B-tree 索引，避免全表扫描
+                .likeRight(StrUtil.isNotBlank(keyword), KnowledgeChunkDO::getId, keyword)
                 .orderByDesc(KnowledgeChunkDO::getUpdateTime);
 
         Page<KnowledgeChunkDO> page = new Page<>(current, size);
