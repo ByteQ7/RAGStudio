@@ -56,6 +56,16 @@ public class KnowledgeChunkVO {
     private Integer enabled;
 
     /**
+     * 所属知识库名称（全局搜索时填充）
+     */
+    private String kbName;
+
+    /**
+     * 所属文档名称（全局搜索时填充）
+     */
+    private String docName;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;

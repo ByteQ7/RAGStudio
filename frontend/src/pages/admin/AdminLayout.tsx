@@ -39,10 +39,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { changePassword } from "@/services/userService";
 import {
-  getKnowledgeBases,
-  searchKnowledgeDocuments,
-  type KnowledgeBase,
-  type KnowledgeDocumentSearchItem
+  searchChunks,
+  type KnowledgeChunk
 } from "@/services/knowledgeService";
 import { Avatar } from "@/components/common/Avatar";
 
@@ -178,8 +176,7 @@ export function AdminLayout() {
   });
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ ingestion: true });
   const [kbQuery, setKbQuery] = useState("");
-  const [kbOptions, setKbOptions] = useState<KnowledgeBase[]>([]);
-  const [docOptions, setDocOptions] = useState<KnowledgeDocumentSearchItem[]>([]);
+  const [chunkOptions, setChunkOptions] = useState<KnowledgeChunk[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const blurTimeoutRef = useRef<number | null>(null);
@@ -196,8 +193,7 @@ export function AdminLayout() {
     if (!searchFocused) return;
     const keyword = kbQuery.trim();
     if (!keyword) {
-      setKbOptions([]);
-      setDocOptions([]);
+      setChunkOptions([]);
       setSearchLoading(false);
       return;
     }
@@ -205,19 +201,14 @@ export function AdminLayout() {
     let active = true;
     const handle = window.setTimeout(() => {
       setSearchLoading(true);
-      Promise.all([
-        getKnowledgeBases(1, 6, keyword),
-        searchKnowledgeDocuments(keyword, 6)
-      ])
-        .then(([kbData, docData]) => {
+      searchChunks(keyword, 1, 10)
+        .then((data) => {
           if (!active) return;
-          setKbOptions(kbData || []);
-          setDocOptions(docData || []);
+          setChunkOptions(data?.records || []);
         })
         .catch(() => {
           if (active) {
-            setKbOptions([]);
-            setDocOptions([]);
+            setChunkOptions([]);
           }
         })
         .finally(() => {
@@ -310,22 +301,12 @@ export function AdminLayout() {
     }
   };
 
-  const handleSearchSelect = (kb: KnowledgeBase) => {
+  const handleChunkSelect = (chunk: KnowledgeChunk) => {
     searchInputRef.current?.blur();
-    navigate(`/admin/knowledge/${kb.id}`);
+    navigate(`/admin/knowledge/${chunk.kbId}/docs/${chunk.docId}?highlight=${chunk.id}`);
     setSearchFocused(false);
     setKbQuery("");
-    setKbOptions([]);
-    setDocOptions([]);
-  };
-
-  const handleDocumentSelect = (doc: KnowledgeDocumentSearchItem) => {
-    searchInputRef.current?.blur();
-    navigate(`/admin/knowledge/${doc.kbId}/docs/${doc.id}`);
-    setSearchFocused(false);
-    setKbQuery("");
-    setKbOptions([]);
-    setDocOptions([]);
+    setChunkOptions([]);
   };
 
   const handleSearchFocus = () => {
@@ -348,17 +329,13 @@ export function AdminLayout() {
   const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       const keyword = kbQuery.trim();
-      if (kbOptions.length > 0) {
-        handleSearchSelect(kbOptions[0]);
-        return;
-      }
-      if (docOptions.length > 0) {
-        handleDocumentSelect(docOptions[0]);
+      if (chunkOptions.length > 0) {
+        handleChunkSelect(chunkOptions[0]);
         return;
       }
       if (keyword) {
         searchInputRef.current?.blur();
-        navigate(`/admin/knowledge?name=${encodeURIComponent(keyword)}`);
+        navigate(`/admin/knowledge/chunks?keyword=${encodeURIComponent(keyword)}`);
         setSearchFocused(false);
         return;
       }
@@ -576,33 +553,27 @@ export function AdminLayout() {
                   <span className="admin-topbar-kbd">Ctrl K</span>
                   {showSuggest ? (
                     <div className="admin-topbar-suggest" onMouseDown={(event) => event.preventDefault()}>
-                      {searchLoading && kbOptions.length === 0 && docOptions.length === 0 ? (
+                      {searchLoading && chunkOptions.length === 0 ? (
                         <div className="admin-topbar-suggest-item text-gray-400">搜索中...</div>
                       ) : null}
-                      {kbOptions.length > 0 ? (
+                      {chunkOptions.length > 0 ? (
                         <div className="admin-topbar-suggest-section">
-                          <div className="admin-topbar-suggest-group">知识库</div>
-                          {kbOptions.map((kb) => (
-                            <button key={kb.id} type="button" onMouseDown={(event) => { event.preventDefault(); handleSearchSelect(kb); }} className="admin-topbar-suggest-item">
-                              <span className="font-medium text-gray-900">{kb.name}</span>
-                              <span className="text-xs text-gray-400">{kb.collectionName || "未设置 Collection"}</span>
+                          <div className="admin-topbar-suggest-group">Chunk</div>
+                          {chunkOptions.map((chunk) => (
+                            <button key={chunk.id} type="button" onMouseDown={(event) => { event.preventDefault(); handleChunkSelect(chunk); }} className="admin-topbar-suggest-item">
+                              <span className="font-mono text-xs font-medium text-gray-900">{chunk.id}</span>
+                              <span className="mt-0.5 line-clamp-1 text-[11px] text-gray-500">
+                                {chunk.content ? chunk.content.substring(0, 80) + (chunk.content.length > 80 ? '...' : '') : ''}
+                              </span>
+                              <span className="mt-0.5 text-[10px] text-gray-400">
+                                {chunk.kbName || '知识库'} → {chunk.docName || '文档'}
+                              </span>
                             </button>
                           ))}
                         </div>
                       ) : null}
-                      {docOptions.length > 0 ? (
-                        <div className="admin-topbar-suggest-section">
-                          <div className="admin-topbar-suggest-group">文档</div>
-                          {docOptions.map((doc) => (
-                            <button key={doc.id} type="button" onMouseDown={(event) => { event.preventDefault(); handleDocumentSelect(doc); }} className="admin-topbar-suggest-item">
-                              <span className="font-medium text-gray-900">{doc.docName}</span>
-                              <span className="text-xs text-gray-400">{doc.kbName || `知识库 ${doc.kbId}`}</span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                      {!searchLoading && kbOptions.length === 0 && docOptions.length === 0 ? (
-                        <div className="admin-topbar-suggest-item text-gray-400">暂无匹配结果</div>
+                      {!searchLoading && chunkOptions.length === 0 ? (
+                        <div className="admin-topbar-suggest-item text-gray-400">按 Chunk ID 搜索</div>
                       ) : null}
                     </div>
                   ) : null}

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CircleHelp, PenSquare, Plus, RefreshCw, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,6 +46,8 @@ const enabledLabel = (enabled?: number | null) => (enabled === 1 ? "启用" : "�
 export function KnowledgeChunksPage() {
   const { kbId, docId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const highlightChunkId = searchParams.get("highlight");
   const [doc, setDoc] = useState<KnowledgeDocument | null>(null);
   const [pageData, setPageData] = useState<PageResult<KnowledgeChunk> | null>(null);
   const [pageNo, setPageNo] = useState(1);
@@ -92,6 +94,22 @@ export function KnowledgeChunksPage() {
       setLoading(false);
     }
   };
+
+  // 高亮定位：当 chunk 列表加载完成后，滚动到 highlight 指定的 chunk
+  useEffect(() => {
+    if (!highlightChunkId || !pageData?.records?.length) return;
+    // 给 DOM 渲染留出时间
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`chunk-${highlightChunkId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        // 3 秒后移除高亮
+        el.classList.add("bg-amber-50");
+        setTimeout(() => el.classList.remove("bg-amber-50"), 3000);
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [highlightChunkId, pageData]);
 
   useEffect(() => {
     loadDocument();
@@ -290,7 +308,7 @@ export function KnowledgeChunksPage() {
               </TableHeader>
               <TableBody>
                 {chunks.map((chunk) => (
-                  <TableRow key={chunk.id}>
+                  <TableRow key={chunk.id} id={`chunk-${chunk.id}`} className="transition-colors duration-700">
                     <TableCell>
                       <input
                         type="checkbox"
