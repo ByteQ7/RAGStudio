@@ -204,29 +204,30 @@ public class StreamChatPipeline {
         aiLogService.writeln(taskId, "图片数: " + (ctx.getImageUrls() != null ? ctx.getImageUrls().size() : 0));
         aiLogService.writeln(taskId, "");
 
-        // 记录完整对话历史
-        java.util.List<com.byteq.ai.ragstudio.framework.convention.ChatMessage> history = ctx.getHistory();
-        if (history != null && !history.isEmpty()) {
-            aiLogService.writeln(taskId, "【对话上下文】");
-            for (com.byteq.ai.ragstudio.framework.convention.ChatMessage msg : history) {
-                String role = msg.getRole() != null ? msg.getRole().name() : "unknown";
-                String content = msg.getContent() != null ? msg.getContent() : "";
-                // 只截取前 2000 字避免日志过大
-                if (content.length() > 2000) {
-                    content = content.substring(0, 2000) + "\n... [已截断 " + (content.length() - 2000) + " 字符]";
-                }
-                aiLogService.writeln(taskId, "  [" + role + "] " + content);
-            }
-            aiLogService.writeln(taskId, "");
-        }
-
         try {
             doExecute(ctx);
+
             // 取最终回答（流式内容已拼接完整）
             String answer = ctx.getCallback() instanceof com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler
                     ? ((com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler) ctx.getCallback()).getAnswerString()
                     : null;
-            if (answer != null) {
+
+            // 记录对话上下文 + 回答（doExecute 内才加载了 history）
+            java.util.List<com.byteq.ai.ragstudio.framework.convention.ChatMessage> history = ctx.getHistory();
+            if (history != null && !history.isEmpty()) {
+                aiLogService.writeln(taskId, "【对话上下文】");
+                for (com.byteq.ai.ragstudio.framework.convention.ChatMessage msg : history) {
+                    String role = msg.getRole() != null ? msg.getRole().name() : "unknown";
+                    String content = msg.getContent() != null ? msg.getContent() : "";
+                    if (content.length() > 2000) {
+                        content = content.substring(0, 2000) + "\n... [已截断 " + (content.length() - 2000) + " 字符]";
+                    }
+                    aiLogService.writeln(taskId, "  [" + role + "] " + content);
+                }
+                aiLogService.writeln(taskId, "");
+            }
+
+            if (answer != null && !answer.isEmpty()) {
                 aiLogService.writeln(taskId, "【AI 回答】");
                 aiLogService.writeln(taskId, answer);
                 aiLogService.writeln(taskId, "");
