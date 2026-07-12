@@ -9,8 +9,10 @@ import com.byteq.ai.ragstudio.user.dao.entity.UserDO;
 import com.byteq.ai.ragstudio.user.dao.mapper.UserMapper;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.security.PasswordHasher;
+import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import com.byteq.ai.ragstudio.user.service.AuthService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -19,6 +21,7 @@ import org.springframework.stereotype.Service;
  * 实现用户登录和登出的核心业务逻辑，包括身份校验、Sa-Token 会话管理和登录信息返回。
  * </p>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -26,6 +29,7 @@ public class AuthServiceImpl implements AuthService {
     private static final String DEFAULT_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4";
 
     private final UserMapper userMapper;
+    private final FileStorageService fileStorageService;
 
     /**
      * 用户登录
@@ -58,7 +62,17 @@ public class AuthServiceImpl implements AuthService {
         }
         String loginId = user.getId().toString();
         StpUtil.login(loginId);
-        String avatar = StrUtil.isBlank(user.getAvatar()) ? DEFAULT_AVATAR_URL : user.getAvatar();
+        String avatar = user.getAvatar();
+        if (StrUtil.isBlank(avatar)) {
+            avatar = DEFAULT_AVATAR_URL;
+        } else if (avatar.startsWith("s3://")) {
+            try {
+                avatar = fileStorageService.generatePresignedGetUrl(avatar);
+            } catch (Exception e) {
+                log.warn("转换登录头像 URL 失败", e);
+                avatar = DEFAULT_AVATAR_URL;
+            }
+        }
         return new LoginVO(loginId, user.getRole(), StpUtil.getTokenValue(), avatar);
     }
 
