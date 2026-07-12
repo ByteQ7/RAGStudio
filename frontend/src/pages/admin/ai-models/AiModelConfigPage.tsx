@@ -673,7 +673,7 @@ export function AiModelConfigPage() {
 
       {/* ==================== Model Create/Edit Dialog ==================== */}
       <Dialog open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="sm:max-w-[520px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {modelDialogMode === "create" ? "新增模型" : "编辑模型"}

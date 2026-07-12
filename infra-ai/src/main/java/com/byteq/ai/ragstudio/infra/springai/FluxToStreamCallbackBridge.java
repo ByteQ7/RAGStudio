@@ -54,12 +54,14 @@ public class FluxToStreamCallbackBridge {
                         if (thinking != null && !thinking.isEmpty() && thinkingLevel > 0) {
                             callback.onThinking(thinking);
                             rawThinking.append(thinking);
+                            AiLogHolder.log(finalTaskId, "[SSE] event: think | data: " + thinking + "\n");
                         }
                         // 提取正文内容
                         String text = extractContent(chunk);
                         if (text != null && !text.isEmpty()) {
                             callback.onContent(text);
                             rawResponse.append(text);
+                            AiLogHolder.log(finalTaskId, "[SSE] data: " + text + "\n");
                         }
                     } catch (Exception e) {
                         log.warn("流式响应内容提取失败: {}", e.getMessage());
