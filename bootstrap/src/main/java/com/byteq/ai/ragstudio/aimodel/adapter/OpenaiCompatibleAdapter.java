@@ -127,16 +127,24 @@ public class OpenaiCompatibleAdapter implements ProviderAdapter {
 
             for (JsonNode node : data) {
                 String id = node.get("id").asText();
-                String ownedBy = node.has("owned_by") ? node.get("owned_by").asText() : "";
+                String lowerId = id.toLowerCase();
 
-                // OpenAI 兼容格式只返回 ID，用 ID 作为显示名
-                // capabilities 默认 CHAT，具体供应商可在子类中覆盖
+                // 根据模型 ID 命名规则推断能力类型
+                List<String> capabilities = new ArrayList<>();
+                if (lowerId.contains("embed")) {
+                    capabilities.add("EMBEDDING");
+                } else if (lowerId.contains("rerank")) {
+                    capabilities.add("RERANK");
+                } else {
+                    capabilities.add("CHAT");
+                }
+
                 result.add(new RemoteModelInfo(
                         id,
                         id,
-                        List.of("CHAT"),
-                        id.toLowerCase().contains("reason") || id.toLowerCase().contains("thinking"),
-                        id.toLowerCase().contains("vision") || id.toLowerCase().contains("vl"),
+                        capabilities,
+                        lowerId.contains("reason") || lowerId.contains("thinking"),
+                        lowerId.contains("vision") || lowerId.contains("vl"),
                         null
                 ));
             }

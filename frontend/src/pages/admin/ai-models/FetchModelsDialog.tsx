@@ -8,6 +8,8 @@ import {
   ArrowUpDown,
   AlertCircle
 } from "lucide-react";
+
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -242,53 +244,55 @@ export function FetchModelsDialog({
           )}
 
           {!loading && !error && remoteModels.length > 0 && (
-            <div className="space-y-4">
-              {/* 操作栏 */}
-              <div className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-2.5">
-                <button
-                  type="button"
-                  className="flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-indigo-600"
-                  onClick={toggleAll}
-                >
-                  {selectedIds.size === selectableCount && selectableCount > 0 ? (
-                    <CheckCircle2 className="h-4 w-4 text-indigo-500" />
-                  ) : (
-                    <Circle className="h-4 w-4" />
-                  )}
-                  {selectedIds.size === selectableCount && selectableCount > 0
-                    ? "取消全选"
-                    : "全选"}
-                  <span className="text-gray-300">
-                    ({selectableCount} 个可选)
-                  </span>
-                </button>
-                <span className="text-xs text-gray-400">
-                  已选 {selectedIds.size} 个
-                </span>
-              </div>
+            <div>
+              {/* Tab 导航 */}
+              <Tabs defaultValue={availableCaps[0]} className="w-full">
+                <div className="flex items-center justify-between mb-3">
+                  <TabsList className="rounded-xl bg-gray-50/80 p-1 gap-0">
+                    {availableCaps.map((cap) => {
+                      const meta = CAPABILITY_META[cap];
+                      const count = (groupedByCapability[cap] || []).length;
+                      return (
+                        <TabsTrigger
+                          key={cap}
+                          value={cap}
+                          className={cn(
+                            "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm",
+                            cap === "CHAT" && "data-[state=active]:text-violet-700",
+                            cap === "EMBEDDING" && "data-[state=active]:text-emerald-700",
+                            cap === "RERANK" && "data-[state=active]:text-amber-700"
+                          )}
+                        >
+                          <meta.icon className={cn("h-3.5 w-3.5", meta.color)} />
+                          {meta.label}
+                          <span className="ml-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">{count}</span>
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
 
-              {/* 按能力分组 */}
-              {availableCaps.map((cap) => {
-                const meta = CAPABILITY_META[cap];
-                const models = groupedByCapability[cap] || [];
-                // 去重（同一个模型可能有多个 capability）
-                const unique = models.filter(
-                  (m, i, arr) => arr.findIndex((x) => x.modelId === m.modelId) === i
-                );
+                  {/* 全选/计数 */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400">已选 {selectedIds.size} 个</span>
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                      onClick={toggleAll}
+                    >
+                      {selectedIds.size === selectableCount && selectableCount > 0 ? "取消全选" : "全选"}
+                    </button>
+                  </div>
+                </div>
 
-                return (
-                  <div key={cap}>
-                    <div className="mb-2 flex items-center gap-2 px-1">
-                      <meta.icon className={cn("h-4 w-4", meta.color)} />
-                      <span className="text-xs font-semibold text-gray-600">
-                        {meta.label}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        ({unique.length})
-                      </span>
-                    </div>
+                {availableCaps.map((cap) => {
+                  const rawModels = groupedByCapability[cap] || [];
+                  // 去重
+                  const unique = rawModels.filter(
+                    (m, i, arr) => arr.findIndex((x) => x.modelId === m.modelId) === i
+                  );
 
-                    <div className="space-y-1">
+                  return (
+                    <TabsContent key={cap} value={cap} className="mt-0 space-y-1.5">
                       {unique.map((model) => {
                         const exists = isExisting(model.modelId);
                         const selected = selectedIds.has(model.modelId);
@@ -305,7 +309,6 @@ export function FetchModelsDialog({
                                 : "border-gray-100 bg-white hover:border-gray-200"
                             )}
                           >
-                            {/* 勾选框 */}
                             <button
                               type="button"
                               onClick={() => !exists && toggleModel(model.modelId)}
@@ -321,50 +324,28 @@ export function FetchModelsDialog({
                               )}
                             </button>
 
-                            {/* 信息 */}
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
-                                <span
-                                  className={cn(
-                                    "text-sm font-medium",
-                                    exists ? "text-gray-400" : "text-gray-900"
-                                  )}
-                                >
+                                <span className={cn("text-sm font-medium", exists ? "text-gray-400" : "text-gray-900")}>
                                   {model.modelId}
                                 </span>
                                 {model.supportsThinking && (
-                                  <Badge className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[10px] text-violet-600">
-                                    思考
-                                  </Badge>
+                                  <Badge className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[10px] text-violet-600">思考</Badge>
                                 )}
                                 {model.supportsMultimodal && (
-                                  <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-2 py-0 text-[10px] text-emerald-600">
-                                    多模态
-                                  </Badge>
+                                  <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-2 py-0 text-[10px] text-emerald-600">多模态</Badge>
                                 )}
                                 {exists && (
-                                  <Badge className="rounded-full border-gray-200 bg-gray-100 px-2 py-0 text-[10px] text-gray-500">
-                                    已存在
-                                  </Badge>
+                                  <Badge className="rounded-full border-gray-200 bg-gray-100 px-2 py-0 text-[10px] text-gray-500">已存在</Badge>
                                 )}
                               </div>
 
-                              {/* 导入后显示名 */}
                               {!exists && (
                                 <div className="mt-1.5 flex items-center gap-2">
-                                  <span className="text-[11px] text-gray-400">
-                                    显示名称:
-                                  </span>
+                                  <span className="text-[11px] text-gray-400">显示名称:</span>
                                   <Input
-                                    value={
-                                      importNameOverrides[model.modelId] ?? model.modelName
-                                    }
-                                    onChange={(e) => {
-                                      setImportNameOverrides((prev) => ({
-                                        ...prev,
-                                        [model.modelId]: e.target.value
-                                      }));
-                                    }}
+                                    value={importNameOverrides[model.modelId] ?? model.modelName}
+                                    onChange={(e) => setImportNameOverrides((prev) => ({ ...prev, [model.modelId]: e.target.value }))}
                                     placeholder={model.modelName}
                                     className="h-7 w-48 text-xs"
                                     onClick={(e) => e.stopPropagation()}
@@ -373,23 +354,13 @@ export function FetchModelsDialog({
                               )}
                             </div>
 
-                            {/* 能力标签 */}
                             <div className="flex shrink-0 gap-1">
                               {model.capabilities.map((c) => {
                                 const m = CAPABILITY_META[c];
                                 if (!m) return null;
                                 const Icon = m.icon;
                                 return (
-                                  <Badge
-                                    key={c}
-                                    variant="outline"
-                                    className={cn(
-                                      "rounded-full px-2 py-0 text-[10px]",
-                                      exists
-                                        ? "border-gray-200 text-gray-400"
-                                        : m.color
-                                    )}
-                                  >
+                                  <Badge key={c} variant="outline" className={cn("rounded-full px-2 py-0 text-[10px]", exists ? "border-gray-200 text-gray-400" : m.color)}>
                                     <Icon className="mr-0.5 h-3 w-3" />
                                     {m.label}
                                   </Badge>
@@ -399,10 +370,10 @@ export function FetchModelsDialog({
                           </div>
                         );
                       })}
-                    </div>
-                  </div>
-                );
-              })}
+                    </TabsContent>
+                  );
+                })}
+              </Tabs>
             </div>
           )}
         </div>
