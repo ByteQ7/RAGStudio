@@ -49,13 +49,27 @@ public class DeepSeekChatClient implements ChatClient {
         String traceId = String.valueOf(System.currentTimeMillis());
         try {
             String modelName = target.candidate().getModel();
-            String raw = response.toString();
-            AiLogHolder.log(traceId,
-                    "=== AI Provider Raw Response ===\n" +
-                    "Model: " + modelName + "\n" +
-                    "Path: sync\n" +
-                    raw + "\n" +
-                    "=== End ===\n");
+            StringBuilder sb = new StringBuilder();
+            sb.append("=== AI Provider Raw Response ===\n");
+            sb.append("Model: ").append(modelName).append("\n");
+            sb.append("Path: sync\n");
+            sb.append("ChatResponse:\n").append(response).append("\n");
+            // 额外提取 metadata 里的所有字段（reasoning_content 可能藏在这里）
+            try {
+                org.springframework.ai.chat.model.ChatResponse cr = response;
+                if (cr.getResult() != null && cr.getResult().getOutput() != null) {
+                    org.springframework.ai.chat.messages.AssistantMessage am = cr.getResult().getOutput();
+                    java.util.Map<String, Object> meta = am.getMetadata();
+                    if (meta != null && !meta.isEmpty()) {
+                        sb.append("MessageMeta:\n");
+                        for (java.util.Map.Entry<String, Object> e : meta.entrySet()) {
+                            sb.append("  ").append(e.getKey()).append(" = ").append(e.getValue()).append("\n");
+                        }
+                    }
+                }
+            } catch (Exception ignored2) {}
+            sb.append("=== End ===\n");
+            AiLogHolder.log(traceId, sb.toString());
         } catch (Exception ignored) {}
 
         return extractText(response, "deepseek");
