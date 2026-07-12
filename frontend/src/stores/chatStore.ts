@@ -318,13 +318,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       imageUrls: previewUrls && previewUrls.length > 0 ? previewUrls : (imageUrls && imageUrls.length > 0 ? imageUrls : undefined)
     };
     const assistantId = `assistant-${Date.now()}`;
+    const currentThinkingLevel = get().deepThinkingLevel;
     const assistantMessage: Message = {
       id: assistantId,
       role: "assistant",
       content: "",
       status: "streaming",
       feedback: null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      thinkingLevel: currentThinkingLevel
     };
 
     set((state) => ({
