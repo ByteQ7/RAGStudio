@@ -40,10 +40,8 @@ public class FluxToStreamCallbackBridge {
                                                       String taskId) {
         // 如无 taskId 则使用当前时间戳
         final String finalTaskId = (taskId != null && !taskId.isEmpty()) ? taskId : String.valueOf(System.currentTimeMillis());
+        // finalTaskId available here if needed for streaming logging
         AtomicBoolean terminated = new AtomicBoolean(false);
-        // 累积完整的 AI 供应商原始回复（用于日志）
-        StringBuilder rawResponse = new StringBuilder();
-        StringBuilder rawThinking = new StringBuilder();
 
         Disposable disposable = flux.subscribe(
                 chunk -> {
@@ -53,15 +51,11 @@ public class FluxToStreamCallbackBridge {
                         String thinking = extractThinkingContent(chunk);
                         if (thinking != null && !thinking.isEmpty() && thinkingLevel > 0) {
                             callback.onThinking(thinking);
-                            rawThinking.append(thinking);
-                            AiLogHolder.log(finalTaskId, "[SSE] event: think | data: " + thinking + "\n");
                         }
                         // 提取正文内容
                         String text = extractContent(chunk);
                         if (text != null && !text.isEmpty()) {
                             callback.onContent(text);
-                            rawResponse.append(text);
-                            AiLogHolder.log(finalTaskId, "[SSE] data: " + text + "\n");
                         }
                     } catch (Exception e) {
                         log.warn("流式响应内容提取失败: {}", e.getMessage());
@@ -69,35 +63,11 @@ public class FluxToStreamCallbackBridge {
                 },
                 error -> {
                     if (terminated.compareAndSet(false, true)) {
-                        // 记录完整回复到日志
-                        if (rawResponse.length() > 0 || rawThinking.length() > 0) {
-                            StringBuilder log = new StringBuilder();
-                            log.append("=== AI 供应商原始回复 ===\n");
-                            log.append("类型: 流式\n");
-                            log.append("完成状态: 错误(").append(error.getMessage()).append(")\n");
-                            if (rawThinking.length() > 0) {
-                                log.append("\n【思考过程】\n").append(rawThinking).append("\n");
-                            }
-                            log.append("\n【回复内容】\n").append(rawResponse).append("\n");
-                            AiLogHolder.log(finalTaskId, log.toString());
-                        }
                         callback.onError(error);
                     }
                 },
                 () -> {
                     if (terminated.compareAndSet(false, true)) {
-                        // 记录完整回复到日志
-                        if (rawResponse.length() > 0 || rawThinking.length() > 0) {
-                            StringBuilder log = new StringBuilder();
-                            log.append("=== AI 供应商原始回复 ===\n");
-                            log.append("类型: 流式\n");
-                            log.append("完成状态: 成功\n");
-                            if (rawThinking.length() > 0) {
-                                log.append("\n【思考过程】\n").append(rawThinking).append("\n");
-                            }
-                            log.append("\n【回复内容】\n").append(rawResponse).append("\n");
-                            AiLogHolder.log(finalTaskId, log.toString());
-                        }
                         callback.onComplete();
                     }
                 }
