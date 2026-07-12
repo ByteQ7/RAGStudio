@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.infra.springai;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import com.byteq.ai.ragstudio.infra.reasoning.ReasoningRouter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -51,9 +52,11 @@ public class SpringAiChatModelFactory {
     private static final int MAX_CACHE_SIZE = 64;
 
     private final S3Client s3Client;
+    private final ReasoningRouter reasoningRouter;
 
-    public SpringAiChatModelFactory(S3Client s3Client) {
+    public SpringAiChatModelFactory(S3Client s3Client, ReasoningRouter reasoningRouter) {
         this.s3Client = s3Client;
+        this.reasoningRouter = reasoningRouter;
     }
 
     private final Map<String, ChatModel> chatModelCache = new ConcurrentHashMap<>();
@@ -296,8 +299,13 @@ public class SpringAiChatModelFactory {
         if (request.getTopP() != null) builder.topP(request.getTopP());
         if (request.getMaxTokens() != null) builder.maxTokens(request.getMaxTokens());
 
-        if (request.getThinking() != null) {
-            builder.extraBody(Map.of("enable_thinking", request.getThinking()));
+        // 深度思考参数路由
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        if (thinkingLevel > 0 && reasoningRouter != null) {
+            Map<String, Object> reasoningParams = reasoningRouter.route(target.candidate().getModel(), thinkingLevel);
+            if (!reasoningParams.isEmpty()) {
+                builder.extraBody(reasoningParams);
+            }
         }
 
         return builder.build();
