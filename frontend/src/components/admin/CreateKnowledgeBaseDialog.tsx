@@ -38,7 +38,7 @@ import { getErrorMessage } from "@/utils/error";
 
 const formSchema = z.object({
   name: z.string().min(1, "请输入知识库名称").max(50, "名称不能超过50个字符"),
-  description: z.string().max(200, "描述不能超过200个字符").optional(),
+  description: z.string().max(500, "描述不能超过500个字符").optional(),
   embeddingModel: z.string().min(1, "请选择Embedding模型"),
   collectionName: z
     .string()
@@ -142,7 +142,7 @@ export function CreateKnowledgeBaseDialog({
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent
-        className="sm:max-w-[500px]"
+        className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>

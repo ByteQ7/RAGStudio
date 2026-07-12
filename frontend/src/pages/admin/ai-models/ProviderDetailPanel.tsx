@@ -321,8 +321,8 @@ export function ProviderDetailPanel({
       </div>
 
       {/* ====== 可滚动内容 ====== */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-        <div className="mx-auto max-w-4xl space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div>
           {/* ====== API 配置区 ====== */}
           <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">

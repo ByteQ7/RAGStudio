@@ -36,11 +36,15 @@ export function CitationList({ message }: CitationListProps) {
     }
 
     if (markedIds.length > 0) {
-      const matched = citations.filter((c) => markedIds.includes(c.id));
+      // 按在答案中出现的先后顺序排列，而非 citations 数组的原始顺序
+      const citationMap = new Map(citations.map((c) => [c.id, c]));
+      const matched = markedIds
+        .map((id) => citationMap.get(id))
+        .filter((c): c is NonNullable<typeof c> => c !== undefined);
       // 按出现顺序编号
       const numMap: Record<string, number> = {};
       markedIds.forEach((id, idx) => {
-        if (matched.some((c) => c.id === id)) {
+        if (citationMap.has(id)) {
           numMap[id] = idx + 1;
         }
       });

@@ -94,6 +94,11 @@ public class RAGConstant {
      */
     public static final String S3_AI_PROVIDER_ICON_PREFIX = "provider-icons";
 
+    /**
+     * 用户头像在 S3 中的前缀目录
+     */
+    public static final String S3_USER_AVATAR_PREFIX = "user-img";
+
     // ==================== 上下文格式化模板（单文件多 section） ====================
 
     /**

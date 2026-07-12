@@ -183,6 +183,21 @@ public class UserServiceImpl implements UserService {
         userMapper.updateById(record);
     }
 
+    /**
+     * 上传并更新当前用户头像
+     */
+    @Override
+    public void updateAvatar(String userId, String iconUrl) {
+        UserDO record = userMapper.selectOne(
+                Wrappers.lambdaQuery(UserDO.class)
+                        .eq(UserDO::getId, userId)
+                        .eq(UserDO::getDeleted, 0)
+        );
+        Assert.notNull(record, () -> new ClientException("用户不存在"));
+        record.setAvatar(iconUrl);
+        userMapper.updateById(record);
+    }
+
     // 根据 ID 查询未删除的用户记录，不存在时抛出异常
     private UserDO loadById(String id) {
         UserDO record = userMapper.selectOne(
