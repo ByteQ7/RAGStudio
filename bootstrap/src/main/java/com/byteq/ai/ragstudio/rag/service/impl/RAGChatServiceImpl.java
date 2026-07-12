@@ -43,13 +43,19 @@ public class RAGChatServiceImpl implements RAGChatService {
         String taskId = IdUtil.getSnowflakeNextIdStr();
         StreamCallback callback = callbackFactory.createChatEventHandler(emitter, actualConversationId, taskId);
 
+        // 在 callback 被 trace 包装前设置 thinkingLevel
+        int finalDeepThinkingLevel = deepThinkingLevel != null ? deepThinkingLevel : 0;
+        if (callback instanceof com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler handler) {
+            handler.setThinkingLevel(finalDeepThinkingLevel);
+        }
+
         chatQueueLimiter.enqueue(question, actualConversationId, emitter,
                 () -> traceRunner.run(question, actualConversationId, taskId, callback, traceAware -> {
                     StreamChatContext ctx = StreamChatContext.builder()
                             .question(question)
                             .conversationId(actualConversationId)
                             .taskId(taskId)
-                            .deepThinkingLevel(deepThinkingLevel != null ? deepThinkingLevel : 0)
+                            .deepThinkingLevel(finalDeepThinkingLevel)
                             .userId(UserContext.getUserId())
                             .callback(traceAware)
                             .knowledgeBaseIds(CollUtil.isEmpty(knowledgeBaseIds) ? List.of() : knowledgeBaseIds)
