@@ -301,10 +301,14 @@ public class SpringAiChatModelFactory {
 
         // 深度思考参数路由（无论 level 是否为 0 都执行，0 时返回关闭参数）
         int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        String modelName = target.candidate().getModel();
         if (reasoningRouter != null) {
-            Map<String, Object> reasoningParams = reasoningRouter.route(target.candidate().getModel(), thinkingLevel);
+            Map<String, Object> reasoningParams = reasoningRouter.route(modelName, thinkingLevel);
             if (!reasoningParams.isEmpty()) {
                 builder.extraBody(reasoningParams);
+                String traceId = String.valueOf(System.currentTimeMillis());
+                AiLogHolder.log(traceId, "[REQ] Model: " + modelName + " | ThinkingLevel: " + thinkingLevel +
+                        " | ExtraBody: " + reasoningParams + "\n");
             }
         }
 
