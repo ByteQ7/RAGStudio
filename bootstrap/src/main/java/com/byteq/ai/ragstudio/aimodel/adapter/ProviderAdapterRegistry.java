@@ -31,6 +31,7 @@ public class ProviderAdapterRegistry {
     public void init() {
         register(new SiliconFlowAdapter());
         register(new DeepSeekAdapter());
+        register(new BailianAdapter());
         register(new VolcEngineAdapter());
         register(new ZhipuAdapter());
         register(new OpenaiCompatibleAdapter());
