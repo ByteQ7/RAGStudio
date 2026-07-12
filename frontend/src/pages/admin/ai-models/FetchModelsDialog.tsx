@@ -57,7 +57,8 @@ export function FetchModelsDialog({
   open,
   onOpenChange,
   provider,
-  existingModels
+  existingModels,
+  onImported
 }: FetchModelsDialogProps) {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
