@@ -100,13 +100,14 @@ public class ReasoningAdapter {
      * 布尔型适配：progress > 0 → 开启
      * 支持两种格式：
      * - "enable_thinking" → {"enable_thinking": true}
-     * - "thinking.type"   → {"thinking": {"type": "enabled"}}
+     * - "thinking.type"   → {"thinking": {"type": "enabled"}, "reasoning_effort": "high"}
      */
     private Map<String, Object> adaptBoolean(ReasoningConfig config) {
         String param = config.getBooleanParam() != null ? config.getBooleanParam() : "enable_thinking";
         Map<String, Object> params = new HashMap<>();
         if ("thinking.type".equals(param)) {
             params.put("thinking", Map.of("type", "enabled"));
+            params.put("reasoning_effort", "high");
         } else {
             params.put(param, true);
         }
