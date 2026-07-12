@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Image,
   Loader2,
   Plus
 } from "lucide-react";
@@ -49,7 +50,8 @@ import {
   updateModel,
   deleteModel,
   setDefaultModel,
-  updatePriorities
+  updatePriorities,
+  uploadProviderIcon
 } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
 
@@ -61,14 +63,15 @@ import { FetchModelsDialog } from "./FetchModelsDialog";
 
 const CAPABILITIES = ["CHAT", "EMBEDDING", "RERANK"] as const;
 
-const emptyProviderForm = (): AiProviderPayload & { endpointsJson: string } => ({
+const emptyProviderForm = (): AiProviderPayload & { endpointsJson: string; iconFile?: File | null } => ({
   name: "",
   displayName: "",
   baseUrl: "",
   apiKey: "",
   endpoints: {},
   enabled: 1,
-  endpointsJson: ""
+  endpointsJson: "",
+  iconFile: null
 });
 
 const emptyModelForm = (): AiModelPayload & { modelId_display?: string } => ({
@@ -225,11 +228,28 @@ export function AiModelConfigPage() {
 
     try {
       setProviderSubmitting(true);
+      let providerId: string | null = null;
       if (providerDialogMode === "create") {
-        await createProvider(payload);
+        providerId = await createProvider(payload);
+        // 创建成功后上传图标
+        if (providerForm.iconFile && providerId) {
+          try {
+            await uploadProviderIcon(providerId, providerForm.iconFile);
+          } catch {
+            toast.warning("供应商已创建，但图标上传失败");
+          }
+        }
         toast.success("供应商创建成功");
       } else if (editingProviderId) {
         await updateProvider(editingProviderId, payload);
+        // 编辑模式下上传图标
+        if (providerForm.iconFile) {
+          try {
+            await uploadProviderIcon(editingProviderId, providerForm.iconFile);
+          } catch {
+            toast.warning("供应商已更新，但图标上传失败");
+          }
+        }
         toast.success("供应商更新成功");
       }
       setProviderDialogOpen(false);
@@ -568,6 +588,46 @@ export function AiModelConfigPage() {
                 type="password"
                 placeholder="sk-..."
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">供应商图标</Label>
+              <div className="flex items-center gap-3">
+                {providerForm.iconFile ? (
+                  <div className="relative h-10 w-10 shrink-0 rounded-lg border border-gray-200 overflow-hidden">
+                    <img src={URL.createObjectURL(providerForm.iconFile)} alt="预览" className="h-full w-full object-contain" />
+                  </div>
+                ) : providerDialogMode === "edit" && editingProviderId ? (
+                  <div className="h-10 w-10 shrink-0 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center text-xs text-gray-400">
+                    无
+                  </div>
+                ) : null}
+                <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                  <Image className="h-3.5 w-3.5" />
+                  {providerForm.iconFile ? "更换图标" : "选择图标"}
+                  <input
+                    type="file"
+                    accept=".svg,.png,.jpg,.jpeg,.webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setProviderForm((prev) => ({ ...prev, iconFile: file }));
+                      }
+                    }}
+                  />
+                </label>
+                {providerForm.iconFile && (
+                  <button
+                    type="button"
+                    className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                    onClick={() => setProviderForm((prev) => ({ ...prev, iconFile: null }))}
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-gray-400">支持 SVG、PNG、JPG，推荐使用 SVG</p>
             </div>
 
             <div className="space-y-2">

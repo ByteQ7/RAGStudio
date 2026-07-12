@@ -530,7 +530,6 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public List<String> batchCreateModels(List<AiModelCreateRequest> requests) {
         if (requests == null || requests.isEmpty()) {
             return List.of();
@@ -538,7 +537,6 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
         List<String> ids = new java.util.ArrayList<>();
         for (AiModelCreateRequest request : requests) {
-            // 复用单个创建的校验逻辑，但不重复抛出异常，跳过已存在的模型
             if (StrUtil.isBlank(request.getProviderId())
                     || StrUtil.isBlank(request.getModelId())
                     || StrUtil.isBlank(request.getModelName())) {
@@ -558,8 +556,30 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             }
 
             try {
-                String id = createModel(request);
-                ids.add(id);
+                // 直接创建，不调用 @Transactional 的 createModel 以避免事务回滚问题
+                AiProviderDO provider = providerMapper.selectById(request.getProviderId());
+                if (provider == null) {
+                    log.warn("供应商不存在，跳过: {}", request.getProviderId());
+                    continue;
+                }
+
+                AiModelDO model = AiModelDO.builder()
+                        .providerId(request.getProviderId())
+                        .modelId(request.getModelId().trim())
+                        .modelName(request.getModelName().trim())
+                        .capability(request.getCapability().toUpperCase())
+                        .isDefault(request.getIsDefault() != null ? request.getIsDefault() : 0)
+                        .priority(request.getPriority() != null ? request.getPriority() : 100)
+                        .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
+                        .supportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0)
+                        .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
+                        .dimension(request.getDimension())
+                        .customUrl(request.getCustomUrl())
+                        .build();
+
+                modelMapper.insert(model);
+                ids.add(model.getId());
+                log.info("批量创建模型: id={}, modelId={}, capability={}", model.getId(), model.getModelId(), model.getCapability());
             } catch (Exception e) {
                 log.warn("批量创建模型失败: modelId={}, error={}", request.getModelId(), e.getMessage());
             }
