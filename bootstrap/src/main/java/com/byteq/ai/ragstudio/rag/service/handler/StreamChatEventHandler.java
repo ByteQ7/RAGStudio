@@ -239,6 +239,7 @@ public class StreamChatEventHandler implements StreamCallback {
 
     @Override
     public void onComplete() {
+        log.warn("onComplete called, thinkingLevel={}", thinkingLevel);
         if (taskManager.isCancelled(taskId)) {
             // content 已在 buildCompletionPayloadOnCancel 中持久化，不再重复保存
             sender.sendEvent(SSEEventType.DONE.value(), "");

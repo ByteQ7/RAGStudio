@@ -79,7 +79,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         }
 
         Integer tl = message.getThinkingLevel();
-        log.debug("存储消息 thinkingLevel={}, role={}, conversationId={}", tl, message.getRole(), conversationId);
+        log.warn("存储消息 thinkingLevel={}, role={}, conversationId={}", tl, message.getRole(), conversationId);
         ConversationMessageBO conversationMessage = ConversationMessageBO.builder()
                 .conversationId(conversationId)
                 .userId(userId)
