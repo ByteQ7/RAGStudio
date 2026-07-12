@@ -83,7 +83,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
     <div className="group">
       <div className="max-w-[92%] space-y-3">
         {message.agentSteps && message.agentSteps.length > 0 ? (
-          <AgentSteps steps={message.agentSteps} />
+          <AgentSteps steps={message.agentSteps} thinkingLevel={message.thinkingLevel} />
         ) : null}
         <div className="space-y-2">
           {isWaiting ? (
