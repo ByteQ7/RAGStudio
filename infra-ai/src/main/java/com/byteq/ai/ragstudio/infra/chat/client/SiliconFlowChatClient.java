@@ -52,7 +52,7 @@ public class SiliconFlowChatClient implements ChatClient {
         ChatModel model = modelFactory.getOrCreateChatModel(target);
         Prompt prompt = modelFactory.toPrompt(request, target);
         Flux<ChatResponse> flux = model.stream(prompt);
-        return FluxToStreamCallbackBridge.subscribe(flux, callback, request.getThinkingLevel() != null ? request.getThinkingLevel() : 0);
+        return FluxToStreamCallbackBridge.subscribe(flux, callback, request.getThinkingLevel() != null ? request.getThinkingLevel() : 0, null);
     }
 
     // 从 ChatResponse 中提取响应文本，若响应为空则抛出异常

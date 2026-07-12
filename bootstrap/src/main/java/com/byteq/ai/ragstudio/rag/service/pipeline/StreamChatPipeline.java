@@ -42,7 +42,6 @@ import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
 import com.byteq.ai.ragstudio.rag.dto.RetrievalContext;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
-import com.byteq.ai.ragstudio.rag.service.AiLogService;
 import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
 import com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler;
 import com.byteq.ai.ragstudio.rag.service.handler.StreamTaskManager;
@@ -119,9 +118,6 @@ public class StreamChatPipeline {
     /** 链路追踪记录服务，用于记录各阶段的执行耗时 */
     private final RagTraceRecordService traceRecordService;
 
-    /** AI 对话日志服务 */
-    private final AiLogService aiLogService;
-
     /** SKILL 加载器，从 Redis/本地提供用户自定义 Agent 工具 */
     private final SkillLoader skillLoader;
 
@@ -196,13 +192,6 @@ public class StreamChatPipeline {
      */
     public void execute(StreamChatContext ctx) {
         String taskId = ctx.getTaskId();
-        aiLogService.writeln(taskId, "=== AI 对话日志 ===");
-        aiLogService.writeln(taskId, "任务ID: " + taskId);
-        aiLogService.writeln(taskId, "会话ID: " + ctx.getConversationId());
-        aiLogService.writeln(taskId, "时间: " + new java.util.Date());
-        aiLogService.writeln(taskId, "深度思考级别: " + ctx.getDeepThinkingLevel());
-        aiLogService.writeln(taskId, "图片数: " + (ctx.getImageUrls() != null ? ctx.getImageUrls().size() : 0));
-        aiLogService.writeln(taskId, "");
 
         try {
             doExecute(ctx);
@@ -215,33 +204,25 @@ public class StreamChatPipeline {
             // 记录对话上下文 + 回答（doExecute 内才加载了 history）
             java.util.List<com.byteq.ai.ragstudio.framework.convention.ChatMessage> history = ctx.getHistory();
             if (history != null && !history.isEmpty()) {
-                aiLogService.writeln(taskId, "【对话上下文】");
                 for (com.byteq.ai.ragstudio.framework.convention.ChatMessage msg : history) {
                     String role = msg.getRole() != null ? msg.getRole().name() : "unknown";
                     String content = msg.getContent() != null ? msg.getContent() : "";
                     if (content.length() > 2000) {
                         content = content.substring(0, 2000) + "\n... [已截断 " + (content.length() - 2000) + " 字符]";
                     }
-                    aiLogService.writeln(taskId, "  [" + role + "] " + content);
                 }
-                aiLogService.writeln(taskId, "");
             }
 
             if (answer != null && !answer.isEmpty()) {
-                aiLogService.writeln(taskId, "【AI 回答】");
-                aiLogService.writeln(taskId, answer);
-                aiLogService.writeln(taskId, "");
             }
         } catch (IllegalStateException e) {
             // 仅静默处理用户取消：其他 IllegalStateException 仍需正常传播
             if (e.getMessage() != null && e.getMessage().startsWith(CANCEL_MARKER)) {
-                aiLogService.writeln(taskId, "\n【对话已取消】");
                 log.info("流水线因任务取消而终止，任务ID：{}", taskId);
                 return;
             }
             throw e;
         } catch (Exception e) {
-            aiLogService.writeln(taskId, "\n【错误】" + e.getMessage());
             throw e;
         }
     }
