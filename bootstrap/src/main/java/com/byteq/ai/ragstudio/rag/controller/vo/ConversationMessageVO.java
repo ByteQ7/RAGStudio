@@ -42,6 +42,11 @@ public class ConversationMessageVO {
     private String thinkingContent;
 
     /**
+     * 深度思考级别（0-100）
+     */
+    private Integer thinkingLevel;
+
+    /**
      * 深度思考耗时（秒）
      */
     private Integer thinkingDuration;

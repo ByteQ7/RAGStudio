@@ -266,7 +266,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         imageUrls: item.imageUrls
           ? (typeof item.imageUrls === "string" ? JSON.parse(item.imageUrls) : item.imageUrls)
           : undefined
-      }));
+      }))
+          thinkingLevel: item.thinkingLevel ?? undefined,;
       set({ messages: mapped });
     } catch (error) {
       toast.error((error as Error).message || "加载消息失败");
