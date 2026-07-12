@@ -342,9 +342,10 @@ public class SpringAiChatModelFactory {
             Map<String, Object> reasoningParams = reasoningRouter.route(modelName, thinkingLevel);
             if (!reasoningParams.isEmpty()) {
                 builder.extraBody(reasoningParams);
-                String traceId = String.valueOf(System.currentTimeMillis());
-                AiLogHolder.log(traceId, "[REQ] Model: " + modelName + " | ThinkingLevel: " + thinkingLevel +
-                        " | ExtraBody: " + reasoningParams + "\n");
+                if (AiLogHolder.isEnabled()) {
+                    AiLogHolder.log(String.valueOf(System.currentTimeMillis()),
+                            "[REQ] Model: " + modelName + " | ThinkingLevel: " + thinkingLevel + " | ExtraBody: " + reasoningParams + "\n");
+                }
             }
         }
 

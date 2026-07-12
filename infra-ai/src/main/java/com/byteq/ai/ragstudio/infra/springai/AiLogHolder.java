@@ -15,6 +15,10 @@ public class AiLogHolder {
         AiLogHolder.logger = logger;
     }
 
+    public static boolean isEnabled() {
+        return logger != null;
+    }
+
     public static void log(String taskId, String content) {
         if (logger != null) {
             logger.accept(taskId, content);
