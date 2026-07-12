@@ -56,41 +56,14 @@ public class DeepSeekChatClient implements ChatClient {
     @Override
     @RagTraceNode(name = "deepseek-chat", type = "LLM_PROVIDER")
     public String chat(ChatRequest request, ModelTarget target) {
-        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
-        Map<String, Object> reasoningParams = modelFactory.getReasoningRouter().route(
-                target.candidate().getModel(), thinkingLevel);
-
-        // 构建 messages
-        List<Map<String, Object>> messages = new java.util.ArrayList<>();
-        if (request.getMessages() != null) {
-            for (com.byteq.ai.ragstudio.framework.convention.ChatMessage msg : request.getMessages()) {
-                Map<String, Object> m = new LinkedHashMap<>();
-                String role = msg.getRole() != null ? msg.getRole().name().toLowerCase() : "user";
-                m.put("role", role);
-                m.put("content", msg.getContent() != null ? msg.getContent() : "");
-                messages.add(m);
-            }
-        }
-
-        // 构建请求体
-        Map<String, Object> reqBody = new LinkedHashMap<>();
-        reqBody.put("model", target.candidate().getModel());
-        reqBody.put("messages", messages);
-        reqBody.put("stream", false);
-        if (request.getTemperature() != null) reqBody.put("temperature", request.getTemperature());
-        if (request.getTopP() != null) reqBody.put("top_p", request.getTopP());
-        if (request.getMaxTokens() != null) reqBody.put("max_tokens", request.getMaxTokens());
-        if (!reasoningParams.isEmpty()) reqBody.putAll(reasoningParams);
-
+        Map<String, Object> reqBody = modelFactory.buildRequestBody(request, target);
         String baseUrl = modelFactory.resolveBaseUrl(target);
         String apiKey = modelFactory.resolveApiKey(target);
         String traceId = String.valueOf(System.currentTimeMillis());
 
         try {
             String jsonBody = objectMapper.writeValueAsString(reqBody);
-            AiLogHolder.log(traceId, "[REQ] Model: " + target.candidate().getModel()
-                    + " | ThinkingLevel: " + thinkingLevel
-                    + " | Body: " + jsonBody + "\n");
+            AiLogHolder.log(traceId, "[REQ] " + jsonBody + "\n");
 
             Request httpReq = new Request.Builder()
                     .url(baseUrl + "/chat/completions")
@@ -101,29 +74,23 @@ public class DeepSeekChatClient implements ChatClient {
 
             Response httpResp = okHttpClient.newCall(httpReq).execute();
             String respBody = httpResp.body() != null ? httpResp.body().string() : "";
-
-            AiLogHolder.log(traceId, "=== AI Provider Raw Response ===\n"
-                    + "Model: " + target.candidate().getModel() + "\n"
-                    + "HTTP: " + httpResp.code() + "\n"
-                    + respBody + "\n=== End ===\n");
+            AiLogHolder.log(traceId, "[RESP] HTTP " + httpResp.code() + "\n" + respBody + "\n");
 
             if (!httpResp.isSuccessful()) {
                 String snippet = respBody.length() > 200 ? respBody.substring(0, 200) : respBody;
-                throw new ModelClientException("DeepSeek API error: HTTP " + httpResp.code() + " " + snippet,
+                throw new ModelClientException("DeepSeek HTTP " + httpResp.code() + " " + snippet,
                         ModelClientErrorType.fromHttpStatus(httpResp.code()), httpResp.code());
             }
 
             JsonNode root = objectMapper.readTree(respBody);
-            JsonNode choices = root.get("choices");
-            if (choices != null && choices.isArray() && choices.size() > 0) {
-                JsonNode msg = choices.get(0).get("message");
-                if (msg != null && msg.has("content")) {
-                    return msg.get("content").asText();
-                }
+            JsonNode msg = root.path("choices").path(0).path("message");
+            if (msg.has("content")) {
+                return msg.get("content").asText();
             }
-            throw new ModelClientException("DeepSeek 返回空响应", ModelClientErrorType.INVALID_RESPONSE, null);
+            throw new ModelClientException("DeepSeek 返回空响应",
+                    ModelClientErrorType.INVALID_RESPONSE, null);
         } catch (java.io.IOException e) {
-            throw new ModelClientException("DeepSeek API 请求失败: " + e.getMessage(),
+            throw new ModelClientException("DeepSeek 请求失败: " + e.getMessage(),
                     ModelClientErrorType.NETWORK_ERROR, null, e);
         }
     }

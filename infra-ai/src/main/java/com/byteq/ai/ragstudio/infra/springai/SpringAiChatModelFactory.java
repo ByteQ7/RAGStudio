@@ -58,6 +58,38 @@ public class SpringAiChatModelFactory {
         return reasoningRouter;
     }
 
+    /**
+     * 构建完整的 API 请求体（绕过 Spring AI 的 extraBody 序列化问题）
+     */
+    public Map<String, Object> buildRequestBody(
+            com.byteq.ai.ragstudio.framework.convention.ChatRequest request, ModelTarget target) {
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        Map<String, Object> reasoningParams = reasoningRouter.route(
+                target.candidate().getModel(), thinkingLevel);
+
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("model", target.candidate().getModel());
+        body.put("stream", false);
+        if (request.getTemperature() != null) body.put("temperature", request.getTemperature());
+        if (request.getTopP() != null) body.put("top_p", request.getTopP());
+        if (request.getMaxTokens() != null) body.put("max_tokens", request.getMaxTokens());
+        if (!reasoningParams.isEmpty()) body.putAll(reasoningParams);
+
+        // messages
+        java.util.List<Map<String, Object>> msgs = new java.util.ArrayList<>();
+        if (request.getMessages() != null) {
+            for (com.byteq.ai.ragstudio.framework.convention.ChatMessage msg : request.getMessages()) {
+                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                String role = msg.getRole() != null ? msg.getRole().name().toLowerCase() : "user";
+                m.put("role", role);
+                m.put("content", msg.getContent() != null ? msg.getContent() : "");
+                msgs.add(m);
+            }
+        }
+        body.put("messages", msgs);
+        return body;
+    }
+
     public SpringAiChatModelFactory(S3Client s3Client, ReasoningRouter reasoningRouter) {
         this.s3Client = s3Client;
         this.reasoningRouter = reasoningRouter;
