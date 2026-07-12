@@ -4,7 +4,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { KnowledgeBaseSelector } from "@/components/chat/KnowledgeBaseSelector";
 import { MessageList } from "@/components/chat/MessageList";
-import { cn } from "@/lib/utils";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useChatStore } from "@/stores/chatStore";
 
@@ -92,17 +91,19 @@ export function ChatPage() {
             sessionKey={currentSessionId}
           />
         </div>
-        <div className={cn("relative z-20 border-t border-gray-50 bg-white", (messages.length === 0 && !isLoading) && "border-t-0")}>
-          <div className="mx-auto max-w-[760px] px-6 pt-2 pb-4">
-            <div className="mb-2">
-              <KnowledgeBaseSelector
-                selectedKnowledgeBaseIds={knowledgeBaseIds}
-                onKnowledgeBaseIdsChange={setKnowledgeBaseIds}
-              />
+        {(messages.length > 0 || isLoading) && (
+          <div className="relative z-20 border-t border-gray-50 bg-white">
+            <div className="mx-auto max-w-[760px] px-6 pt-2 pb-4">
+              <div className="mb-2">
+                <KnowledgeBaseSelector
+                  selectedKnowledgeBaseIds={knowledgeBaseIds}
+                  onKnowledgeBaseIdsChange={setKnowledgeBaseIds}
+                />
+              </div>
+              <ChatInput />
             </div>
-            <ChatInput />
           </div>
-        </div>
+        )}
       </div>
     </MainLayout>
   );

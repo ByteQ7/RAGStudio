@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ArrowUpRight, BookOpen, Check, ImagePlus, Lightbulb, Loader2, Send, Square, X } from "lucide-react";
 
+import { DeepThinkingSlider } from "@/components/chat/DeepThinkingSlider";
 import { KnowledgeBaseSelector } from "@/components/chat/KnowledgeBaseSelector";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
 
@@ -401,6 +402,8 @@ export function WelcomeScreen() {
                 onChange={handleImageSelect}
               />
             </div>
+
+            <DeepThinkingSlider />
 
             <div className="flex-1" />
             <p className="hidden text-[11px] text-gray-300 sm:block">
