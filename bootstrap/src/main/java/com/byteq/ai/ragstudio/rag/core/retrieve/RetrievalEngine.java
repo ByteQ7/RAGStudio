@@ -77,7 +77,6 @@ public class RetrievalEngine {
         for (KnowledgeBaseDO kb : kbList) {
             kbNameMap.put(kb.getId(), kb.getName());
         }
-        String joinedKbNames = String.join(", ", kbNameMap.values());
 
         String kbContext = "";
         List<RetrievedChunk> chunks = List.of();
@@ -88,13 +87,7 @@ public class RetrievalEngine {
             chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(
                     collectionNames, subQuestions, rewriteResult.rewrittenQuestion(), finalTopK);
             if (CollUtil.isNotEmpty(chunks)) {
-                // 为每个 Chunk 标记知识库名称
-                for (RetrievedChunk chunk : chunks) {
-                    if (chunk.getKbName() == null) {
-                        chunk.setKbName(joinedKbNames);
-                    }
-                }
-                // 批量查询文档名称
+                // 批量查询 Chunk 的 kbId 和 docId，设置所属知识库和文档名称
                 java.util.List<String> chunkIds = chunks.stream()
                         .map(RetrievedChunk::getId)
                         .filter(Objects::nonNull)
@@ -104,10 +97,16 @@ public class RetrievalEngine {
                             com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeChunkDO.class)
                                     .in(KnowledgeChunkDO::getId, chunkIds));
                     if (CollUtil.isNotEmpty(chunkDOs)) {
+                        // 构建 chunkId → kbName 映射（每个 Chunk 只对应一个知识库）
+                        java.util.Map<String, String> chunkKbNameMap = new java.util.HashMap<>();
+                        // 构建 chunkId → docName 映射
+                        java.util.Map<String, String> chunkDocNameMap = new java.util.HashMap<>();
+                        // 获取所有涉及的文档 ID
                         java.util.Set<String> docIds = chunkDOs.stream()
                                 .map(KnowledgeChunkDO::getDocId)
                                 .filter(Objects::nonNull)
                                 .collect(java.util.stream.Collectors.toSet());
+                        // 查询文档名称
                         java.util.Map<String, String> docNameMap = new java.util.HashMap<>();
                         if (CollUtil.isNotEmpty(docIds)) {
                             java.util.List<KnowledgeDocumentDO> docs = knowledgeDocumentMapper.selectList(
@@ -117,15 +116,24 @@ public class RetrievalEngine {
                                 docNameMap.put(doc.getId(), doc.getDocName());
                             }
                         }
-                        java.util.Map<String, String> chunkDocMap = new java.util.HashMap<>();
+                        // 填充每个 chunk 的 kbName 和 docName
                         for (KnowledgeChunkDO c : chunkDOs) {
+                            // 通过 kbId 从 kbNameMap 查出唯一的知识库名称
+                            String kbName = kbNameMap.get(c.getKbId());
+                            if (kbName != null) {
+                                chunkKbNameMap.put(c.getId(), kbName);
+                            }
                             String docName = docNameMap.get(c.getDocId());
                             if (docName != null) {
-                                chunkDocMap.put(c.getId(), docName);
+                                chunkDocNameMap.put(c.getId(), docName);
                             }
                         }
                         for (RetrievedChunk chunk : chunks) {
-                            String dn = chunkDocMap.get(chunk.getId());
+                            String kn = chunkKbNameMap.get(chunk.getId());
+                            if (kn != null) {
+                                chunk.setKbName(kn);
+                            }
+                            String dn = chunkDocNameMap.get(chunk.getId());
                             if (dn != null) {
                                 chunk.setDocName(dn);
                             }
