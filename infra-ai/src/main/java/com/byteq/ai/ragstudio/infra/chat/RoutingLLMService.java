@@ -12,7 +12,6 @@ import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
-import com.byteq.ai.ragstudio.infra.springai.FluxToStreamCallbackBridge;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
@@ -90,7 +89,6 @@ public class RoutingLLMService implements LLMService {
         int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
         List<ModelTarget> targets = selector.selectChatCandidates(thinkingLevel > 0, hasImages);
         validateTargets(targets);
-        FluxToStreamCallbackBridge.setThinkingLevel(thinkingLevel);
         return executor.executeWithFallback(
                 ModelCapability.CHAT,
                 targets,
@@ -116,7 +114,6 @@ public class RoutingLLMService implements LLMService {
         int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
         List<ModelTarget> targets = List.of(resolveTarget(modelId, thinkingLevel > 0));
         validateTargets(targets);
-        FluxToStreamCallbackBridge.setThinkingLevel(thinkingLevel);
         return executor.executeWithFallback(
                 ModelCapability.CHAT,
                 targets,

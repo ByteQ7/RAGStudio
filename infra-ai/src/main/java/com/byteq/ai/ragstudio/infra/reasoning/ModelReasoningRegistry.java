@@ -49,9 +49,53 @@ public class ModelReasoningRegistry {
                 null, null
         ));
 
-        // ==================== 离散型 ====================
+        // ==================== 离散型（DeepSeek 系列） ====================
 
         register("deepseek-r1", new ReasoningConfig(
+                ReasoningType.DISCRETE,
+                null,
+                new ReasoningConfig.DiscreteConfig(List.of(
+                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
+                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
+                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
+                )),
+                null
+        ));
+
+        register("deepseek-v4-flash", new ReasoningConfig(
+                ReasoningType.DISCRETE,
+                null,
+                new ReasoningConfig.DiscreteConfig(List.of(
+                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
+                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
+                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
+                )),
+                null
+        ));
+
+        register("deepseek-v4-pro", new ReasoningConfig(
+                ReasoningType.DISCRETE,
+                null,
+                new ReasoningConfig.DiscreteConfig(List.of(
+                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
+                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
+                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
+                )),
+                null
+        ));
+
+        register("deepseek-chat", new ReasoningConfig(
+                ReasoningType.DISCRETE,
+                null,
+                new ReasoningConfig.DiscreteConfig(List.of(
+                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
+                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
+                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
+                )),
+                null
+        ));
+
+        register("deepseek-reasoner", new ReasoningConfig(
                 ReasoningType.DISCRETE,
                 null,
                 new ReasoningConfig.DiscreteConfig(List.of(
@@ -65,6 +109,12 @@ public class ModelReasoningRegistry {
         // ==================== 布尔型 ====================
 
         register("qwen3-235b", new ReasoningConfig(
+                ReasoningType.BOOLEAN,
+                null, null,
+                "enable_thinking"
+        ));
+
+        register("glm-4", new ReasoningConfig(
                 ReasoningType.BOOLEAN,
                 null, null,
                 "enable_thinking"
@@ -92,12 +142,32 @@ public class ModelReasoningRegistry {
 
     /**
      * 获取指定模型的推理配置
+     * <p>优先精确匹配，失败后按模型 ID 前缀兜底。</p>
      * @param modelId 模型标识
      * @return 推理配置，如果未注册则返回 NONE 类型的默认配置
      */
     public ReasoningConfig getConfig(String modelId) {
-        return registry.getOrDefault(modelId,
-                new ReasoningConfig(ReasoningType.NONE, null, null, null));
+        // 1. 精确匹配
+        ReasoningConfig config = registry.get(modelId);
+        if (config != null) return config;
+
+        // 2. 前缀匹配：deepseek-xxx 使用 deepseek 的配置
+        String lower = modelId.toLowerCase();
+        if (lower.startsWith("deepseek")) {
+            config = registry.get("deepseek-chat");
+            if (config != null) return config;
+        }
+        if (lower.startsWith("qwen")) {
+            config = registry.get("qwen3-235b");
+            if (config != null) return config;
+        }
+        if (lower.startsWith("glm")) {
+            config = registry.get("glm-4");
+            if (config != null) return config;
+        }
+
+        // 3. 默认返回 NONE
+        return new ReasoningConfig(ReasoningType.NONE, null, null, null);
     }
 
     /**

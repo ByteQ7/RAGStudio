@@ -25,22 +25,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class FluxToStreamCallbackBridge {
 
-    /** 思考级别（0-100），0 表示不启用思考内容回调 */
-    private static int thinkingLevel = 0;
-
-    public static void setThinkingLevel(int level) {
-        thinkingLevel = level;
-    }
-
     /**
      * 订阅 Flux 并桥接到 StreamCallback
      *
-     * @param flux     Spring AI 的流式 ChatResponse 序列
-     * @param callback 项目的流式回调接口
+     * @param flux           Spring AI 的流式 ChatResponse 序列
+     * @param callback       项目的流式回调接口
+     * @param thinkingLevel  深度思考级别（0-100），>0 时启用思考内容提取
      * @return 取消句柄，调用 cancel() 可中断流式响应
      */
     public static StreamCancellationHandle subscribe(reactor.core.publisher.Flux<ChatResponse> flux,
-                                                      StreamCallback callback) {
+                                                      StreamCallback callback,
+                                                      int thinkingLevel) {
         AtomicBoolean terminated = new AtomicBoolean(false);
 
         Disposable disposable = flux.subscribe(
