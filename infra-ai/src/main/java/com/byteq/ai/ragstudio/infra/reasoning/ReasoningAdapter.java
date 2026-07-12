@@ -106,7 +106,9 @@ public class ReasoningAdapter {
         String param = config.getBooleanParam() != null ? config.getBooleanParam() : "enable_thinking";
         Map<String, Object> params = new HashMap<>();
         if ("thinking.type".equals(param)) {
-            params.put("thinking", Map.of("type", "enabled"));
+            Map<String, Object> thinking = new HashMap<>();
+            thinking.put("type", "enabled");
+            params.put("thinking", thinking);
             params.put("reasoning_effort", "high");
         } else {
             params.put(param, true);
@@ -120,19 +122,27 @@ public class ReasoningAdapter {
     private Map<String, Object> buildDisableParams(ReasoningConfig config) {
         if (config == null) return new HashMap<>();
 
+        Map<String, Object> params = new HashMap<>();
         switch (config.getType()) {
             case CONTINUOUS:
-                return Map.of("thinking", Map.of("type", "disabled"));
+                params.put("thinking", Map.of("type", "disabled"));
+                break;
             case DISCRETE:
-                return Map.of("enable_thinking", false);
+                params.put("enable_thinking", false);
+                break;
             case BOOLEAN:
                 String param = config.getBooleanParam() != null ? config.getBooleanParam() : "enable_thinking";
                 if ("thinking.type".equals(param)) {
-                    return Map.of("thinking", Map.of("type", "disabled"));
+                    Map<String, Object> thinking = new HashMap<>();
+                    thinking.put("type", "disabled");
+                    params.put("thinking", thinking);
+                } else {
+                    params.put(param, false);
                 }
-                return Map.of(param, false);
+                break;
             default:
-                return new HashMap<>();
+                break;
         }
+        return params;
     }
 }
