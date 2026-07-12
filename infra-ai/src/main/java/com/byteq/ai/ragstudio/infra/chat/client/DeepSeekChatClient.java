@@ -9,6 +9,7 @@ import com.byteq.ai.ragstudio.infra.enums.ModelProvider;
 import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
 import com.byteq.ai.ragstudio.infra.http.ModelClientException;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import com.byteq.ai.ragstudio.infra.springai.AiLogHolder;
 import com.byteq.ai.ragstudio.infra.springai.FluxToStreamCallbackBridge;
 import com.byteq.ai.ragstudio.infra.springai.SpringAiChatModelFactory;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,18 @@ public class DeepSeekChatClient implements ChatClient {
         ChatModel model = modelFactory.getOrCreateChatModel(target);
         Prompt prompt = modelFactory.toPrompt(request, target);
         ChatResponse response = model.call(prompt);
+
+        // 记录完整 ChatResponse 到日志（含 thinking/reasoning_content 等元数据）
+        String traceId = String.valueOf(System.currentTimeMillis());
+        try {
+            AiLogHolder.log(traceId,
+                    "=== AI Provider Raw Response ===\n" +
+                    "Model: " + target.candidate().getModel() + "\n" +
+                    "Provider: deepseek\n" +
+                    "Type: sync\n" +
+                    "FullResponse:\n" + response + "\n");
+        } catch (Exception ignored) {}
+
         return extractText(response, "deepseek");
     }
 
