@@ -83,14 +83,13 @@ public class ChatRequest {
     private Integer maxTokens;
 
     /**
-     * 可选：是否启用「思考模式」开关
+     * 推理深度级别（0-100）
      * <p>
-     * 占坑字段，用于兼容支持思考过程 / reasoning 扩展能力的模型，
-     * 具体含义由对接的大模型服务决定（例如是否返回中间推理过程等）
-     * 不支持该能力的实现可以忽略该字段
+     * 0 = 关闭思考；1-100 = 思考深度，由 ReasoningRouter 适配为各模型原生参数。
+     * 替代旧的 thinking boolean 字段。
      * </p>
      */
-    private Boolean thinking;
+    private Integer thinkingLevel;
 
     /**
      * 可选：是否启用工具调用（Tool Calling / Function Calling）

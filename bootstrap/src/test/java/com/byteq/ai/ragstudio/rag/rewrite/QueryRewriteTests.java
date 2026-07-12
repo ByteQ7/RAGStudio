@@ -92,7 +92,7 @@ public class QueryRewriteTests {
 
         ChatRequest request = ChatRequest.builder()
                 .messages(List.of(ChatMessage.user(prompt)))
-                .thinking(false)
+                .thinkingLevel(0)
                 .build();
 
         String rewritten = llmService.chat(request);

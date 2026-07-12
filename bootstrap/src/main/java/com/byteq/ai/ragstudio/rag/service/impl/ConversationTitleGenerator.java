@@ -51,7 +51,7 @@ public class ConversationTitleGenerator {
                     .messages(List.of(ChatMessage.user(prompt)))
                     .temperature(0.7D)
                     .topP(0.3D)
-                    .thinking(false)
+                    .thinkingLevel(0)
                     .build();
             return llmService.chat(request);
         } catch (Exception ex) {

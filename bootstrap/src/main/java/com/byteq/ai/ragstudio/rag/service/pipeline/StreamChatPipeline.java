@@ -285,7 +285,8 @@ public class StreamChatPipeline {
         // 构建 AgentLoop（per-request 实例，因为 ToolRegistry 是 per-request 的）
         AgentLoop agentLoop = new AgentLoop(llmService, toolRegistry,
                 reactResponseParser, reactPromptBuilder,
-                () -> taskManager.isCancelled(ctx.getTaskId()));
+                () -> taskManager.isCancelled(ctx.getTaskId()),
+                ctx.getDeepThinkingLevel());
 
         // 在 Agent 完成回答但 SSE 连接关闭前，推送引用溯源
         agentLoop.setBeforeCompleteCallback(() -> {

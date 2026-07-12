@@ -36,8 +36,8 @@ public class StreamChatContext {
     /** 任务 ID，用于追踪和取消任务 */
     private final String taskId;
 
-    /** 是否开启深度思考模式 */
-    private final boolean deepThinking;
+    /** 深度思考级别（0-100），0 表示关闭 */
+    private final int deepThinkingLevel;
 
     /** 当前用户 ID */
     private final String userId;

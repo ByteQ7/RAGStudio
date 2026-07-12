@@ -4,6 +4,7 @@ import { ImagePlus, Loader2, Send, Square, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
+import { DeepThinkingSlider } from "@/components/chat/DeepThinkingSlider";
 import { storage } from "@/utils/storage";
 
 const MAX_IMAGES = 10;
@@ -323,6 +324,9 @@ export function ChatInput() {
               onChange={handleImageSelect}
             />
           </div>
+
+          {/* 深度思考滑块 */}
+          <DeepThinkingSlider />
 
           <div className="ml-auto flex items-center gap-3">
             <span className="hidden text-[11px] text-gray-300 sm:inline">
