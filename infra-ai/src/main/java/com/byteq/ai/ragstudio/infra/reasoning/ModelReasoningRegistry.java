@@ -52,8 +52,9 @@ public class ModelReasoningRegistry {
         // ==================== 离散型（DeepSeek 系列） ====================
 
         // DeepSeek 系列：只支持 enable_thinking: true/false，无 effort 参数
+        // DeepSeek API: {"thinking": {"type": "enabled/disabled"}} + reasoning_effort
         ReasoningConfig deepseekConfig = new ReasoningConfig(
-                ReasoningType.BOOLEAN, null, null, "enable_thinking");
+                ReasoningType.BOOLEAN, null, null, "thinking.type");
 
         register("deepseek-r1", deepseekConfig);
         register("deepseek-v4-flash", deepseekConfig);

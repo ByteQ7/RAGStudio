@@ -98,10 +98,18 @@ public class ReasoningAdapter {
 
     /**
      * 布尔型适配：progress > 0 → 开启
+     * 支持两种格式：
+     * - "enable_thinking" → {"enable_thinking": true}
+     * - "thinking.type"   → {"thinking": {"type": "enabled"}}
      */
     private Map<String, Object> adaptBoolean(ReasoningConfig config) {
+        String param = config.getBooleanParam() != null ? config.getBooleanParam() : "enable_thinking";
         Map<String, Object> params = new HashMap<>();
-        params.put(config.getBooleanParam() != null ? config.getBooleanParam() : "enable_thinking", true);
+        if ("thinking.type".equals(param)) {
+            params.put("thinking", Map.of("type", "enabled"));
+        } else {
+            params.put(param, true);
+        }
         return params;
     }
 
@@ -117,10 +125,11 @@ public class ReasoningAdapter {
             case DISCRETE:
                 return Map.of("enable_thinking", false);
             case BOOLEAN:
-                return Map.of(
-                        config.getBooleanParam() != null ? config.getBooleanParam() : "enable_thinking",
-                        false
-                );
+                String param = config.getBooleanParam() != null ? config.getBooleanParam() : "enable_thinking";
+                if ("thinking.type".equals(param)) {
+                    return Map.of("thinking", Map.of("type", "disabled"));
+                }
+                return Map.of(param, false);
             default:
                 return new HashMap<>();
         }
