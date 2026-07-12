@@ -36,28 +36,33 @@ public class SiliconFlowAdapter extends OpenaiCompatibleAdapter {
 
             for (JsonNode node : data) {
                 String modelId = node.get("id").asText();
-                String type = node.has("type") ? node.get("type").asText() : "chat";
+                String type = node.has("type") ? node.get("type").asText() : "";
                 String object = node.has("object") ? node.get("object").asText() : "";
 
-                // 跳过非模型条目
-                if (!"model".equals(object)) continue;
+                // 跳过非模型条目（部分 API 可能没有 object 字段，宽松处理）
+                if (!"model".equals(object) && !object.isEmpty()) continue;
 
-                // 根据 type 字段映射 capability
+                // 根据 type 字段 + modelId 推断能力类型（双重检测）
                 List<String> capabilities = new ArrayList<>();
                 String lowerType = type.toLowerCase();
-                if (lowerType.contains("chat") || lowerType.contains("language")) {
-                    capabilities.add("CHAT");
-                }
-                if (lowerType.contains("embedding")) {
-                    capabilities.add("EMBEDDING");
-                }
-                if (lowerType.contains("rerank")) {
-                    capabilities.add("RERANK");
-                }
-                // 兜底：默认 CHAT
-                if (capabilities.isEmpty()) {
-                    capabilities.add("CHAT");
-                }
+                String lowerId = modelId.toLowerCase();
+
+                // 检测是否为 Embedding 模型
+                boolean isEmbedding = lowerType.contains("embed")
+                        || lowerId.contains("embed")
+                        || lowerId.contains("bge-")
+                        || lowerId.contains("e5-");
+                // 检测是否为 Rerank 模型
+                boolean isRerank = lowerType.contains("rerank")
+                        || lowerId.contains("rerank");
+                // 检测是否为 Chat 模型
+                boolean isChat = !isEmbedding && !isRerank
+                        || lowerType.contains("chat")
+                        || lowerType.contains("language");
+
+                if (isEmbedding) capabilities.add("EMBEDDING");
+                if (isRerank) capabilities.add("RERANK");
+                if (isChat || capabilities.isEmpty()) capabilities.add("CHAT");
 
                 boolean supportsThinking = modelId.toLowerCase().contains("reason")
                         || modelId.toLowerCase().contains("thinking")

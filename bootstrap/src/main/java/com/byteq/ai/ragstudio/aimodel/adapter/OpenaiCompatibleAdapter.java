@@ -129,9 +129,13 @@ public class OpenaiCompatibleAdapter implements ProviderAdapter {
                 String id = node.get("id").asText();
                 String lowerId = id.toLowerCase();
 
+                // Openai 兼容 API 的模型列表响应中可能有 object 字段，跳过非模型条目
+                String object = node.has("object") ? node.get("object").asText() : "";
+                if (!"model".equals(object) && !object.isEmpty()) continue;
+
                 // 根据模型 ID 命名规则推断能力类型
                 List<String> capabilities = new ArrayList<>();
-                if (lowerId.contains("embed")) {
+                if (lowerId.contains("embed") || lowerId.contains("bge-") || lowerId.contains("e5-")) {
                     capabilities.add("EMBEDDING");
                 } else if (lowerId.contains("rerank")) {
                     capabilities.add("RERANK");
