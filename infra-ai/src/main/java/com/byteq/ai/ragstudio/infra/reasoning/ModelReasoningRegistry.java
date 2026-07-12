@@ -51,60 +51,15 @@ public class ModelReasoningRegistry {
 
         // ==================== 离散型（DeepSeek 系列） ====================
 
-        register("deepseek-r1", new ReasoningConfig(
-                ReasoningType.DISCRETE,
-                null,
-                new ReasoningConfig.DiscreteConfig(List.of(
-                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
-                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
-                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
-                )),
-                null
-        ));
+        // DeepSeek 系列：只支持 enable_thinking: true/false，无 effort 参数
+        ReasoningConfig deepseekConfig = new ReasoningConfig(
+                ReasoningType.BOOLEAN, null, null, "enable_thinking");
 
-        register("deepseek-v4-flash", new ReasoningConfig(
-                ReasoningType.DISCRETE,
-                null,
-                new ReasoningConfig.DiscreteConfig(List.of(
-                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
-                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
-                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
-                )),
-                null
-        ));
-
-        register("deepseek-v4-pro", new ReasoningConfig(
-                ReasoningType.DISCRETE,
-                null,
-                new ReasoningConfig.DiscreteConfig(List.of(
-                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
-                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
-                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
-                )),
-                null
-        ));
-
-        register("deepseek-chat", new ReasoningConfig(
-                ReasoningType.DISCRETE,
-                null,
-                new ReasoningConfig.DiscreteConfig(List.of(
-                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
-                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
-                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
-                )),
-                null
-        ));
-
-        register("deepseek-reasoner", new ReasoningConfig(
-                ReasoningType.DISCRETE,
-                null,
-                new ReasoningConfig.DiscreteConfig(List.of(
-                        new ReasoningConfig.ThresholdItem(0.33, Map.of("effort", "low")),
-                        new ReasoningConfig.ThresholdItem(0.66, Map.of("effort", "medium")),
-                        new ReasoningConfig.ThresholdItem(1.0, Map.of("effort", "high"))
-                )),
-                null
-        ));
+        register("deepseek-r1", deepseekConfig);
+        register("deepseek-v4-flash", deepseekConfig);
+        register("deepseek-v4-pro", deepseekConfig);
+        register("deepseek-chat", deepseekConfig);
+        register("deepseek-reasoner", deepseekConfig);
 
         // ==================== 布尔型 ====================
 
