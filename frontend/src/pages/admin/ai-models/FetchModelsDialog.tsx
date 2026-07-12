@@ -183,7 +183,7 @@ export function FetchModelsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[640px] max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-[800px] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             从供应商获取模型
