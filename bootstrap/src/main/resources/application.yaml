@@ -1,3 +1,7 @@
+ai-log:
+  # 是否保存 AI 对话日志到 AILog/ 目录
+  save-enabled: ${SAVE_AI_LOG:false}
+
 server:
   port: 9090
   servlet:
