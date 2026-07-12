@@ -83,6 +83,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
                 .userId(userId)
                 .role(message.getRole().name().toLowerCase())
                 .content(message.getContent())
+                .thinkingLevel(message.getThinkingLevel())
                 .thinkingContent(message.getThinkingContent())
                 .thinkingDuration(message.getThinkingDuration())
                 .agentSteps(message.getAgentSteps())

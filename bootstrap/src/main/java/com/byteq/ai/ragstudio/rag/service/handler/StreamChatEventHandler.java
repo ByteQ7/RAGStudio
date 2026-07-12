@@ -40,6 +40,9 @@ public class StreamChatEventHandler implements StreamCallback {
     private int thinkingDurationSeconds;
     private String agentStepsJson;
     private String citationsJson;
+    private int thinkingLevel;
+
+    public void setThinkingLevel(int level) { this.thinkingLevel = level; }
 
     /**
      * 使用参数对象构造（推荐）
@@ -98,6 +101,7 @@ public class StreamChatEventHandler implements StreamCallback {
             String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
             ChatMessage message = ChatMessage.assistant(displayContent, thinkingContent,
                     resolveThinkingDuration(), agentStepsJson, citationsJson);
+            message.setThinkingLevel(thinkingLevel);
             messageId = memoryService.append(conversationId, userId, message);
         } catch (Exception e) {
             log.error("取消时持久化消息失败，conversationId：{}", conversationId, e);
@@ -245,6 +249,7 @@ public class StreamChatEventHandler implements StreamCallback {
             String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
             ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent,
                     resolveThinkingDuration(), agentStepsJson, citationsJson);
+            message.setThinkingLevel(thinkingLevel);
             messageId = memoryService.append(conversationId, userId, message);
         } catch (Exception e) {
             log.error("对话完成时持久化消息失败，conversationId：{}", conversationId, e);

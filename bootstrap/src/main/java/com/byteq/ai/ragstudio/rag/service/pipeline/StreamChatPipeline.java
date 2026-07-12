@@ -307,6 +307,11 @@ public class StreamChatPipeline {
         );
 
         // 构建 AgentLoop（per-request 实例，因为 ToolRegistry 是 per-request 的）
+        // 设置深度思考级别到 handler（用于持久化）
+        if (ctx.getCallback() instanceof StreamChatEventHandler handler) {
+            handler.setThinkingLevel(ctx.getDeepThinkingLevel());
+        }
+
         AgentLoop agentLoop = new AgentLoop(llmService, toolRegistry,
                 reactResponseParser, reactPromptBuilder,
                 () -> taskManager.isCancelled(ctx.getTaskId()),
