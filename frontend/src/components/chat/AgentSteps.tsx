@@ -126,7 +126,7 @@ export const AgentSteps = React.memo(function AgentSteps({ steps, thinkingLevel 
         {thinkingLevel > 0 && (
           <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200/60">
             <Sparkles className="h-2.5 w-2.5" />
-            深度思考 {deepThinkingLevel}%
+            深度思考 {thinkingLevel}%
           </span>
         )}
         <span className="ml-auto rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-500">
