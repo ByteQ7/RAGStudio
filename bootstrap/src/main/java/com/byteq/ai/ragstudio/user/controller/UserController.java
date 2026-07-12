@@ -18,6 +18,7 @@ import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import com.byteq.ai.ragstudio.user.service.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -42,6 +43,7 @@ import org.springframework.web.multipart.MultipartFile;
  * @see UserContext
  * @see StpUtil
  */
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class UserController {
@@ -61,11 +63,20 @@ public class UserController {
     @GetMapping("/user/me")
     public Result<CurrentUserVO> currentUser() {
         LoginUser user = UserContext.requireUser();
+        String avatar = user.getAvatar();
+        // 将 s3:// 内部 URL 转换为前端可访问的 HTTP URL
+        if (avatar != null && avatar.startsWith("s3://")) {
+            try {
+                avatar = fileStorageService.generatePresignedGetUrl(avatar);
+            } catch (Exception e) {
+                log.warn("转换头像 URL 失败: {}", avatar, e);
+            }
+        }
         return Results.success(new CurrentUserVO(
                 user.getUserId(),
                 user.getUsername(),
                 user.getRole(),
-                user.getAvatar()
+                avatar
         ));
     }
 
@@ -170,8 +181,12 @@ public class UserController {
                 RAGConstant.S3_USER_AVATAR_PREFIX,
                 file);
 
-        userService.updateAvatar(loginUser.getUserId(), stored.getUrl());
+        // 存入数据库的 s3:// 内部 URL
+        String s3Url = stored.getUrl();
+        userService.updateAvatar(loginUser.getUserId(), s3Url);
 
-        return Results.success(Map.of("avatarUrl", stored.getUrl()));
+        // 返回前端可访问的 HTTP URL
+        String httpUrl = fileStorageService.generatePresignedGetUrl(s3Url);
+        return Results.success(Map.of("avatarUrl", httpUrl));
     }
 }
