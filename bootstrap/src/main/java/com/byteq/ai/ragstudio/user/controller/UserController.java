@@ -11,16 +11,24 @@ import com.byteq.ai.ragstudio.user.controller.vo.UserVO;
 import com.byteq.ai.ragstudio.framework.context.LoginUser;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.convention.Result;
+import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.web.Results;
+import com.byteq.ai.ragstudio.rag.constant.RAGConstant;
+import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
+import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import com.byteq.ai.ragstudio.user.service.UserService;
 import lombok.RequiredArgsConstructor;
+
+import java.util.Map;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 用户管理控制器
@@ -39,6 +47,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     private final UserService userService;
+    private final FileStorageService fileStorageService;
 
     /**
      * 获取当前登录用户信息
@@ -138,5 +147,31 @@ public class UserController {
     public Result<Void> changePassword(@RequestBody ChangePasswordRequest requestParam) {
         userService.changePassword(requestParam);
         return Results.success();
+    }
+
+    /**
+     * 上传当前登录用户头像
+     * <p>
+     * 将头像文件上传到 S3 ragstudio/user-img/ 目录，并更新当前用户的 avatar 字段。
+     * </p>
+     *
+     * @param file 头像文件
+     * @return 新的头像 URL
+     */
+    @PostMapping("/user/avatar")
+    public Result<Map<String, String>> uploadAvatar(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            throw new ClientException("上传文件不能为空");
+        }
+
+        LoginUser loginUser = UserContext.requireUser();
+        StoredFileDTO stored = fileStorageService.upload(
+                RAGConstant.S3_BUCKET_NAME,
+                RAGConstant.S3_USER_AVATAR_PREFIX,
+                file);
+
+        userService.updateAvatar(loginUser.getUserId(), stored.getUrl());
+
+        return Results.success(Map.of("avatarUrl", stored.getUrl()));
     }
 }

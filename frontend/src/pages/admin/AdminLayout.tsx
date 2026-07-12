@@ -9,6 +9,7 @@ import {
   Database,
   LayoutDashboard,
   Lightbulb,
+  Image,
   LogOut,
   Menu,
   MessageSquare,
@@ -37,7 +38,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { changePassword } from "@/services/userService";
+import { changePassword, uploadAvatar } from "@/services/userService";
 import {
   searchChunks,
   type KnowledgeChunk
@@ -169,6 +170,7 @@ export function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const fileInputRefAvatar = useRef<HTMLInputElement | null>(null);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -324,6 +326,22 @@ export function AdminLayout() {
     blurTimeoutRef.current = window.setTimeout(() => {
       setSearchFocused(false);
     }, 150);
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await uploadAvatar(file);
+      useAuthStore.getState().updateAvatar(result.avatarUrl);
+      toast.success("头像已更新");
+    } catch (err) {
+      toast.error("头像上传失败");
+    }
+    // 重置 input，允许重复选择同一文件
+    if (fileInputRefAvatar.current) {
+      fileInputRefAvatar.current.value = "";
+    }
   };
 
   const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -595,9 +613,11 @@ export function AdminLayout() {
                   <DropdownMenuContent align="end" sideOffset={8} className="w-44">
                     <div className="px-3 py-2 text-xs text-gray-500">{user?.username || "管理员"} · {roleLabel}</div>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => fileInputRefAvatar.current?.click()}><Image className="mr-2 h-4 w-4" />更换头像</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setPasswordOpen(true)}><KeyRound className="mr-2 h-4 w-4" />修改密码</DropdownMenuItem>
                     <DropdownMenuItem onClick={handleLogout} className="text-rose-600 focus:text-rose-600"><LogOut className="mr-2 h-4 w-4" />退出登录</DropdownMenuItem>
                   </DropdownMenuContent>
+                  <input ref={fileInputRefAvatar} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                 </DropdownMenu>
               </div>
             </div>

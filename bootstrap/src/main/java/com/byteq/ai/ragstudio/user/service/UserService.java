@@ -72,4 +72,15 @@ public interface UserService {
      * @param requestParam 密码修改请求参数，包含旧密码和新密码
      */
     void changePassword(ChangePasswordRequest requestParam);
+
+    /**
+     * 上传并更新当前用户头像
+     * <p>
+     * 将头像文件上传到 S3，更新当前用户的 avatar 字段。
+     * </p>
+     *
+     * @param userId   用户 ID
+     * @param iconUrl  头像文件 URL
+     */
+    void updateAvatar(String userId, String iconUrl);
 }

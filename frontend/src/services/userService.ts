@@ -61,3 +61,17 @@ export async function deleteUser(id: string): Promise<void> {
 export async function changePassword(payload: ChangePasswordPayload): Promise<void> {
   await api.put("/user/password", payload);
 }
+
+/**
+ * 上传当前用户头像
+ * @param file 头像图片文件
+ */
+export async function uploadAvatar(file: File): Promise<{ avatarUrl: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return api.post<{ avatarUrl: string }, { avatarUrl: string }>(
+    "/user/avatar",
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+}

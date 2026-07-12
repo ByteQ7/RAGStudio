@@ -16,6 +16,7 @@ interface AuthState {
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   fetchCurrentUser: () => Promise<void>;
+  updateAvatar: (avatarUrl: string) => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -108,5 +109,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       return;
     }
+  },
+  updateAvatar: (avatarUrl: string) => {
+    const current = get().user;
+    if (!current) return;
+    const updated = { ...current, avatar: avatarUrl };
+    storage.setUser(updated);
+    set({ user: updated });
   }
 }));
