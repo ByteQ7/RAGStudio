@@ -1,6 +1,7 @@
 import * as React from "react";
-import { Brain, ChevronDown, Cog, Eye, ListOrdered, Zap } from "lucide-react";
+import { Brain, ChevronDown, Cog, Eye, ListOrdered, Sparkles, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useChatStore } from "@/stores/chatStore";
 import type { AgentStep } from "@/types";
 
 interface AgentStepsProps {
@@ -117,11 +118,19 @@ export const AgentSteps = React.memo(function AgentSteps({ steps }: AgentStepsPr
   // 提取 Plan（取自第一个携带 plan 的 step）
   const plan = steps.find((s) => s.plan)?.plan;
 
+  const deepThinkingLevel = useChatStore((s) => s.deepThinkingLevel);
+
   return (
     <div className="mb-3 overflow-hidden rounded-lg border border-indigo-100 bg-white">
       <div className="flex items-center gap-1.5 border-b border-indigo-50 px-3 py-2">
         <Brain className="h-3.5 w-3.5 text-indigo-500" />
         <span className="text-xs font-medium text-indigo-700">推理过程</span>
+        {deepThinkingLevel > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200/60">
+            <Sparkles className="h-2.5 w-2.5" />
+            深度思考 {deepThinkingLevel}%
+          </span>
+        )}
         <span className="ml-auto rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-500">
           {steps.length} 步
         </span>
