@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.infra.reasoning;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -17,6 +18,7 @@ import java.util.Map;
  * </p>
  */
 @Slf4j
+@Component
 public class ReasoningAdapter {
 
     /**
