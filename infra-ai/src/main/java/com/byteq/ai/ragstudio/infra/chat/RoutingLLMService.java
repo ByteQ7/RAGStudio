@@ -99,6 +99,11 @@ public class RoutingLLMService implements LLMService {
         reqLog.append("TraceId: ").append(traceId).append("\n");
         reqLog.append("Model: ").append(modelName).append("\n");
         reqLog.append("ThinkingLevel: ").append(thinkingLevel).append("\n");
+        reqLog.append("Targets: ").append(targets.size()).append(" (");
+        for (ModelTarget t : targets) {
+            reqLog.append(t.candidate().getModel()).append(" ");
+        }
+        reqLog.append(")\n");
         if (request.getMessages() != null && !request.getMessages().isEmpty()) {
             ChatMessage last = request.getMessages().get(request.getMessages().size() - 1);
             String content = last.getContent() != null ? last.getContent() : "";
