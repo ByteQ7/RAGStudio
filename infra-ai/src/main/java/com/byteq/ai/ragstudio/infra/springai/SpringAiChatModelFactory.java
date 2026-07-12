@@ -299,9 +299,9 @@ public class SpringAiChatModelFactory {
         if (request.getTopP() != null) builder.topP(request.getTopP());
         if (request.getMaxTokens() != null) builder.maxTokens(request.getMaxTokens());
 
-        // 深度思考参数路由
+        // 深度思考参数路由（无论 level 是否为 0 都执行，0 时返回关闭参数）
         int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
-        if (thinkingLevel > 0 && reasoningRouter != null) {
+        if (reasoningRouter != null) {
             Map<String, Object> reasoningParams = reasoningRouter.route(target.candidate().getModel(), thinkingLevel);
             if (!reasoningParams.isEmpty()) {
                 builder.extraBody(reasoningParams);
