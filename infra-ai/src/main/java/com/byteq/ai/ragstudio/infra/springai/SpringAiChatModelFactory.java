@@ -54,6 +54,10 @@ public class SpringAiChatModelFactory {
     private final S3Client s3Client;
     private final ReasoningRouter reasoningRouter;
 
+    public ReasoningRouter getReasoningRouter() {
+        return reasoningRouter;
+    }
+
     public SpringAiChatModelFactory(S3Client s3Client, ReasoningRouter reasoningRouter) {
         this.s3Client = s3Client;
         this.reasoningRouter = reasoningRouter;
@@ -256,7 +260,7 @@ public class SpringAiChatModelFactory {
      * 优先级：候选模型的自定义 URL > 提供商的基础 URL。
      * 对于 OpenAI 兼容提供商，Spring AI 会自动追加 /v1/chat/completions 等端点路径。
      */
-    private String resolveBaseUrl(ModelTarget target) {
+    public String resolveBaseUrl(ModelTarget target) {
         DynamicModelConfig.ModelEntry candidate = target.candidate();
         DynamicModelConfig.ProviderEntry provider = target.provider();
 
@@ -267,7 +271,7 @@ public class SpringAiChatModelFactory {
     }
 
     // 从模型目标的提供商配置中提取 API Key
-    private String resolveApiKey(ModelTarget target) {
+    public String resolveApiKey(ModelTarget target) {
         DynamicModelConfig.ProviderEntry provider = target.provider();
         return provider.getApiKey();
     }
