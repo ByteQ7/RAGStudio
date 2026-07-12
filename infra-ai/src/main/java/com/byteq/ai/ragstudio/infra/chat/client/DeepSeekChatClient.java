@@ -45,15 +45,17 @@ public class DeepSeekChatClient implements ChatClient {
         Prompt prompt = modelFactory.toPrompt(request, target);
         ChatResponse response = model.call(prompt);
 
-        // 记录完整 ChatResponse 到日志（含 thinking/reasoning_content 等元数据）
+        // 记录 AI 供应商完整原始响应（含 reasoning_content 等字段）
         String traceId = String.valueOf(System.currentTimeMillis());
         try {
+            String modelName = target.candidate().getModel();
+            String raw = response.toString();
             AiLogHolder.log(traceId,
                     "=== AI Provider Raw Response ===\n" +
-                    "Model: " + target.candidate().getModel() + "\n" +
-                    "Provider: deepseek\n" +
-                    "Type: sync\n" +
-                    "FullResponse:\n" + response + "\n");
+                    "Model: " + modelName + "\n" +
+                    "Path: sync\n" +
+                    raw + "\n" +
+                    "=== End ===\n");
         } catch (Exception ignored) {}
 
         return extractText(response, "deepseek");
