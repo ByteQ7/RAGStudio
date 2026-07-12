@@ -198,7 +198,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                 .messages(summaryMessages)
                 .temperature(0.3D)
                 .topP(0.9D)
-                .thinking(false)
+                .thinkingLevel(0)
                 .build();
         try {
             String result = llmService.chat(request);

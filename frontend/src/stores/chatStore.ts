@@ -23,6 +23,8 @@ interface ChatState {
   isStopping: boolean;
   isCreatingNew: boolean;
   knowledgeBaseIds: string[];
+  deepThinkingLevel: number;
+  setDeepThinkingLevel: (level: number) => void;
   streamTaskId: string | null;
   streamAbort: (() => void) | null;
   streamingMessageId: string | null;
@@ -149,6 +151,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStopping: false,
   isCreatingNew: false,
   knowledgeBaseIds: [],
+  deepThinkingLevel: 0,
+  setDeepThinkingLevel: (level) => set({ deepThinkingLevel: level }),
   streamTaskId: null,
   streamAbort: null,
   streamingMessageId: null,
@@ -533,6 +537,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           conversationId: conversationId || undefined,
           knowledgeBaseIds:
             knowledgeBaseIds && knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined,
+          deepThinkingLevel: get().deepThinkingLevel || undefined,
           imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined
         },
         headers: token ? { Authorization: token } : undefined,
