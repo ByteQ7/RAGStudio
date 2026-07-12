@@ -78,12 +78,14 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
             }
         }
 
+        Integer tl = message.getThinkingLevel();
+        log.debug("存储消息 thinkingLevel={}, role={}, conversationId={}", tl, message.getRole(), conversationId);
         ConversationMessageBO conversationMessage = ConversationMessageBO.builder()
                 .conversationId(conversationId)
                 .userId(userId)
                 .role(message.getRole().name().toLowerCase())
                 .content(message.getContent())
-                .thinkingLevel(message.getThinkingLevel())
+                .thinkingLevel(tl)
                 .thinkingContent(message.getThinkingContent())
                 .thinkingDuration(message.getThinkingDuration())
                 .agentSteps(message.getAgentSteps())
