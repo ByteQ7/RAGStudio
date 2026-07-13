@@ -86,6 +86,7 @@ CREATE TABLE t_message (
     content           TEXT        NOT NULL,
     thinking_content  TEXT,
     thinking_duration INTEGER,
+    thinking_level    INTEGER NOT NULL DEFAULT 0,
     image_urls        TEXT,
     agent_steps       TEXT,
     citations         TEXT,

@@ -38,6 +38,7 @@ export interface Message {
   agentSteps?: AgentStep[];
   citations?: Citation[];
   imageUrls?: string[];
+  thinkingLevel?: number;
 }
 
 export interface StreamMetaPayload {

@@ -18,4 +18,7 @@ public class ChatRequest {
 
     /** 图片 S3 URL 列表（用于多模态识别） */
     private List<String> imageUrls;
+
+    /** 深度思考级别（0-100），0 表示关闭 */
+    private Integer deepThinkingLevel;
 }
