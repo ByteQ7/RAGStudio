@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.infra.springai;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import com.byteq.ai.ragstudio.infra.reasoning.ReasoningRouter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -51,9 +52,47 @@ public class SpringAiChatModelFactory {
     private static final int MAX_CACHE_SIZE = 64;
 
     private final S3Client s3Client;
+    private final ReasoningRouter reasoningRouter;
 
-    public SpringAiChatModelFactory(S3Client s3Client) {
+    public ReasoningRouter getReasoningRouter() {
+        return reasoningRouter;
+    }
+
+    /**
+     * 构建完整的 API 请求体（绕过 Spring AI 的 extraBody 序列化问题）
+     */
+    public Map<String, Object> buildRequestBody(
+            com.byteq.ai.ragstudio.framework.convention.ChatRequest request, ModelTarget target) {
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        Map<String, Object> reasoningParams = reasoningRouter.route(
+                target.candidate().getModel(), thinkingLevel);
+
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("model", target.candidate().getModel());
+        body.put("stream", false);
+        if (request.getTemperature() != null) body.put("temperature", request.getTemperature());
+        if (request.getTopP() != null) body.put("top_p", request.getTopP());
+        if (request.getMaxTokens() != null) body.put("max_tokens", request.getMaxTokens());
+        if (!reasoningParams.isEmpty()) body.putAll(reasoningParams);
+
+        // messages
+        java.util.List<Map<String, Object>> msgs = new java.util.ArrayList<>();
+        if (request.getMessages() != null) {
+            for (com.byteq.ai.ragstudio.framework.convention.ChatMessage msg : request.getMessages()) {
+                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                String role = msg.getRole() != null ? msg.getRole().name().toLowerCase() : "user";
+                m.put("role", role);
+                m.put("content", msg.getContent() != null ? msg.getContent() : "");
+                msgs.add(m);
+            }
+        }
+        body.put("messages", msgs);
+        return body;
+    }
+
+    public SpringAiChatModelFactory(S3Client s3Client, ReasoningRouter reasoningRouter) {
         this.s3Client = s3Client;
+        this.reasoningRouter = reasoningRouter;
     }
 
     private final Map<String, ChatModel> chatModelCache = new ConcurrentHashMap<>();
@@ -253,7 +292,7 @@ public class SpringAiChatModelFactory {
      * 优先级：候选模型的自定义 URL > 提供商的基础 URL。
      * 对于 OpenAI 兼容提供商，Spring AI 会自动追加 /v1/chat/completions 等端点路径。
      */
-    private String resolveBaseUrl(ModelTarget target) {
+    public String resolveBaseUrl(ModelTarget target) {
         DynamicModelConfig.ModelEntry candidate = target.candidate();
         DynamicModelConfig.ProviderEntry provider = target.provider();
 
@@ -264,7 +303,7 @@ public class SpringAiChatModelFactory {
     }
 
     // 从模型目标的提供商配置中提取 API Key
-    private String resolveApiKey(ModelTarget target) {
+    public String resolveApiKey(ModelTarget target) {
         DynamicModelConfig.ProviderEntry provider = target.provider();
         return provider.getApiKey();
     }
@@ -296,8 +335,18 @@ public class SpringAiChatModelFactory {
         if (request.getTopP() != null) builder.topP(request.getTopP());
         if (request.getMaxTokens() != null) builder.maxTokens(request.getMaxTokens());
 
-        if (request.getThinking() != null) {
-            builder.extraBody(Map.of("enable_thinking", request.getThinking()));
+        // 深度思考参数路由（无论 level 是否为 0 都执行，0 时返回关闭参数）
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        String modelName = target.candidate().getModel();
+        if (reasoningRouter != null) {
+            Map<String, Object> reasoningParams = reasoningRouter.route(modelName, thinkingLevel);
+            if (!reasoningParams.isEmpty()) {
+                builder.extraBody(reasoningParams);
+                if (AiLogHolder.isEnabled()) {
+                    AiLogHolder.log(String.valueOf(System.currentTimeMillis()),
+                            "[REQ] Model: " + modelName + " | ThinkingLevel: " + thinkingLevel + " | ExtraBody: " + reasoningParams + "\n");
+                }
+            }
         }
 
         return builder.build();

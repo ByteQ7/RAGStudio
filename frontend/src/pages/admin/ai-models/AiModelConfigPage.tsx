@@ -457,7 +457,7 @@ export function AiModelConfigPage() {
   // ==================== Render ====================
 
   return (
-    <div className="flex h-full gap-0">
+    <div className="flex min-h-0 flex-1 gap-0">
       {/* ====== 左栏：供应商列表 ====== */}
       <div className="flex w-56 shrink-0 flex-col overflow-hidden border-r border-gray-100 bg-white">
         {/* 标题区 */}
@@ -673,7 +673,7 @@ export function AiModelConfigPage() {
 
       {/* ==================== Model Create/Edit Dialog ==================== */}
       <Dialog open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="sm:max-w-[520px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {modelDialogMode === "create" ? "新增模型" : "编辑模型"}

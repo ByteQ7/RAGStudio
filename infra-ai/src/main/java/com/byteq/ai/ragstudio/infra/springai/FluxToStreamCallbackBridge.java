@@ -25,22 +25,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class FluxToStreamCallbackBridge {
 
-    /** 是否启用思考内容回调（默认关闭，不再推送 type=think 事件） */
-    private static boolean thinkingEnabled = false;
-
-    public static void setThinkingEnabled(boolean enabled) {
-        thinkingEnabled = enabled;
-    }
-
     /**
      * 订阅 Flux 并桥接到 StreamCallback
      *
-     * @param flux     Spring AI 的流式 ChatResponse 序列
-     * @param callback 项目的流式回调接口
+     * @param flux           Spring AI 的流式 ChatResponse 序列
+     * @param callback       项目的流式回调接口
+     * @param thinkingLevel  深度思考级别（0-100），>0 时启用思考内容提取
+     * @param taskId         任务 ID（用于日志记录）
      * @return 取消句柄，调用 cancel() 可中断流式响应
      */
     public static StreamCancellationHandle subscribe(reactor.core.publisher.Flux<ChatResponse> flux,
-                                                      StreamCallback callback) {
+                                                      StreamCallback callback,
+                                                      int thinkingLevel,
+                                                      String taskId) {
+        // 如无 taskId 则使用当前时间戳
+        final String finalTaskId = (taskId != null && !taskId.isEmpty()) ? taskId : String.valueOf(System.currentTimeMillis());
+        // finalTaskId available here if needed for streaming logging
         AtomicBoolean terminated = new AtomicBoolean(false);
 
         Disposable disposable = flux.subscribe(
@@ -49,7 +49,7 @@ public class FluxToStreamCallbackBridge {
                     try {
                         // 提取思考/推理内容（DeepSeek-R1、Qwen3 等思考模型）
                         String thinking = extractThinkingContent(chunk);
-                        if (thinking != null && !thinking.isEmpty() && thinkingEnabled) {
+                        if (thinking != null && !thinking.isEmpty() && thinkingLevel > 0) {
                             callback.onThinking(thinking);
                         }
                         // 提取正文内容

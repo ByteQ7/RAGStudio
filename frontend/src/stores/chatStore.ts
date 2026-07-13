@@ -23,6 +23,8 @@ interface ChatState {
   isStopping: boolean;
   isCreatingNew: boolean;
   knowledgeBaseIds: string[];
+  deepThinkingLevel: number;
+  setDeepThinkingLevel: (level: number) => void;
   streamTaskId: string | null;
   streamAbort: (() => void) | null;
   streamingMessageId: string | null;
@@ -149,6 +151,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStopping: false,
   isCreatingNew: false,
   knowledgeBaseIds: [],
+  deepThinkingLevel: 0,
+  setDeepThinkingLevel: (level) => set({ deepThinkingLevel: level }),
   streamTaskId: null,
   streamAbort: null,
   streamingMessageId: null,
@@ -261,7 +265,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           : undefined,
         imageUrls: item.imageUrls
           ? (typeof item.imageUrls === "string" ? JSON.parse(item.imageUrls) : item.imageUrls)
-          : undefined
+          : undefined,
+        thinkingLevel: item.thinkingLevel ?? undefined
       }));
       set({ messages: mapped });
     } catch (error) {
@@ -314,13 +319,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       imageUrls: previewUrls && previewUrls.length > 0 ? previewUrls : (imageUrls && imageUrls.length > 0 ? imageUrls : undefined)
     };
     const assistantId = `assistant-${Date.now()}`;
+    const currentThinkingLevel = get().deepThinkingLevel;
     const assistantMessage: Message = {
       id: assistantId,
       role: "assistant",
       content: "",
       status: "streaming",
       feedback: null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      thinkingLevel: currentThinkingLevel
     };
 
     set((state) => ({
@@ -533,6 +540,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           conversationId: conversationId || undefined,
           knowledgeBaseIds:
             knowledgeBaseIds && knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined,
+          deepThinkingLevel: get().deepThinkingLevel || undefined,
           imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined
         },
         headers: token ? { Authorization: token } : undefined,

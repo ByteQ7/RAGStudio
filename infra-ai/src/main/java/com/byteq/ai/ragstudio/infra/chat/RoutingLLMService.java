@@ -12,6 +12,7 @@ import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
+import com.byteq.ai.ragstudio.infra.springai.AiLogHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
@@ -86,15 +87,49 @@ public class RoutingLLMService implements LLMService {
     @RagTraceNode(name = "llm-chat-routing", type = "LLM_ROUTING")
     public String chat(ChatRequest request) {
         boolean hasImages = hasImageContent(request);
-        List<ModelTarget> targets = selector.selectChatCandidates(
-                Boolean.TRUE.equals(request.getThinking()), hasImages);
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        List<ModelTarget> targets = selector.selectChatCandidates(thinkingLevel > 0, hasImages);
         validateTargets(targets);
-        return executor.executeWithFallback(
+
+        // 记录请求日志
+        String traceId = String.valueOf(System.currentTimeMillis());
+        String modelName = targets.isEmpty() ? "unknown" : targets.get(0).candidate().getModel();
+        StringBuilder reqLog = new StringBuilder();
+        reqLog.append("=== AI Provider Request ===\n");
+        reqLog.append("TraceId: ").append(traceId).append("\n");
+        reqLog.append("Model: ").append(modelName).append("\n");
+        reqLog.append("ThinkingLevel: ").append(thinkingLevel).append("\n");
+        reqLog.append("Targets: ").append(targets.size()).append(" (");
+        for (ModelTarget t : targets) {
+            reqLog.append(t.candidate().getModel()).append(" ");
+        }
+        reqLog.append(")\n");
+        if (request.getMessages() != null && !request.getMessages().isEmpty()) {
+            ChatMessage last = request.getMessages().get(request.getMessages().size() - 1);
+            String content = last.getContent() != null ? last.getContent() : "";
+            if (content.length() > 500) content = content.substring(0, 500) + "...";
+            reqLog.append("LastMsg: [").append(last.getRole()).append("] ").append(content).append("\n");
+        }
+        AiLogHolder.log(traceId, reqLog.toString());
+
+        String response = executor.executeWithFallback(
                 ModelCapability.CHAT,
                 targets,
                 target -> clientsByProvider.get(target.candidate().getProvider()),
                 (client, target) -> client.chat(request, target)
         );
+
+        // 记录响应日志
+        if (response != null && !response.isEmpty()) {
+            StringBuilder respLog = new StringBuilder();
+            respLog.append("=== AI Provider Response ===\n");
+            respLog.append("TraceId: ").append(traceId).append("\n");
+            respLog.append("Type: sync\n");
+            respLog.append("\n").append(response).append("\n");
+            AiLogHolder.log(traceId, respLog.toString());
+        }
+
+        return response;
     }
 
     /**
@@ -111,7 +146,8 @@ public class RoutingLLMService implements LLMService {
         if (!StringUtils.hasText(modelId)) {
             return chat(request);
         }
-        List<ModelTarget> targets = List.of(resolveTarget(modelId, Boolean.TRUE.equals(request.getThinking())));
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        List<ModelTarget> targets = List.of(resolveTarget(modelId, thinkingLevel > 0));
         validateTargets(targets);
         return executor.executeWithFallback(
                 ModelCapability.CHAT,
@@ -148,7 +184,7 @@ public class RoutingLLMService implements LLMService {
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback) {
         boolean hasImages = hasImageContent(request);
         List<ModelTarget> targets = selector.selectChatCandidates(
-                Boolean.TRUE.equals(request.getThinking()), hasImages);
+                (request.getThinkingLevel() != null ? request.getThinkingLevel() : 0) > 0, hasImages);
         validateTargets(targets);
 
         String label = ModelCapability.CHAT.getDisplayName();

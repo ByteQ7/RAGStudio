@@ -191,14 +191,38 @@ public class StreamChatPipeline {
      * </p>
      */
     public void execute(StreamChatContext ctx) {
+        String taskId = ctx.getTaskId();
+
         try {
             doExecute(ctx);
+
+            // 取最终回答（流式内容已拼接完整）
+            String answer = ctx.getCallback() instanceof com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler
+                    ? ((com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler) ctx.getCallback()).getAnswerString()
+                    : null;
+
+            // 记录对话上下文 + 回答（doExecute 内才加载了 history）
+            java.util.List<com.byteq.ai.ragstudio.framework.convention.ChatMessage> history = ctx.getHistory();
+            if (history != null && !history.isEmpty()) {
+                for (com.byteq.ai.ragstudio.framework.convention.ChatMessage msg : history) {
+                    String role = msg.getRole() != null ? msg.getRole().name() : "unknown";
+                    String content = msg.getContent() != null ? msg.getContent() : "";
+                    if (content.length() > 2000) {
+                        content = content.substring(0, 2000) + "\n... [已截断 " + (content.length() - 2000) + " 字符]";
+                    }
+                }
+            }
+
+            if (answer != null && !answer.isEmpty()) {
+            }
         } catch (IllegalStateException e) {
             // 仅静默处理用户取消：其他 IllegalStateException 仍需正常传播
             if (e.getMessage() != null && e.getMessage().startsWith(CANCEL_MARKER)) {
-                log.info("流水线因任务取消而终止，任务ID：{}", ctx.getTaskId());
+                log.info("流水线因任务取消而终止，任务ID：{}", taskId);
                 return;
             }
+            throw e;
+        } catch (Exception e) {
             throw e;
         }
     }
@@ -285,7 +309,8 @@ public class StreamChatPipeline {
         // 构建 AgentLoop（per-request 实例，因为 ToolRegistry 是 per-request 的）
         AgentLoop agentLoop = new AgentLoop(llmService, toolRegistry,
                 reactResponseParser, reactPromptBuilder,
-                () -> taskManager.isCancelled(ctx.getTaskId()));
+                () -> taskManager.isCancelled(ctx.getTaskId()),
+                ctx.getDeepThinkingLevel());
 
         // 在 Agent 完成回答但 SSE 连接关闭前，推送引用溯源
         agentLoop.setBeforeCompleteCallback(() -> {

@@ -38,10 +38,16 @@ public class RAGChatServiceImpl implements RAGChatService {
     // 2. 创建 SSE 回调处理器
     // 3. 通过限流器入队，在链路追踪中构建上下文并执行对话管线
     @Override
-    public void streamChat(String question, String conversationId, Boolean deepThinking, List<String> knowledgeBaseIds, List<String> imageUrls, SseEmitter emitter) {
+    public void streamChat(String question, String conversationId, Integer deepThinkingLevel, List<String> knowledgeBaseIds, List<String> imageUrls, SseEmitter emitter) {
         String actualConversationId = StrUtil.isBlank(conversationId) ? IdUtil.getSnowflakeNextIdStr() : conversationId;
         String taskId = IdUtil.getSnowflakeNextIdStr();
         StreamCallback callback = callbackFactory.createChatEventHandler(emitter, actualConversationId, taskId);
+
+        // 在 callback 被 trace 包装前设置 thinkingLevel
+        int finalDeepThinkingLevel = deepThinkingLevel != null ? deepThinkingLevel : 0;
+        if (callback instanceof com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler handler) {
+            handler.setThinkingLevel(finalDeepThinkingLevel);
+        }
 
         chatQueueLimiter.enqueue(question, actualConversationId, emitter,
                 () -> traceRunner.run(question, actualConversationId, taskId, callback, traceAware -> {
@@ -49,7 +55,7 @@ public class RAGChatServiceImpl implements RAGChatService {
                             .question(question)
                             .conversationId(actualConversationId)
                             .taskId(taskId)
-                            .deepThinking(Boolean.TRUE.equals(deepThinking))
+                            .deepThinkingLevel(finalDeepThinkingLevel)
                             .userId(UserContext.getUserId())
                             .callback(traceAware)
                             .knowledgeBaseIds(CollUtil.isEmpty(knowledgeBaseIds) ? List.of() : knowledgeBaseIds)

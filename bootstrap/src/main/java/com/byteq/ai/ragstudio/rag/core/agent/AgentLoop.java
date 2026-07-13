@@ -51,11 +51,14 @@ public class AgentLoop {
     /** 取消检查回调 */
     private final java.util.function.Supplier<Boolean> cancellationChecker;
 
+    /** 深度思考级别（0-100），0 表示关闭 */
+    private final int thinkingLevel;
+
     public AgentLoop(LLMService llmService,
                      ToolRegistry toolRegistry,
                      ReActResponseParser responseParser,
                      ReActPromptBuilder promptBuilder) {
-        this(llmService, toolRegistry, responseParser, promptBuilder, () -> false);
+        this(llmService, toolRegistry, responseParser, promptBuilder, () -> false, 0);
     }
 
     public AgentLoop(LLMService llmService,
@@ -63,11 +66,21 @@ public class AgentLoop {
                      ReActResponseParser responseParser,
                      ReActPromptBuilder promptBuilder,
                      java.util.function.Supplier<Boolean> cancellationChecker) {
+        this(llmService, toolRegistry, responseParser, promptBuilder, cancellationChecker, 0);
+    }
+
+    public AgentLoop(LLMService llmService,
+                     ToolRegistry toolRegistry,
+                     ReActResponseParser responseParser,
+                     ReActPromptBuilder promptBuilder,
+                     java.util.function.Supplier<Boolean> cancellationChecker,
+                     int thinkingLevel) {
         this.llmService = llmService;
         this.toolRegistry = toolRegistry;
         this.responseParser = responseParser;
         this.promptBuilder = promptBuilder;
         this.cancellationChecker = cancellationChecker;
+        this.thinkingLevel = thinkingLevel;
     }
 
     /** 设置在 onComplete 之前触发的回调 */
@@ -120,7 +133,7 @@ public class AgentLoop {
                     llmResponse = llmService.chat(ChatRequest.builder()
                             .messages(new ArrayList<>(ctx.getMessages()))
                             .temperature(0.0)   // 最低温度，最大程度保证格式遵守
-                            .thinking(false)
+                            .thinkingLevel(thinkingLevel)
                             .build());
                 } catch (Exception e) {
                     // 用户取消时不刷 error
@@ -149,7 +162,7 @@ public class AgentLoop {
                         llmResponse = llmService.chat(ChatRequest.builder()
                                 .messages(new ArrayList<>(ctx.getMessages()))
                                 .temperature(0.1)
-                                .thinking(false)
+                                .thinkingLevel(0)
                                 .build());
                     } catch (Exception e2) {
                         log.warn("Agent 迭代 {} 重试也失败: {}", iteration, e2.getMessage());
@@ -181,7 +194,7 @@ public class AgentLoop {
                         String retryResponse = llmService.chat(ChatRequest.builder()
                                 .messages(new ArrayList<>(ctx.getMessages()))
                                 .temperature(0.0)
-                                .thinking(false)
+                                .thinkingLevel(0)
                                 .build());
                         if (StrUtil.isNotBlank(retryResponse)) {
                             llmResponse = retryResponse;
