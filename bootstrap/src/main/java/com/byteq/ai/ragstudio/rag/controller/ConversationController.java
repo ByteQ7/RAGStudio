@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * 会话控制器
@@ -82,6 +83,31 @@ public class ConversationController {
     @DeleteMapping("/conversations/{conversationId}")
     public Result<Void> delete(@PathVariable String conversationId) {
         conversationService.delete(conversationId);
+        return Results.success();
+    }
+
+    /**
+     * 批量删除会话
+     * <p>
+     * 根据会话 ID 列表批量删除会话及其所有消息记录。
+     * 部分删除失败不影响其他会话的删除。
+     * </p>
+     *
+     * @param ids 会话 ID 列表（逗号分隔）
+     * @return 操作结果
+     */
+    @DeleteMapping("/conversations/batch")
+    public Result<Void> batchDelete(@RequestBody Set<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Results.success();
+        }
+        for (String id : ids) {
+            try {
+                conversationService.delete(id);
+            } catch (Exception ignored) {
+                // 单个失败不影响其他
+            }
+        }
         return Results.success();
     }
 

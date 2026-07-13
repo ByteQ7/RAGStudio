@@ -28,6 +28,19 @@ export async function deleteSession(conversationId: string) {
   return api.delete<void>(`/conversations/${conversationId}`);
 }
 
+export async function batchDeleteSessions(ids: string[]) {
+  if (ids.length === 0) return;
+  if (ids.length === 1) {
+    await deleteSession(ids[0]);
+    return;
+  }
+  return api.request<void>({
+    url: "/conversations/batch",
+    method: "DELETE",
+    data: ids
+  });
+}
+
 export async function renameSession(conversationId: string, title: string) {
   return api.put<void>(`/conversations/${conversationId}`, { title });
 }

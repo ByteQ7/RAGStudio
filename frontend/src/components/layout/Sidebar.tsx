@@ -1,6 +1,7 @@
 import * as React from "react";
 import { differenceInCalendarDays, isValid } from "date-fns";
 import {
+  Check,
   LogOut,
   MessageSquare,
   MoreHorizontal,
@@ -8,9 +9,11 @@ import {
   Plus,
   Search,
   Settings,
-  Trash2
+  Trash2,
+  X
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
 
@@ -30,10 +33,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialogProps
+} from "@radix-ui/react-alert-dialog";
 import { Loading } from "@/components/common/Loading";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
+import { batchDeleteSessions } from "@/services/sessionService";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -61,7 +68,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     id: string;
     title: string;
   } | null>(null);
+  const [selectMode, setSelectMode] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [avatarFailed, setAvatarFailed] = React.useState(false);
+  const [batchDeleting, setBatchDeleting] = React.useState(false);
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
@@ -119,6 +129,44 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   React.useEffect(() => {
     setAvatarFailed(false);
   }, [user?.avatar, user?.userId]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBatchDeleting(true);
+    try {
+      await batchDeleteSessions(Array.from(selectedIds));
+      // 从本地 store 中移除已删除的会话
+      useChatStore.setState((state) => ({
+        sessions: state.sessions.filter((s) => !selectedIds.has(s.id)),
+        currentSessionId: selectedIds.has(state.currentSessionId || "")
+          ? null
+          : state.currentSessionId
+      }));
+      toast.success(`已删除 ${selectedIds.size} 个会话`);
+      exitSelectMode();
+    } catch (error) {
+      toast.error("批量删除失败，请重试");
+    } finally {
+      setBatchDeleting(false);
+    }
+  };
 
   const avatarUrl = user?.avatar?.trim();
   const showAvatar = Boolean(avatarUrl) && !avatarFailed;
@@ -211,17 +259,54 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           </button>
         </div>
 
-        {/* Search */}
+        {/* Search / Select Mode */}
         <div className="px-3 pb-1">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-300" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索对话..."
-              className="h-9 w-full rounded-lg border border-gray-100 bg-gray-50/50 pl-9 pr-3 text-[13px] text-gray-700 placeholder:text-gray-300 transition-colors focus:border-indigo-200 focus:bg-white focus:outline-none"
-            />
-          </div>
+          {selectMode ? (
+            <div className="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5">
+              <span className="text-[12px] font-medium text-rose-600">
+                已选 {selectedIds.size} 项
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleBatchDelete}
+                  disabled={selectedIds.size === 0 || batchDeleting}
+                  className="inline-flex items-center gap-1 rounded-md bg-rose-500 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  {batchDeleting ? "删除中..." : "删除"}
+                </button>
+                <button
+                  type="button"
+                  onClick={exitSelectMode}
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-rose-400 hover:bg-rose-100 hover:text-rose-600"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-300" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="搜索对话..."
+                  className="h-9 w-full rounded-lg border border-gray-100 bg-gray-50/50 pl-9 pr-3 text-[13px] text-gray-700 placeholder:text-gray-300 transition-colors focus:border-indigo-200 focus:bg-white focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectMode(true)}
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-rose-500"
+                title="批量选择"
+                aria-label="批量选择"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Session list */}
@@ -242,107 +327,135 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-300">
                     {group.label}
                   </p>
-                  {group.items.map((session) => (
-                    <div
-                      key={session.id}
-                      className={cn(
-                        "group flex min-h-[38px] cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] transition-all duration-150",
-                        currentSessionId === session.id
-                          ? "bg-white text-indigo-700 font-medium shadow-sm"
-                          : "text-gray-600 hover:bg-white/80 hover:text-gray-900"
-                      )}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        if (renamingId === session.id) return;
-                        if (renamingId) {
-                          cancelRename();
-                        }
-                        selectSession(session.id).catch(() => null);
-                        navigate(`/chat/${session.id}`);
-                        onClose();
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
+                  {group.items.map((session) => {
+                    const isSelected = selectedIds.has(session.id);
+                    return (
+                      <div
+                        key={session.id}
+                        className={cn(
+                          "group flex min-h-[38px] cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] transition-all duration-150",
+                          selectMode
+                            ? isSelected
+                              ? "bg-rose-50 text-rose-700"
+                              : "text-gray-500 hover:bg-gray-50"
+                            : currentSessionId === session.id
+                              ? "bg-white text-indigo-700 font-medium shadow-sm"
+                              : "text-gray-600 hover:bg-white/80 hover:text-gray-900"
+                        )}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          if (renamingId === session.id) return;
+                          if (renamingId) cancelRename();
+
+                          if (selectMode) {
+                            toggleSelect(session.id);
+                            return;
+                          }
                           selectSession(session.id).catch(() => null);
                           navigate(`/chat/${session.id}`);
                           onClose();
-                        }
-                      }}
-                    >
-                      {renamingId === session.id ? (
-                        <input
-                          ref={renameInputRef}
-                          value={renameValue}
-                          onChange={(event) => setRenameValue(event.target.value)}
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              commitRename().catch(() => null);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            if (selectMode) {
+                              toggleSelect(session.id);
+                              return;
                             }
-                            if (event.key === "Escape") {
-                              event.preventDefault();
-                              cancelRename();
-                            }
-                          }}
-                          onBlur={() => {
-                            commitRename().catch(() => null);
-                          }}
-                          className="h-6 flex-1 rounded border border-indigo-200 bg-white px-2 text-[13px] text-gray-900 focus:border-indigo-400 focus:outline-none"
-                        />
-                      ) : (
-                        <span className="min-w-0 flex-1 truncate">
-                          {session.title || "新对话"}
-                        </span>
-                      )}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
+                            selectSession(session.id).catch(() => null);
+                            navigate(`/chat/${session.id}`);
+                            onClose();
+                          }
+                        }}
+                      >
+                        {selectMode ? (
+                          <div
                             className={cn(
-                              "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-opacity duration-150 hover:bg-gray-100",
-                              currentSessionId === session.id
-                                ? "pointer-events-auto opacity-100"
-                                : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"
+                              "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition-colors",
+                              isSelected
+                                ? "border-rose-500 bg-rose-500 text-white"
+                                : "border-gray-300 bg-white"
                             )}
+                          >
+                            {isSelected && <Check className="h-3 w-3" strokeWidth={3} />}
+                          </div>
+                        ) : null}
+                        {renamingId === session.id ? (
+                          <input
+                            ref={renameInputRef}
+                            value={renameValue}
+                            onChange={(event) => setRenameValue(event.target.value)}
                             onClick={(event) => event.stopPropagation()}
-                            aria-label="会话操作"
-                          >
-                            <MoreHorizontal className="h-3.5 w-3.5 text-gray-400" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="start"
-                          className="min-w-[120px] rounded-xl border border-gray-100 bg-white p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
-                        >
-                          <DropdownMenuItem
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              startRename(session.id, session.title || "新对话");
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                commitRename().catch(() => null);
+                              }
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                cancelRename();
+                              }
                             }}
-                            className="rounded-lg px-3 py-2 text-[13px] text-gray-700 focus:bg-gray-50 focus:text-gray-700 data-[highlighted]:bg-gray-50 data-[highlighted]:text-gray-700"
-                          >
-                            <Pencil className="mr-2 h-3.5 w-3.5" />
-                            重命名
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setDeleteTarget({
-                                id: session.id,
-                                title: session.title || "新对话"
-                              });
+                            onBlur={() => {
+                              commitRename().catch(() => null);
                             }}
-                            className="rounded-lg px-3 py-2 text-[13px] text-rose-500 focus:bg-rose-50 focus:text-rose-500 data-[highlighted]:bg-rose-50 data-[highlighted]:text-rose-500"
-                          >
-                            <Trash2 className="mr-2 h-3.5 w-3.5" />
-                            删除
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  ))}
+                            className="h-6 flex-1 rounded border border-indigo-200 bg-white px-2 text-[13px] text-gray-900 focus:border-indigo-400 focus:outline-none"
+                          />
+                        ) : (
+                          <span className={cn("min-w-0 flex-1 truncate", isSelected && "font-medium")}>
+                            {session.title || "新对话"}
+                          </span>
+                        )}
+                        {!selectMode && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className={cn(
+                                  "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-opacity duration-150 hover:bg-gray-100",
+                                  currentSessionId === session.id
+                                    ? "pointer-events-auto opacity-100"
+                                    : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"
+                                )}
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label="会话操作"
+                              >
+                                <MoreHorizontal className="h-3.5 w-3.5 text-gray-400" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="start"
+                              className="min-w-[120px] rounded-xl border border-gray-100 bg-white p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+                            >
+                              <DropdownMenuItem
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  startRename(session.id, session.title || "新对话");
+                                }}
+                                className="rounded-lg px-3 py-2 text-[13px] text-gray-700 focus:bg-gray-50 focus:text-gray-700 data-[highlighted]:bg-gray-50 data-[highlighted]:text-gray-700"
+                              >
+                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                重命名
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDeleteTarget({
+                                    id: session.id,
+                                    title: session.title || "新对话"
+                                  });
+                                }}
+                                className="rounded-lg px-3 py-2 text-[13px] text-rose-500 focus:bg-rose-50 focus:text-rose-500 data-[highlighted]:bg-rose-50 data-[highlighted]:text-rose-500"
+                              >
+                                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                删除
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
