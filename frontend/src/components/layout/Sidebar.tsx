@@ -33,9 +33,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialogProps
-} from "@radix-ui/react-alert-dialog";
 import { Loading } from "@/components/common/Loading";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -129,6 +126,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   React.useEffect(() => {
     setAvatarFailed(false);
   }, [user?.avatar, user?.userId]);
+
+  // 侧边栏关闭时退出选择模式
+  React.useEffect(() => {
+    if (!isOpen) exitSelectMode();
+  }, [isOpen]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -286,25 +288,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-1">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-300" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="搜索对话..."
-                  className="h-9 w-full rounded-lg border border-gray-100 bg-gray-50/50 pl-9 pr-3 text-[13px] text-gray-700 placeholder:text-gray-300 transition-colors focus:border-indigo-200 focus:bg-white focus:outline-none"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectMode(true)}
-                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-rose-500"
-                title="批量选择"
-                aria-label="批量选择"
-              >
-                <Check className="h-4 w-4" />
-              </button>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-300" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索对话..."
+                className="h-9 w-full rounded-lg border border-gray-100 bg-gray-50/50 pl-9 pr-3 text-[13px] text-gray-700 placeholder:text-gray-300 transition-colors focus:border-indigo-200 focus:bg-white focus:outline-none"
+              />
             </div>
           )}
         </div>
@@ -425,7 +416,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                               align="start"
-                              className="min-w-[120px] rounded-xl border border-gray-100 bg-white p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+                              className="min-w-[130px] rounded-xl border border-gray-100 bg-white p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
                             >
                               <DropdownMenuItem
                                 onClick={(event) => {
@@ -449,6 +440,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                               >
                                 <Trash2 className="mr-2 h-3.5 w-3.5" />
                                 删除
+                              </DropdownMenuItem>
+                              <div className="my-1 border-t border-gray-100" />
+                              <DropdownMenuItem
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectMode(true);
+                                }}
+                                className="rounded-lg px-3 py-2 text-[13px] text-gray-500 focus:bg-gray-50 data-[highlighted]:bg-gray-50"
+                              >
+                                <Check className="mr-2 h-3.5 w-3.5" />
+                                批量管理
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
