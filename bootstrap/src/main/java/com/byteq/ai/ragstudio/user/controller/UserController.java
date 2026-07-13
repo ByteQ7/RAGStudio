@@ -93,7 +93,19 @@ public class UserController {
     @GetMapping("/users")
     public Result<IPage<UserVO>> pageQuery(UserPageRequest requestParam) {
         StpUtil.checkRole("admin");
-        return Results.success(userService.pageQuery(requestParam));
+        IPage<UserVO> page = userService.pageQuery(requestParam);
+        // 将 s3:// 内部 URL 转换为前端可访问的 HTTP URL
+        for (UserVO vo : page.getRecords()) {
+            String avatar = vo.getAvatar();
+            if (avatar != null && avatar.startsWith("s3://")) {
+                try {
+                    vo.setAvatar(fileStorageService.generatePresignedGetUrl(avatar));
+                } catch (Exception e) {
+                    log.warn("转换头像 URL 失败: {}", avatar, e);
+                }
+            }
+        }
+        return Results.success(page);
     }
 
     /**
