@@ -39,7 +39,7 @@ public class ReActPromptBuilder {
 
     /** KB 相关时的提示 */
     private static final String KB_RELEVANT_NOTE =
-            "> ⚠️ 【强制指令】用户已选择知识库且问题与知识库相关。**你的第一轮行动必须调用 rag_search 工具检索知识库**，然后基于检索结果回答。不得仅凭自身知识直接回答。";
+            "> ⚠️ 用户已选择知识库且问题与知识库相关。**你的第一轮行动必须调用 rag_search 工具检索知识库**，然后基于检索结果回答。不得仅凭自身知识直接回答。";
 
     private final PromptTemplateLoader templateLoader;
 
