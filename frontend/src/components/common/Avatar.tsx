@@ -17,6 +17,9 @@ export function Avatar({ name, src, className }: AvatarProps) {
     return letters.slice(0, 2).toUpperCase();
   }, [name]);
 
+  // s3:// URL 浏览器无法渲染，转换为空让 Fallback 显示
+  const validSrc = src && !src.startsWith("s3://") ? src : undefined;
+
   return (
     <AvatarPrimitive.Root
       className={cn(
@@ -24,8 +27,8 @@ export function Avatar({ name, src, className }: AvatarProps) {
         className
       )}
     >
-      {src ? (
-        <AvatarPrimitive.Image src={src} alt={name} className="h-full w-full rounded-full" />
+      {validSrc ? (
+        <AvatarPrimitive.Image src={validSrc} alt={name} className="h-full w-full rounded-full" />
       ) : null}
       <AvatarPrimitive.Fallback className="select-none">{fallback}</AvatarPrimitive.Fallback>
     </AvatarPrimitive.Root>
