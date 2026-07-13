@@ -72,3 +72,6 @@ AILog/
 
 # Design docs
 深度思考路由功能设计.md
+
+# Quick test DB init
+resources/database/quick-test.sql
