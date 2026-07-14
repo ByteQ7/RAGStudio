@@ -223,10 +223,11 @@ export function ChatInput() {
     <div className="space-y-2">
       <div
         className={cn(
-          "flex flex-col rounded-2xl border bg-white px-4 pt-3.5 pb-2.5 transition-all duration-200",
+          "flex flex-col rounded-2xl px-4 pt-3.5 pb-2.5 transition-all duration-200",
           isFocused
-            ? "border-indigo-200 shadow-[0_0_0_3px_rgba(99,102,241,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
-            : "border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+            ? "border-indigo-200/70 shadow-[0_0_0_3px_rgba(99,102,241,0.08),0_4px_16px_rgba(0,0,0,0.04)]"
+            : "border-gray-200/60 shadow-[0_1px_4px_rgba(0,0,0,0.02),0_4px_12px_rgba(0,0,0,0.02)]",
+          "bg-white/90 backdrop-blur-xl backdrop-saturate-150 border"
         )}
       >
         <Textarea
