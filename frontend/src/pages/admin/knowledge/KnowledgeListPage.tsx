@@ -298,8 +298,8 @@ export function KnowledgeListPage() {
                   <TableHead>名称</TableHead>
                   <TableHead>Embedding模型</TableHead>
                   <TableHead>Collection</TableHead>
-                  <TableHead className="text-center w-[70px]">文档数</TableHead>
-                  <TableHead className="w-[90px]">负责人</TableHead>
+                  <TableHead className="text-center w-[70px] whitespace-nowrap">文档数</TableHead>
+                  <TableHead className="w-[90px] whitespace-nowrap">负责人</TableHead>
                   <TableHead className="w-[150px]">创建时间</TableHead>
                   <TableHead className="w-[50px] text-center">操作</TableHead>
                 </TableRow>
@@ -331,8 +331,8 @@ export function KnowledgeListPage() {
                         "-"
                       )}
                     </TableCell>
-                    <TableCell>{kb.documentCount ?? "-"}</TableCell>
-                    <TableCell>{kb.createdBy || "-"}</TableCell>
+                    <TableCell className="whitespace-nowrap">{kb.documentCount ?? "-"}</TableCell>
+                    <TableCell className="whitespace-nowrap">{kb.createdBy || "-"}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDate(kb.createTime)}
                     </TableCell>
