@@ -211,7 +211,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       />
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen w-[260px] flex-shrink-0 flex-col border-r-2 border-gray-200/80 bg-[#f1f5f9] shadow-[2px_0_12px_rgba(0,0,0,0.04)] transition-transform lg:static lg:h-screen lg:translate-x-0",
+          "fixed left-0 top-0 z-40 flex h-screen w-[260px] flex-shrink-0 flex-col border-r border-gray-200/50 transition-transform lg:static lg:h-screen lg:translate-x-0",
+          "bg-white/80 backdrop-blur-2xl backdrop-saturate-150",
+          "shadow-[0_0_0_1px_rgba(0,0,0,0.02),_2px_0_12px_rgba(0,0,0,0.04)]",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -249,7 +251,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="px-3 pb-2">
           <button
             type="button"
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 hover:shadow-md active:scale-[0.98]"
+            className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[13px] font-semibold text-white shadow-sm transition-all duration-200 hover:shadow-md active:scale-[0.97]"
+            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
             onClick={() => {
               createSession().catch(() => null);
               navigate("/chat");
@@ -294,7 +297,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="搜索对话..."
-                className="h-9 w-full rounded-lg border border-gray-100 bg-gray-50/50 pl-9 pr-3 text-[13px] text-gray-700 placeholder:text-gray-300 transition-colors focus:border-indigo-200 focus:bg-white focus:outline-none"
+                className="h-9 w-full rounded-xl border border-gray-200/60 bg-gray-100/50 pl-9 pr-3 text-[13px] text-gray-700 placeholder:text-gray-400 transition-all duration-200 focus:border-indigo-300/50 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.06)] focus:outline-none"
               />
             </div>
           )}
@@ -324,14 +327,15 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                       <div
                         key={session.id}
                         className={cn(
-                          "group flex min-h-[38px] cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-[13px] transition-all duration-150",
+                          "group flex min-h-[38px] cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-[13px] transition-all duration-150",
                           selectMode
                             ? isSelected
                               ? "bg-rose-50 text-rose-700"
-                              : "text-gray-500 hover:bg-gray-50"
+                              : "text-gray-500 hover:bg-gray-100"
                             : currentSessionId === session.id
-                              ? "bg-white text-indigo-700 font-medium shadow-sm"
-                              : "text-gray-600 hover:bg-white/80 hover:text-gray-900"
+                              ? "font-medium shadow-sm"
+                              : "text-gray-600 hover:text-gray-900"
+                            , currentSessionId === session.id && !selectMode ? "bg-indigo-50/80 text-indigo-700 border border-indigo-100/50" : "hover:bg-gray-50/70"
                         )}
                         role="button"
                         tabIndex={0}

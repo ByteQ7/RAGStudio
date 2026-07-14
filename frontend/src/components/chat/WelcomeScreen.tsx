@@ -243,17 +243,17 @@ export function WelcomeScreen() {
   const uploadingCount = images.filter((img) => img.uploading).length;
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center px-6 py-10">
+    <div className="flex min-h-full flex-col items-center justify-center px-6 py-10" style={{ background: 'linear-gradient(180deg, #f8f9fc 0%, #f0f1ff 40%, #eef2ff 70%, #f8f9fc 100%)' }}>
       {/* Hero section */}
       <div
         className="w-full max-w-[640px] text-center opacity-0 animate-fade-up"
         style={{ animationFillMode: "both" }}
       >
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-200">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', boxShadow: '0 8px 24px rgba(99,102,241,0.25)' }}>
           <RAGStudioLogo className="h-6 w-6" />
         </div>
-        <h1 className="mt-6 font-display text-[2rem] font-bold leading-tight tracking-tight text-gray-900 sm:text-[2.5rem]">
-          你好，有什么可以帮你的？
+        <h1 className="mt-6 font-display text-[2rem] font-bold leading-tight tracking-tight sm:text-[2.5rem]">
+          <span className="text-gradient">你好，有什么可以帮你的？</span>
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-gray-500">
           基于企业知识库的 AI 智能助手，支持深度推理与分析
@@ -305,10 +305,11 @@ export function WelcomeScreen() {
 
         <div
           className={cn(
-            "flex flex-col rounded-2xl border bg-white px-5 pt-4 pb-3 transition-all duration-200",
+            "flex flex-col rounded-2xl px-5 pt-4 pb-3 transition-all duration-200",
             isFocused
-              ? "border-indigo-200 shadow-[0_0_0_3px_rgba(99,102,241,0.08),0_4px_16px_rgba(0,0,0,0.04)]"
-              : "border-gray-200 shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
+              ? "border-indigo-200/70 shadow-[0_0_0_3px_rgba(99,102,241,0.08),0_4px_16px_rgba(0,0,0,0.04)]"
+              : "border-gray-200/60 shadow-[0_1px_4px_rgba(0,0,0,0.02),0_4px_12px_rgba(0,0,0,0.02)]",
+            "bg-white/90 backdrop-blur-xl backdrop-saturate-150 border"
           )}
         >
           <textarea
