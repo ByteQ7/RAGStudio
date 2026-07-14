@@ -365,7 +365,7 @@ export function QueryTermMappingPage() {
             onChange={(event) => setSearchKeyword(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && handleSearch()}
             placeholder="搜索原始词/目标词"
-            className="w-[240px]"
+            className="w-[260px]"
           />
           <Button variant="outline" onClick={handleSearch}>
             搜索

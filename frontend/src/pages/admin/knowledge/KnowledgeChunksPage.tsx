@@ -227,7 +227,7 @@ export function KnowledgeChunksPage() {
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
               <Input
                 placeholder="搜索 Chunk ID..."
-                className="w-[200px] h-9"
+                className="w-[260px] h-9"
                 value={keyword}
                 onChange={(e) => {
                   setKeyword(e.target.value);

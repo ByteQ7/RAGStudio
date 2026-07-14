@@ -173,9 +173,9 @@ export function SampleQuestionPage() {
             value={searchKeyword}
             onChange={(event) => setSearchKeyword(event.target.value)}
             placeholder="搜索标题/描述/问题"
-            className="w-[240px]"
+            className="w-[260px]"
           />
-          <Button variant="outline" onClick={handleSearch}>
+          <Button variant="outline" size="sm" onClick={handleSearch}>
             搜索
           </Button>
           <Button variant="outline" onClick={handleRefresh}>
