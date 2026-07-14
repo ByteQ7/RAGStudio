@@ -190,15 +190,15 @@ select:focus:not(:focus-visible),
     @apply space-y-5;
   }
   .admin-page-header {
-    @apply flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between;
+    @apply flex flex-row flex-wrap items-center gap-3;
   }
-  .admin-layout .admin-page-title {
-    @apply text-2xl font-semibold text-gray-900;
+  .admin-page-title {
+    @apply text-xl font-semibold text-gray-900;
   }
-  .admin-layout .admin-page-subtitle {
+  .admin-page-subtitle {
     @apply text-sm text-gray-500;
   }
-  .admin-layout .admin-page-actions {
+  .admin-page-actions {
     @apply flex flex-1 flex-wrap items-center justify-end gap-2;
   }
   .admin-stat-grid {
