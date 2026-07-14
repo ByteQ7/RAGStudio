@@ -446,13 +446,19 @@ export function AiModelConfigPage() {
     [models, selectedProviderId]
   );
 
-  // 获取选中供应商时自动选中第一个
+  // 选中供应商变化时重置编辑状态
   useEffect(() => {
     if (selectedProviderId && !selectedProvider) {
-      // 如果选中的供应商被删除了，重置
       setSelectedProviderId(null);
     }
   }, [selectedProvider, selectedProviderId]);
+
+  // 加载完成后自动选中第一个供应商
+  useEffect(() => {
+    if (!selectedProviderId && providers.length > 0 && !loadingProviders) {
+      setSelectedProviderId(providers[0].id);
+    }
+  }, [providers, loadingProviders, selectedProviderId]);
 
   // ==================== Render ====================
 
