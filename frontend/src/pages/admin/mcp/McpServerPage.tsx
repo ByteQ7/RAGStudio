@@ -289,8 +289,9 @@ export function McpServerPage() {
                 <TableRow>
                   <TableHead className="w-[220px] px-5">名称</TableHead>
                   <TableHead className="px-5">服务地址</TableHead>
-                  <TableHead className="w-[80px] px-5 text-center">工具数</TableHead>
-                  <TableHead className="w-[190px] px-5 text-center">状态 / 启用</TableHead>
+                  <TableHead className="w-[110px] px-5 text-center">状态</TableHead>
+                  <TableHead className="w-[90px] px-5 text-center">工具数</TableHead>
+                  <TableHead className="w-[100px] px-5 text-center">启用</TableHead>
                   <TableHead className="w-[280px] px-5 text-center">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -313,33 +314,33 @@ export function McpServerPage() {
                       </code>
                     </TableCell>
                     <TableCell className="px-5 py-3.5 text-center">
+                      {statusBadge(server.lastStatus)}
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5 text-center">
                       <span className="text-sm font-medium text-gray-700">
                         {server.toolCount ?? 0}
                       </span>
                     </TableCell>
                     <TableCell className="px-5 py-3.5 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        {statusBadge(server.lastStatus)}
-                        <button
-                          onClick={() => handleToggle(server)}
-                          disabled={togglingId === server.id}
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                            server.enabled === 1
-                              ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                              : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                          )}
-                        >
-                          {togglingId === server.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : server.enabled === 1 ? (
-                            <Power className="h-3 w-3" />
-                          ) : (
-                            <PowerOff className="h-3 w-3" />
-                          )}
-                          {server.enabled === 1 ? "启用" : "禁用"}
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleToggle(server)}
+                        disabled={togglingId === server.id}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                          server.enabled === 1
+                            ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                            : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                        )}
+                      >
+                        {togglingId === server.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : server.enabled === 1 ? (
+                          <Power className="h-3 w-3" />
+                        ) : (
+                          <PowerOff className="h-3 w-3" />
+                        )}
+                        {server.enabled === 1 ? "启用" : "禁用"}
+                      </button>
                     </TableCell>
                     <TableCell className="px-5 py-3.5 text-center">
                       <div className="flex items-center justify-center gap-2">
