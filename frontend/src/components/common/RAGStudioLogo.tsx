@@ -11,68 +11,37 @@ export function RAGStudioLogo({ className }: RAGStudioLogoProps) {
       className={className}
     >
       <defs>
-        <linearGradient id="ai-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <linearGradient id="robot-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#818cf8" />
           <stop offset="100%" stopColor="#6366f1" />
         </linearGradient>
-        <linearGradient id="ai-grad-light" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#c7d2fe" />
-          <stop offset="100%" stopColor="#a5b4fc" />
-        </linearGradient>
       </defs>
 
-      {/* Neural network nodes — background connections */}
-      <circle cx="16" cy="16" r="10" stroke="url(#ai-grad-light)" strokeWidth="0.8" opacity="0.35" />
-      <circle cx="16" cy="16" r="5.5" stroke="url(#ai-grad-light)" strokeWidth="0.6" opacity="0.25" fill="none" />
+      {/* Robot Head */}
+      <rect x="6" y="8" width="20" height="16" rx="4" fill="url(#robot-grad)" opacity="0.95" />
 
-      {/* Connection lines — neural links */}
-      <line x1="8" y1="10" x2="13" y2="14.5" stroke="url(#ai-grad-light)" strokeWidth="0.8" opacity="0.5" />
-      <line x1="24" y1="10" x2="19" y2="14.5" stroke="url(#ai-grad-light)" strokeWidth="0.8" opacity="0.5" />
-      <line x1="8" y1="22" x2="13" y2="17.5" stroke="url(#ai-grad-light)" strokeWidth="0.8" opacity="0.5" />
-      <line x1="24" y1="22" x2="19" y2="17.5" stroke="url(#ai-grad-light)" strokeWidth="0.8" opacity="0.5" />
-      <line x1="13" y1="14.5" x2="19" y2="14.5" stroke="url(#ai-grad-light)" strokeWidth="0.6" opacity="0.3" />
-      <line x1="13" y1="17.5" x2="19" y2="17.5" stroke="url(#ai-grad-light)" strokeWidth="0.6" opacity="0.3" />
-      <line x1="16" y1="6" x2="16" y2="11" stroke="url(#ai-grad-light)" strokeWidth="0.6" opacity="0.3" />
-      <line x1="16" y1="21" x2="16" y2="26" stroke="url(#ai-grad-light)" strokeWidth="0.6" opacity="0.3" />
+      {/* Antenna */}
+      <line x1="16" y1="4" x2="16" y2="8" stroke="url(#robot-grad)" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="16" cy="3" r="1.8" fill="url(#robot-grad)" />
 
-      {/* Peripheral nodes */}
-      <circle cx="8" cy="10" r="1.8" fill="url(#ai-grad-light)" opacity="0.6" />
-      <circle cx="24" cy="10" r="1.8" fill="url(#ai-grad-light)" opacity="0.6" />
-      <circle cx="8" cy="22" r="1.8" fill="url(#ai-grad-light)" opacity="0.6" />
-      <circle cx="24" cy="22" r="1.8" fill="url(#ai-grad-light)" opacity="0.6" />
-      <circle cx="16" cy="6" r="1.5" fill="url(#ai-grad-light)" opacity="0.4" />
-      <circle cx="16" cy="26" r="1.5" fill="url(#ai-grad-light)" opacity="0.4" />
-      <circle cx="13" cy="14.5" r="1.2" fill="url(#ai-grad-light)" opacity="0.35" />
-      <circle cx="19" cy="14.5" r="1.2" fill="url(#ai-grad-light)" opacity="0.35" />
-      <circle cx="13" cy="17.5" r="1.2" fill="url(#ai-grad-light)" opacity="0.35" />
-      <circle cx="19" cy="17.5" r="1.2" fill="url(#ai-grad-light)" opacity="0.35" />
+      {/* Eyes */}
+      <rect x="10" y="13" width="4" height="4" rx="1" fill="white" opacity="0.9" />
+      <rect x="18" y="13" width="4" height="4" rx="1" fill="white" opacity="0.9" />
 
-      {/* Center brain core */}
-      <circle cx="16" cy="16" r="4.5" fill="url(#ai-grad)" opacity="0.95" />
+      {/* Eye pupils */}
+      <circle cx="12" cy="15" r="1" fill="url(#robot-grad)" />
+      <circle cx="20" cy="15" r="1" fill="url(#robot-grad)" />
 
-      {/* Central node glow */}
-      <circle
-        cx="16" cy="16" r="2.5"
-        fill="white"
-        opacity="0.2"
-        style={{ animation: 'ai-pulse 3s ease-in-out infinite' }}
-      />
+      {/* Mouth */}
+      <rect x="13" y="19.5" width="6" height="1.5" rx="0.75" fill="white" opacity="0.7" />
 
-      {/* Inner spark / synapse */}
-      <circle cx="16" cy="16" r="1.2" fill="white" opacity="0.9" />
+      {/* Ears / Side panels */}
+      <rect x="3" y="12" width="3" height="8" rx="1.5" fill="url(#robot-grad)" opacity="0.7" />
+      <rect x="26" y="12" width="3" height="8" rx="1.5" fill="url(#robot-grad)" opacity="0.7" />
 
-      {/* Spark dots on center - small bright accents */}
-      <circle cx="14.5" cy="14.5" r="0.6" fill="white" opacity="0.6" />
-      <circle cx="17.5" cy="17.5" r="0.6" fill="white" opacity="0.6" />
-      <circle cx="17.5" cy="14.5" r="0.5" fill="white" opacity="0.4" />
-      <circle cx="14.5" cy="17.5" r="0.5" fill="white" opacity="0.4" />
-
-      <style>{`
-        @keyframes ai-pulse {
-          0%, 100% { transform: scale(1); opacity: 0.2; }
-          50% { transform: scale(1.4); opacity: 0.35; }
-        }
-      `}</style>
+      {/* Check / accent dots */}
+      <circle cx="9" cy="19" r="1" fill="white" opacity="0.15" />
+      <circle cx="23" cy="19" r="1" fill="white" opacity="0.15" />
     </svg>
   );
 }
