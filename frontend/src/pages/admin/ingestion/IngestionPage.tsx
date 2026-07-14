@@ -446,10 +446,10 @@ export function IngestionPage() {
                   <TableRow>
                     <TableHead className="w-[260px]">名称</TableHead>
                     <TableHead>描述</TableHead>
-                    <TableHead className="w-[90px]">节点数</TableHead>
-                    <TableHead className="w-[120px]">负责人</TableHead>
-                    <TableHead className="w-[170px]">更新时间</TableHead>
-                    <TableHead className="w-[180px] text-left">操作</TableHead>
+                    <TableHead className="w-[90px] whitespace-nowrap">节点数</TableHead>
+                    <TableHead className="w-[120px] whitespace-nowrap">负责人</TableHead>
+                    <TableHead className="w-[170px] whitespace-nowrap">更新时间</TableHead>
+                    <TableHead className="w-[180px] text-left whitespace-nowrap">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -549,8 +549,8 @@ export function IngestionPage() {
                   <TableRow>
                     <TableHead className="w-[220px]">任务ID</TableHead>
                     <TableHead>来源</TableHead>
-                    <TableHead className="w-[120px]">状态</TableHead>
-                    <TableHead className="w-[120px]">负责人</TableHead>
+                    <TableHead className="w-[120px] whitespace-nowrap">状态</TableHead>
+                    <TableHead className="w-[120px] whitespace-nowrap">负责人</TableHead>
                     <TableHead className="w-[90px]">分片数</TableHead>
                     <TableHead className="w-[170px]">创建时间</TableHead>
                     <TableHead className="w-[140px] text-left">操作</TableHead>
