@@ -418,7 +418,7 @@ export function IngestionPage() {
                   placeholder="搜索流水线名称"
                   className="w-[260px]"
                 />
-                <Button variant="outline" size="sm" onClick={handlePipelineSearch}>
+                <Button variant="outline" onClick={handlePipelineSearch}>
                   搜索
                 </Button>
                 <Button variant="outline" onClick={handlePipelineRefresh}>

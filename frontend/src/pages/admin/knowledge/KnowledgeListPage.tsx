@@ -255,9 +255,9 @@ export function KnowledgeListPage() {
         <h1 className="admin-page-title">知识库管理</h1>
         <div className="admin-page-actions">
           <Input value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="搜索知识库名称" className="w-[260px]" />
-          <Button variant="outline" size="sm" onClick={handleSearch}>搜索</Button>
-          <Button variant="outline" size="sm" onClick={handleRefresh}><RefreshCw className="h-3.5 w-3.5 mr-1.5" />刷新</Button>
-          <Button size="sm" className="admin-primary-gradient" onClick={() => setCreateDialogOpen(true)}><Plus className="h-3.5 w-3.5 mr-1.5" />新建</Button>
+          <Button variant="outline" onClick={handleSearch}>搜索</Button>
+          <Button variant="outline" onClick={handleRefresh}><RefreshCw className="h-4 w-4 mr-1.5" />刷新</Button>
+          <Button className="admin-primary-gradient" onClick={() => setCreateDialogOpen(true)}><Plus className="h-4 w-4 mr-1.5" />新建</Button>
         </div>
       </div>
 
