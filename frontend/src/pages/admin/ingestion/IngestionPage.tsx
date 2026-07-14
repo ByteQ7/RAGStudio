@@ -416,9 +416,9 @@ export function IngestionPage() {
                   value={pipelineSearch}
                   onChange={(event) => setPipelineSearch(event.target.value)}
                   placeholder="搜索流水线名称"
-                  className="max-w-xs"
+                  className="w-[260px]"
                 />
-                <Button variant="outline" onClick={handlePipelineSearch}>
+                <Button variant="outline" size="sm" onClick={handlePipelineSearch}>
                   搜索
                 </Button>
                 <Button variant="outline" onClick={handlePipelineRefresh}>

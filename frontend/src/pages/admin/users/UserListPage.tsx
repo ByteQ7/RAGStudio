@@ -164,7 +164,7 @@ export function UserListPage() {
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
             placeholder="搜索用户名或角色"
-            className="w-[220px]"
+            className="w-[260px]"
           />
           <Button variant="outline" onClick={handleSearch}>
             搜索

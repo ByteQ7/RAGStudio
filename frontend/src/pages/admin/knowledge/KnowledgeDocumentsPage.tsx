@@ -466,9 +466,9 @@ export function KnowledgeDocumentsPage() {
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
                 placeholder="搜索文档名称"
-                className="max-w-xs"
+                className="w-[260px]"
               />
-              <Button variant="outline" onClick={handleSearch}>
+              <Button variant="outline" size="sm" onClick={handleSearch}>
                 搜索
               </Button>
               <Select
