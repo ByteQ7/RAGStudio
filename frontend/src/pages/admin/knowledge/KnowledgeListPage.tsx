@@ -252,58 +252,39 @@ export function KnowledgeListPage() {
   return (
     <div className="admin-page">
       <div className="admin-page-header">
-        <div>
-          <h1 className="admin-page-title">知识库管理</h1>
-          <p className="admin-page-subtitle">管理所有知识库及其文档</p>
-        </div>
+        <h1 className="admin-page-title">知识库管理</h1>
         <div className="admin-page-actions">
-          <Input
-            value={searchName}
-            onChange={(event) => setSearchName(event.target.value)}
-            placeholder="搜索知识库名称"
-            className="w-[220px]"
-          />
-          <Button variant="outline" onClick={handleSearch}>
-            搜索
-          </Button>
-          <Button variant="outline" onClick={handleRefresh}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            刷新
-          </Button>
-          <Button className="admin-primary-gradient" onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            新建知识库
-          </Button>
+          <Input value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="搜索知识库名称" className="w-[180px]" />
+          <Button variant="outline" size="sm" onClick={handleSearch}>搜索</Button>
+          <Button variant="outline" size="sm" onClick={handleRefresh}><RefreshCw className="h-3.5 w-3.5 mr-1.5" />刷新</Button>
+          <Button size="sm" className="admin-primary-gradient" onClick={() => setCreateDialogOpen(true)}><Plus className="h-3.5 w-3.5 mr-1.5" />新建</Button>
         </div>
       </div>
 
       <div className="admin-stat-grid">
         {[
-          { label: "知识库", value: stats.totalCount, icon: Database, scope: "全部" },
-          { label: "文档数", value: stats.documentCount, icon: FileBarChart, scope: "全部" },
-          { label: "含文档知识库", value: stats.activeCount, icon: FolderOpen, scope: "全部" },
-          { label: "创建用户数", value: stats.creatorCount, icon: Layers, scope: "全部" }
+          { label: "知识库", value: stats.totalCount, icon: Database },
+          { label: "文档数", value: stats.documentCount, icon: FileBarChart },
+          { label: "含文档", value: stats.activeCount, icon: FolderOpen },
+          { label: "创建者", value: stats.creatorCount, icon: Layers }
         ].map((item) => {
           const Icon = item.icon;
           return (
             <div key={item.label} className="admin-stat-card">
-              <div className="flex items-center gap-3">
-                <div className="admin-stat-icon">
-                  <Icon className="h-5 w-5" />
-                </div>
+              <div className="flex items-center gap-2.5">
+                <div className="admin-stat-icon"><Icon className="h-4 w-4" /></div>
                 <div>
                   <div className="admin-stat-label">{item.label}</div>
                   <div className="admin-stat-value">{formatStatValue(item.value)}</div>
                 </div>
               </div>
-              <span className="admin-stat-scope admin-stat-scope--stamp">{item.scope}</span>
             </div>
           );
         })}
       </div>
 
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="p-0">
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">加载中...</div>
           ) : knowledgeBases.length === 0 ? (
@@ -311,17 +292,16 @@ export function KnowledgeListPage() {
               暂无知识库，点击上方按钮创建
             </div>
           ) : (
-            <Table className="min-w-[980px]">
+            <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[200px]">名称</TableHead>
-                  <TableHead className="w-[180px]">Embedding模型</TableHead>
-                  <TableHead className="w-[220px]">Collection</TableHead>
-                  <TableHead className="w-[90px]">文档数</TableHead>
-                  <TableHead className="w-[120px]">负责人</TableHead>
-                  <TableHead className="w-[160px]">创建时间</TableHead>
-                  <TableHead className="w-[160px]">修改时间</TableHead>
-                  <TableHead className="w-[150px] text-left">操作</TableHead>
+                  <TableHead>名称</TableHead>
+                  <TableHead>Embedding模型</TableHead>
+                  <TableHead>Collection</TableHead>
+                  <TableHead className="text-center w-[70px]">文档数</TableHead>
+                  <TableHead className="w-[90px]">负责人</TableHead>
+                  <TableHead className="w-[150px]">创建时间</TableHead>
+                  <TableHead className="w-[50px] text-center">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -356,29 +336,13 @@ export function KnowledgeListPage() {
                     <TableCell className="text-muted-foreground">
                       {formatDate(kb.createTime)}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDate(kb.updateTime)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setRenameDialog({ open: true, kb });
-                          }}
-                        >
-                          <Pencil className="w-4 h-4 mr-0.1" />
-                          编辑
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="outline" size="sm" onClick={() => setRenameDialog({ open: true, kb })}>
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setDeleteTarget(kb)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-0.1" />
-                          删除
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(kb)}>
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </TableCell>
