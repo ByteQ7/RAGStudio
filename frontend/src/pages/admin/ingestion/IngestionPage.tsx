@@ -1423,8 +1423,8 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                   {/* ── Node header with reorder / delete ────────── */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline">{getNodeTypeLabel(node.nodeType)}</Badge>
-                      <span className="text-sm text-muted-foreground">节点 {index + 1}</span>
+                      <Badge variant="outline" className="whitespace-nowrap">{getNodeTypeLabel(node.nodeType)}</Badge>
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">节点 {index + 1}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Button
@@ -1927,7 +1927,7 @@ function PipelineNodesDialog({ open, pipeline, onOpenChange }: PipelineNodesDial
                   <TableCell>{index + 1}</TableCell>
                   <TableCell className="font-mono text-xs">{node.nodeId}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{getNodeTypeLabel(node.nodeType)}</Badge>
+                    <Badge variant="outline" className="whitespace-nowrap">{getNodeTypeLabel(node.nodeType)}</Badge>
                   </TableCell>
                   <TableCell>{node.nextNodeId || "-"}</TableCell>
                   <TableCell>

@@ -323,7 +323,7 @@ export function KnowledgeListPage() {
                       {kb.collectionName ? (
                         <Badge
                           variant="outline"
-                          className={cn("px-3 py-1", getCollectionBadgeClass(kb.collectionName))}
+                          className={cn("px-3 py-1 whitespace-nowrap", getCollectionBadgeClass(kb.collectionName))}
                         >
                           {kb.collectionName}
                         </Badge>

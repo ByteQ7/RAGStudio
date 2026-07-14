@@ -417,7 +417,7 @@ export function QueryTermMappingPage() {
                         {item.targetTerm}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{matchTypeLabel(item.matchType)}</Badge>
+                        <Badge variant="secondary" className="whitespace-nowrap">{matchTypeLabel(item.matchType)}</Badge>
                       </TableCell>
                       <TableCell>{item.priority}</TableCell>
                       <TableCell>
@@ -429,7 +429,7 @@ export function QueryTermMappingPage() {
                         {kbNames.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {kbNames.map((name, idx) => (
-                              <Badge key={idx} variant="outline" className="text-xs">
+                              <Badge key={idx} variant="outline" className="text-xs whitespace-nowrap">
                                 {name}
                               </Badge>
                             ))}
