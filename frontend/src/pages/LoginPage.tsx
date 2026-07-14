@@ -34,8 +34,8 @@ export function LoginPage() {
         {/* Logo */}
         <div className="flex flex-col items-center">
           <div
-            className="flex h-12 w-12 items-center justify-center rounded-xl shadow-lg"
-            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+            className="flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm"
+            style={{ background: '#f1f3f5', color: '#495057' }}
           >
             <RAGStudioLogo className="h-6 w-6" />
           </div>
@@ -70,7 +70,7 @@ export function LoginPage() {
             type="submit"
             disabled={isLoading || !username.trim() || !password.trim()}
             className="flex h-10 w-full items-center justify-center rounded-xl font-medium text-white shadow-sm transition-all duration-200 hover:shadow-md disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+            style={{ background: '#495057' }}
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />

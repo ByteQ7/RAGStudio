@@ -173,13 +173,13 @@ export function AdminLayout() {
         {/* Logo */}
         <div className={cn("flex h-14 items-center border-b border-gray-100/80", collapsed ? "justify-center px-0" : "px-4")}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#e9ecef', color: '#495057' }}>
               <RAGStudioLogo className="h-4 w-4" />
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <h1 className="text-sm font-semibold text-gray-900 truncate">RAGStudio</h1>
-                <p className="text-[10px] text-gray-400 truncate">管理控制台</p>
+                <h1 className="text-sm font-semibold truncate" style={{ color: '#212529' }}>RAGStudio</h1>
+                <p className="text-[10px] truncate" style={{ color: '#868e96' }}>管理控制台</p>
               </div>
             )}
           </div>
@@ -202,7 +202,7 @@ export function AdminLayout() {
                     : "text-gray-500 hover:text-gray-700",
                   collapsed && "justify-center px-2"
                 )}
-                style={isActive ? { background: 'linear-gradient(135deg, #eef2ff, #f0f1ff)', color: '#6366f1' } : {}}
+                style={isActive ? { background: '#e9ecef', color: '#495057' } : {}}
                 title={collapsed ? item.label : undefined}
               >
                 <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-[#6366f1]" : "text-gray-400 group-hover:text-gray-600")} />

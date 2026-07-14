@@ -249,7 +249,7 @@ export function WelcomeScreen() {
         className="w-full max-w-[640px] text-center opacity-0 animate-fade-up"
         style={{ animationFillMode: "both" }}
       >
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', boxShadow: '0 8px 24px rgba(99,102,241,0.25)' }}>
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl shadow-sm" style={{ background: '#e9ecef', color: '#495057' }}>
           <RAGStudioLogo className="h-6 w-6" />
         </div>
         <h1 className="mt-6 font-display text-[2rem] font-bold leading-tight tracking-tight sm:text-[2.5rem]">
