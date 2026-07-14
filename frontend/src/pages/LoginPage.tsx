@@ -34,10 +34,10 @@ export function LoginPage() {
         {/* Logo */}
         <div className="flex flex-col items-center">
           <div
-            className="flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm"
+            className="flex h-16 w-16 items-center justify-center rounded-2xl shadow-sm"
             style={{ background: '#f1f3f5', color: '#495057' }}
           >
-            <RAGStudioLogo className="h-6 w-6" />
+            <RAGStudioLogo className="h-8 w-8" />
           </div>
           <h1 className="mt-4 text-xl font-bold text-gray-900">登录 RAGStudio</h1>
           <p className="mt-1 text-sm text-gray-500">企业内部 AI 知识助手</p>

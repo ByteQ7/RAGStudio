@@ -173,8 +173,8 @@ export function AdminLayout() {
         {/* Logo */}
         <div className={cn("flex h-14 items-center border-b border-gray-100/80", collapsed ? "justify-center px-0" : "px-4")}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#e9ecef', color: '#495057' }}>
-              <RAGStudioLogo className="h-4 w-4" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: '#e9ecef', color: '#495057' }}>
+              <RAGStudioLogo className="h-6 w-6" />
             </div>
             {!collapsed && (
               <div className="min-w-0">
