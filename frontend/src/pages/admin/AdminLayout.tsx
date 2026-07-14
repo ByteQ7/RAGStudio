@@ -285,8 +285,14 @@ export function AdminLayout() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button type="button" className="flex items-center gap-2 rounded-lg border border-gray-200/60 bg-white px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors" aria-label="用户菜单">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-semibold text-indigo-600">
-                      {(user?.username || "管").slice(0, 1).toUpperCase()}
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full overflow-hidden">
+                      {user?.avatar && !user.avatar.startsWith('s3://') ? (
+                        <img src={user.avatar} alt={user.username || '用户'} className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center bg-indigo-50 text-[10px] font-semibold text-indigo-600">
+                          {(user?.username || "管").slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <span className="hidden sm:inline">{user?.username || "管理员"}</span>
                   </button>
