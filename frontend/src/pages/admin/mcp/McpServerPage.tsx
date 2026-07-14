@@ -74,21 +74,21 @@ const statusBadge = (status?: string | null) => {
   switch (status) {
     case "connected":
       return (
-        <Badge className="bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-50">
+        <Badge className="bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-50 whitespace-nowrap">
           <CheckCircle2 className="mr-1 h-3 w-3" />
           已连接
         </Badge>
       );
     case "error":
       return (
-        <Badge className="bg-red-50 text-red-500 border-red-200 hover:bg-red-50">
+        <Badge className="bg-red-50 text-red-500 border-red-200 hover:bg-red-50 whitespace-nowrap">
           <XCircle className="mr-1 h-3 w-3" />
           异常
         </Badge>
       );
     default:
       return (
-        <Badge variant="outline" className="text-gray-400">
+        <Badge variant="outline" className="text-gray-400 whitespace-nowrap">
           {status}
         </Badge>
       );
@@ -326,7 +326,7 @@ export function McpServerPage() {
                         onClick={() => handleToggle(server)}
                         disabled={togglingId === server.id}
                         className={cn(
-                          "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                          "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap",
                           server.enabled === 1
                             ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
                             : "bg-gray-100 text-gray-500 hover:bg-gray-200"
