@@ -219,8 +219,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       >
         {/* Top: logo bar */}
         <div className="flex items-center gap-2.5 px-4 pt-5 pb-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: '#e9ecef', color: '#495057' }}>
-            <RAGStudioLogo className="h-4 w-4" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: '#e9ecef', color: '#495057' }}>
+            <RAGStudioLogo className="h-6 w-6" />
           </div>
           <span className="flex-1 text-[14px] font-bold text-gray-900">
             知识助手
