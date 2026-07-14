@@ -315,7 +315,7 @@ export function AdminLayout() {
         </header>
 
         {/* Content */}
-        <div className={cn("flex-1", !isAiModelsRoute && "p-4 lg:p-6")}>
+        <div className={cn(isAiModelsRoute ? "flex min-h-0 flex-col" : "p-4 lg:p-6")}>
           <Outlet />
         </div>
       </div>
