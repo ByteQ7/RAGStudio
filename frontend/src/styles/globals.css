@@ -186,35 +186,10 @@ select:focus:not(:focus-visible),
 
 /* ===== Admin Layout ===== */
 @layer components {
-  .admin-layout {
-    @apply text-gray-900;
-    background: #f8f9fc;
+  .admin-page {
+    @apply space-y-5;
   }
-  .admin-layout .admin-main {
-    @apply flex-1;
-    background: #f8f9fc;
-  }
-  .admin-layout .admin-content {
-    @apply mx-auto w-full max-w-[1600px] px-6 py-6 lg:px-8 lg:py-8;
-  }
-  .admin-layout .admin-content--full {
-    @apply max-w-none px-0 py-0 flex-1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .admin-layout .admin-topbar {
-    @apply sticky top-0 z-20 border-b border-gray-100;
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(16px) saturate(1.3);
-  }
-  .admin-layout .admin-topbar-inner {
-    @apply mx-auto flex h-14 w-full max-w-[1600px] items-center justify-between gap-4 px-6 lg:px-8;
-  }
-  .admin-layout .admin-page {
-    @apply space-y-6;
-  }
-  .admin-layout .admin-page-header {
+  .admin-page-header {
     @apply flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between;
   }
   .admin-layout .admin-page-title {
@@ -226,101 +201,43 @@ select:focus:not(:focus-visible),
   .admin-layout .admin-page-actions {
     @apply flex flex-1 flex-wrap items-center justify-end gap-2;
   }
-  .admin-layout .admin-stat-grid {
-    @apply grid gap-4 md:grid-cols-2 xl:grid-cols-4;
+  .admin-stat-grid {
+    @apply grid gap-3 md:grid-cols-2 xl:grid-cols-4;
   }
-  .admin-layout .admin-stat-card {
-    @apply relative flex items-center justify-between rounded-xl border border-gray-100 bg-white p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  .admin-stat-card {
+    @apply relative flex items-center justify-between rounded-xl border border-gray-100 bg-white p-4 transition-all duration-200 hover:-translate-y-0.5 shadow-sm hover:shadow-md;
   }
-  .admin-layout .admin-stat-icon {
-    @apply flex h-10 w-10 items-center justify-center rounded-xl;
+  .admin-stat-icon {
+    @apply flex h-9 w-9 items-center justify-center rounded-lg;
     background: #eef2ff;
     color: #6366f1;
   }
-  .admin-layout .admin-stat-label {
+  .admin-stat-label {
     @apply text-xs text-gray-400;
   }
-  .admin-layout .admin-stat-value {
-    @apply text-2xl font-semibold text-gray-900;
+  .admin-stat-value {
+    @apply text-xl font-semibold text-gray-900;
   }
-  .admin-layout .admin-stat-trend {
+  .admin-stat-trend {
     @apply text-xs font-medium;
   }
-  .admin-layout .admin-sidebar {
-    @apply flex w-64 flex-col border-r border-gray-200/60 text-gray-500 transition-[width] duration-200;
-    background: #fafbfc;
+  .ui-card {
+    @apply rounded-xl border border-gray-100 bg-white shadow-sm transition-all duration-200 hover:shadow-md;
   }
-  .admin-layout .admin-sidebar--collapsed {
-    @apply w-16;
+  .ui-card-header {
+    @apply border-b border-gray-100 px-5 pt-4 pb-3;
   }
-  .admin-layout .admin-sidebar__brand {
-    @apply px-5 pb-4 pt-5;
-  }
-  .admin-layout .admin-sidebar__logo {
-    @apply flex h-10 w-10 items-center justify-center rounded-xl font-semibold text-white;
-    background: var(--gradient-primary);
-  }
-  .admin-layout .admin-sidebar__title {
-    @apply text-sm font-semibold text-gray-900;
-  }
-  .admin-layout .admin-sidebar__subtitle {
-    @apply text-xs text-gray-400;
-  }
-  .admin-layout .admin-sidebar__user {
-    @apply mx-4 mb-4 flex items-center gap-3 rounded-lg border border-gray-100 bg-white px-3 py-2 shadow-sm;
-  }
-  .admin-layout .admin-sidebar__avatar {
-    @apply relative flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold;
-    background: #eef2ff;
-    color: #6366f1;
-  }
-  .admin-layout .admin-sidebar__avatar::after {
-    @apply absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2 border-white;
-    background: #22c55e;
-    content: '';
-  }
-  .admin-layout .admin-sidebar__group-title {
-    @apply px-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-gray-300;
-  }
-  .admin-layout .admin-sidebar__item {
-    @apply relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150;
-  }
-  .admin-layout .admin-sidebar__item:hover {
-    @apply text-gray-900;
-    background: rgba(255,255,255,0.7);
-  }
-  .admin-layout .admin-sidebar__item--active {
-    @apply font-semibold;
-    color: #6366f1;
-    background: #eef2ff;
-  }
-  .admin-layout .admin-sidebar__item-icon {
-    @apply h-4 w-4 text-gray-400 transition-colors duration-150;
-  }
-  .admin-layout .admin-sidebar__item--active .admin-sidebar__item-icon {
-    color: #6366f1;
-  }
-  .admin-layout .admin-sidebar__footer {
-    @apply mt-auto px-4 pb-5;
-  }
-  .admin-layout .ui-card {
-    @apply rounded-xl border border-gray-100 bg-white shadow-card;
-  }
-  .admin-layout .ui-card-header {
-    @apply border-b border-gray-100 px-6 pt-5 pb-4;
-  }
-  .admin-layout .ui-card-title {
+  .ui-card-title {
     @apply text-base font-semibold text-gray-900;
   }
-  .admin-layout .ui-card-content {
-    @apply p-6;
+  .ui-card-content {
+    @apply p-5;
   }
-  .admin-layout .ui-button.admin-primary-gradient {
+  .ui-button.admin-primary-gradient {
     background: var(--gradient-primary);
     @apply text-white shadow-sm transition-all duration-200;
   }
-  .admin-layout .ui-button.admin-primary-gradient:hover {
+  .ui-button.admin-primary-gradient:hover {
     @apply shadow-md;
     filter: brightness(1.05);
   }
