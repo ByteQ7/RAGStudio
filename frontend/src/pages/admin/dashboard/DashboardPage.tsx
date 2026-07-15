@@ -1130,7 +1130,7 @@ const AIPerformanceCard = ({
 
   const p95LatencyStatus = getLatencyStatus(performance?.p95LatencyMs);
 
-  const radius = 50;
+  const radius = 62;
   const circumference = 2 * Math.PI * radius;
   const progress = (Math.min(successRate, 100) / 100) * circumference;
 
@@ -1147,11 +1147,11 @@ const AIPerformanceCard = ({
 
         <div className="flex justify-center py-3">
           <div className="relative">
-            <svg className="-rotate-90" viewBox="0 0 120 120" width="120" height="120">
-              <circle cx="60" cy="60" r={radius} fill="none" stroke="#F1F5F9" strokeWidth={8} />
+            <svg className="-rotate-90" viewBox="0 0 160 160" width="160" height="160">
+              <circle cx="80" cy="80" r={radius} fill="none" stroke="#F1F5F9" strokeWidth={8} />
               <circle
-                  cx="60"
-                  cy="60"
+                  cx="80"
+                  cy="80"
                   r={radius}
                   fill="none"
                   stroke={ringColor}
