@@ -340,8 +340,8 @@ function preprocessContent(md: string): string {
   //    render inline instead of as plain text links.
   md = md.replace(BARE_IMAGE_URL_RE, (url) => `![图片](${url})`);
 
-  // 5. Strip [QUOTE:chunk_id] "..." markers (metadata, already extracted by backend)
-  md = md.replace(/\[QUOTE:\w+\]\s*"[^"]*"/g, '').trim();
+  // 5. Strip QUOTE markers — handled upstream in processedContent
+  md = md.trim();
 
   return md;
 }
@@ -365,7 +365,10 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
   // 将 [^chunk_{id}] 转为可点击的 markdown 链接 [N](#cite:xxx)
   const processedContent = React.useMemo(() => {
     let md = content;
+
     if (citations && citations.length > 0) {
+      // ---- Assistant messages: citations data is available ----
+      // Convert [^chunk_id] inline markers to clickable [N] links
       const numMap: Record<string, number> = {};
       let numIdx = 0;
       const scanRe = /\[\^chunk_(\w+)\]/g;
@@ -377,7 +380,20 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
         const num = numMap[id] || '?';
         return `[${num}](#cite:${id})`;
       });
+      // Strip ALL [QUOTE:...] markers (with or without quotes) —
+      // citation data is already conveyed via [N] links + CitationList
+      md = md.replace(/\[QUOTE:\w+\](?:\s*"[^"]*"|\s+[^\n]*)?/g, '').trim();
+    } else {
+      // ---- User messages: no citations data ----
+      // Strip LLM quoted [QUOTE:id] "text" (residual from AI responses)
+      md = md.replace(/\[QUOTE:(\w+)\]\s*"([^"]*)"/g, '');
+      // Convert user-typed [QUOTE:id] text → visual citation badge (non-clickable)
+      md = md.replace(/\[QUOTE:(\w+)\]\s+([^\n]*)/g, (_, id, text) => `**📎 \`${id}\`** ${text}`);
+      // Strip any remaining bare [QUOTE:id]
+      md = md.replace(/\[QUOTE:\w+\]/g, '');
+      md = md.trim();
     }
+
     return preprocessContent(md);
   }, [content, citations]);
 
