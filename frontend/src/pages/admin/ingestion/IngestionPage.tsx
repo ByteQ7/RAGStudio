@@ -71,6 +71,7 @@ const getNodeTypeLabel = (type: string): string => {
 
 const CHUNK_STRATEGY_OPTIONS = [
   { value: "fixed_size", label: "固定大小" },
+  { value: "recursive", label: "递归切分" },
   { value: "structure_aware", label: "语义感知（推荐）" }
 ];
 
