@@ -9,7 +9,9 @@ import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceNodeVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceRunStatsVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceRunVO;
 import com.byteq.ai.ragstudio.rag.service.RagTraceQueryService;
+import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,6 +33,11 @@ public class RagTraceController {
      * RAG 链路追踪查询服务
      */
     private final RagTraceQueryService ragTraceQueryService;
+
+    /**
+     * RAG 链路追踪记录服务（写入/删除）
+     */
+    private final RagTraceRecordService ragTraceRecordService;
 
     /**
      * 分页查询链路运行记录
@@ -87,5 +94,21 @@ public class RagTraceController {
     @GetMapping("/rag/traces/runs/stats")
     public Result<RagTraceRunStatsVO> stats(RagTraceRunPageRequest request) {
         return Results.success(ragTraceQueryService.stats(request));
+    }
+
+    /**
+     * 删除一条链路运行记录及其所有节点
+     * <p>
+     * 同步删除指定 traceId 的运行记录和关联节点。
+     * 用于手动清理 stuck RUNNING 或不需要的 trace 数据。
+     * </p>
+     *
+     * @param traceId 链路追踪 ID
+     * @return 操作结果
+     */
+    @DeleteMapping("/rag/traces/runs/{traceId}")
+    public Result<Void> delete(@PathVariable String traceId) {
+        ragTraceRecordService.deleteRun(traceId);
+        return Results.success();
     }
 }

@@ -39,8 +39,8 @@ INSERT INTO t_ai_model (id, provider_id, model_id, model_name, capability, is_de
 VALUES
 -- Chat 模型
 (1831730000000000201, 1821730000000000101, 'qwen-plus',          'qwen-plus-latest',               'CHAT', 0, 1,  1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
-(1831730000000000202, 1821730000000000101, 'qwen3-max',          'qwen3-max',                      'CHAT', 0, 2,  1, 1, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
-(1831730000000000203, 1821730000000000102, 'glm-4.7',            'Pro/zai-org/GLM-4.7',           'CHAT', 0, 3,  1, 1, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(1831730000000000202, 1821730000000000101, 'qwen3-max',          'qwen3-max',                      'CHAT', 0, 2,  1, 1, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(1831730000000000203, 1821730000000000102, 'glm-4.7',            'Pro/zai-org/GLM-4.7',           'CHAT', 0, 3,  1, 1, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1831730000000000204, 1821730000000000103, 'deepseek-v4-flash',  'deepseek-v4-flash',              'CHAT', 1, 4,  1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 -- Embedding 模型
 (1831730000000000205, 1821730000000000102, 'qwen-emb-8b',        'Qwen/Qwen3-Embedding-8B',       'EMBEDDING', 1, 1,  1, 0, 0, 1536, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),

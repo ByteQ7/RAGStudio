@@ -81,6 +81,21 @@ public class RagTraceRecordServiceImpl implements RagTraceRecordService {
         });
     }
 
+    @Override
+    public void deleteRun(String traceId) {
+        // 同步执行 — 用户主动请求删除，不能 fire-and-forget
+        try {
+            nodeMapper.delete(Wrappers.lambdaUpdate(RagTraceNodeDO.class)
+                    .eq(RagTraceNodeDO::getTraceId, traceId));
+            runMapper.delete(Wrappers.lambdaUpdate(RagTraceRunDO.class)
+                    .eq(RagTraceRunDO::getTraceId, traceId));
+            log.info("trace 已删除 traceId={}", traceId);
+        } catch (Exception e) {
+            log.error("trace 删除失败 traceId={}", traceId, e);
+            throw e;
+        }
+    }
+
     /**
      * 异步执行 trace DB 操作
      * <p>

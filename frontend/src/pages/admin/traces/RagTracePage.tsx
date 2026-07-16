@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getRagTraceRuns, getRagTraceStats, type PageResult, type RagTraceRun, type RagTraceRunStats } from "@/services/ragTraceService";
+import { deleteRagTraceRun, getRagTraceRuns, getRagTraceStats, type PageResult, type RagTraceRun, type RagTraceRunStats } from "@/services/ragTraceService";
 import { getErrorMessage } from "@/utils/error";
 import { RunsTable } from "@/pages/admin/traces/components/RunsTable";
 import { StatCard, type StatCardTone } from "@/pages/admin/traces/components/StatCard";
@@ -79,6 +79,17 @@ export function RagTracePage() {
 
   const handleRefresh = () => {
     loadRuns(pageNo, queryTraceId);
+  };
+
+  const handleDeleteRun = async (traceId: string) => {
+    if (!window.confirm(`确定删除链路 ${traceId}？此操作不可恢复。`)) return;
+    try {
+      await deleteRagTraceRun(traceId);
+      toast.success("链路已删除");
+      loadRuns(pageNo, queryTraceId);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "删除失败"));
+    }
   };
 
   // 统计信息来自后端全量数据（而非当前页 10 条）
@@ -188,6 +199,7 @@ export function RagTracePage() {
           pages={pages}
           total={total}
           onOpenRun={(traceId) => navigate(`/admin/traces/${encodeURIComponent(traceId)}`)}
+          onDeleteRun={handleDeleteRun}
           onPrevPage={() => setPageNo((prev) => Math.max(1, prev - 1))}
           onNextPage={() => setPageNo((prev) => prev + 1)}
         />

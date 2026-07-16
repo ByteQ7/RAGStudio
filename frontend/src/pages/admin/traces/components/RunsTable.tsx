@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronRight, Eye } from "lucide-react";
+import { ChevronRight, Eye, Trash2 } from "lucide-react";
 import type { RagTraceRun } from "@/services/ragTraceService";
 import {
   formatDateTime,
@@ -18,6 +18,7 @@ interface RunsTableProps {
   pages: number;
   total: number;
   onOpenRun: (traceId: string) => void;
+  onDeleteRun: (traceId: string) => void;
   onPrevPage: () => void;
   onNextPage: () => void;
 }
@@ -29,6 +30,7 @@ export function RunsTable({
   pages,
   total,
   onOpenRun,
+  onDeleteRun,
   onPrevPage,
   onNextPage
 }: RunsTableProps) {
@@ -92,16 +94,27 @@ export function RunsTable({
                       {formatDateTime(run.startTime ?? undefined)}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        onClick={() => onOpenRun(run.traceId)}
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        查看链路
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          onClick={() => onOpenRun(run.traceId)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          查看链路
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1 text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200 hover:border-red-300"
+                          onClick={() => onDeleteRun(run.traceId)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          删除
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

@@ -23,7 +23,7 @@ public class TimeTool implements Tool {
 
     private static final String TOOL_NAME = "time_now";
     private static final String TOOL_DESCRIPTION =
-            "获取指定时区的当前日期和时间。"
+            "获取指定时区的当前日期和时间，只要用户的问题有关时间日期，都应该先调用本工具获取相关信息。"
             + "timezone 参数使用 IANA 时区 ID（如 Asia/Shanghai、Europe/London、America/New_York）。"
             + "不传 timezone 时默认返回 Asia/Shanghai 时间。"
             + "返回格式为「yyyy年M月d日 HH:mm:ss 时区ID」。";
