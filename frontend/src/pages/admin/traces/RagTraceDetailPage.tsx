@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -14,7 +14,8 @@ import {
   Calendar,
   Hash,
   X,
-  Copy
+  Copy,
+  Trash2
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { getRagTraceDetail, type RagTraceDetail } from "@/services/ragTraceService";
+import { deleteRagTraceRun, getRagTraceDetail, type RagTraceDetail } from "@/services/ragTraceService";
 import { getErrorMessage } from "@/utils/error";
 import {
   clamp,
@@ -367,6 +368,7 @@ function tryPrettyJson(raw: string): string {
 // ============ 主组件 ============
 
 export function RagTraceDetailPage() {
+  const navigate = useNavigate();
   const params = useParams<{ traceId: string }>();
   const traceId = decodeTraceId(params.traceId);
   const detailRequestRef = useRef(0);
@@ -390,6 +392,17 @@ export function RagTraceDetailPage() {
     } finally {
       if (detailRequestRef.current !== requestId) return;
       setDetailLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`确定删除此链路？此操作不可恢复。`)) return;
+    try {
+      await deleteRagTraceRun(traceId);
+      toast.success("链路已删除");
+      navigate("/admin/traces");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "删除失败"));
     }
   };
 
@@ -587,6 +600,15 @@ export function RagTraceDetailPage() {
             >
               <RefreshCw className={cn("mr-1.5 h-4 w-4", detailLoading && "animate-spin")} />
               刷新
+            </Button>
+            <Button
+                variant="outline"
+                size="sm"
+                className="text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200 hover:border-red-300"
+                onClick={handleDelete}
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" />
+              删除
             </Button>
           </div>
         </div>

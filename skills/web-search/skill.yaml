@@ -1,5 +1,5 @@
 name: web_search
-description: 在互联网上搜索信息。当用户询问实时新闻、最新数据、不熟悉的知识点时使用此工具。
+description: 在互联网上搜索信息。当用户询问实时新闻、最新数据、不熟悉的知识点时使用此工具。搜索实时、当下、目前等相关信息时，应该调用内置时间工具获取当前时间日期。
 type: http
 config:
   url: "https://search.qbyte.top/search?q=${query}&format=json&language=zh-CN&categories=general"

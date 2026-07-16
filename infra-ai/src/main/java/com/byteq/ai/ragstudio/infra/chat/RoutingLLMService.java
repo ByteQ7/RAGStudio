@@ -89,6 +89,10 @@ public class RoutingLLMService implements LLMService {
         boolean hasImages = hasImageContent(request);
         int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
         List<ModelTarget> targets = selector.selectChatCandidates(thinkingLevel > 0, hasImages);
+        if (targets.isEmpty() && hasImages) {
+            log.warn("没有配置支持多模态的模型，降级为普通模型处理（图片将不会被 AI 分析）");
+            targets = selector.selectChatCandidates(thinkingLevel > 0, false);
+        }
         validateTargets(targets);
 
         // 记录请求日志
@@ -185,6 +189,11 @@ public class RoutingLLMService implements LLMService {
         boolean hasImages = hasImageContent(request);
         List<ModelTarget> targets = selector.selectChatCandidates(
                 (request.getThinkingLevel() != null ? request.getThinkingLevel() : 0) > 0, hasImages);
+        if (targets.isEmpty() && hasImages) {
+            log.warn("没有配置支持多模态的模型，降级为普通模型处理（图片将不会被 AI 分析）");
+            targets = selector.selectChatCandidates(
+                    (request.getThinkingLevel() != null ? request.getThinkingLevel() : 0) > 0, false);
+        }
         validateTargets(targets);
 
         String label = ModelCapability.CHAT.getDisplayName();

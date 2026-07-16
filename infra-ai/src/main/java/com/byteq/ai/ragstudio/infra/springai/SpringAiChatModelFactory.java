@@ -82,7 +82,24 @@ public class SpringAiChatModelFactory {
                 Map<String, Object> m = new java.util.LinkedHashMap<>();
                 String role = msg.getRole() != null ? msg.getRole().name().toLowerCase() : "user";
                 m.put("role", role);
-                m.put("content", msg.getContent() != null ? msg.getContent() : "");
+                // 多模态：消息包含图片时，将 content 改为数组格式 [{type:text},{type:image_url}]
+                // 始终编码图片（与 convertMessage() 行为一致），模型是否支持多模态由 ModelSelector 路由保证
+                List<String> imageUrls = msg.getImageUrls();
+                if (imageUrls != null && !imageUrls.isEmpty()) {
+                    List<Map<String, Object>> contentArray = new java.util.ArrayList<>();
+                    contentArray.add(Map.of("type", "text", "text",
+                            msg.getContent() != null ? msg.getContent() : ""));
+                    for (String url : imageUrls) {
+                        String dataUri = resolveImageDataUri(url);
+                        if (dataUri != null && !dataUri.isEmpty() && !dataUri.equals(url)) {
+                            contentArray.add(Map.of("type", "image_url",
+                                    "image_url", Map.of("url", dataUri)));
+                        }
+                    }
+                    m.put("content", contentArray);
+                } else {
+                    m.put("content", msg.getContent() != null ? msg.getContent() : "");
+                }
                 msgs.add(m);
             }
         }

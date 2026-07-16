@@ -63,4 +63,15 @@ public interface RagTraceRecordService {
      * @param durationMs   节点耗时（毫秒）
      */
     void finishNode(String traceId, String nodeId, String status, String errorMessage, Date endTime, long durationMs);
+
+    /**
+     * 删除一条链路运行记录及其所有节点
+     * <p>
+     * 同步执行删除操作，先删所有关联节点，再删运行记录本身。
+     * 用于手动清理 stuck RUNNING 或不需要的 trace 数据。
+     * </p>
+     *
+     * @param traceId 链路追踪 ID
+     */
+    void deleteRun(String traceId);
 }

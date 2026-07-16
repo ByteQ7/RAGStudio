@@ -296,6 +296,9 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             throw new ClientException("模型不存在：" + id);
         }
 
+        // 先物理删除之前软删除的同 model_id 记录，避免 uk_ai_model_model_id 冲突
+        modelMapper.forceDeleteByModelId(existing.getModelId());
+
         modelMapper.deleteById(id);
         log.info("删除 AI 模型: id={}, modelId={}", id, existing.getModelId());
 

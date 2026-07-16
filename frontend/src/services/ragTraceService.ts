@@ -87,6 +87,10 @@ export interface RagTraceRunStats {
   p95DurationMs: number;
 }
 
+export async function deleteRagTraceRun(traceId: string): Promise<void> {
+  return api.delete<void, void>(`/rag/traces/runs/${traceId}`);
+}
+
 export async function getRagTraceStats(
   query: RagTraceRunQuery = {}
 ): Promise<RagTraceRunStats> {
