@@ -94,7 +94,7 @@ export function ChatPage() {
         {(messages.length > 0 || isLoading) && (
           <div className="relative z-20">
             <div className="absolute inset-0 bg-gradient-to-t from-[#f8f9fc] via-[#f8f9fc]/80 to-transparent h-6 -top-6 pointer-events-none" />
-            <div className="mx-auto max-w-[760px] px-6 pt-2 pb-4">
+            <div className="mx-auto w-[60%] px-6 pt-2 pb-4">
               <div className="mb-2">
                 <KnowledgeBaseSelector
                   selectedKnowledgeBaseIds={knowledgeBaseIds}

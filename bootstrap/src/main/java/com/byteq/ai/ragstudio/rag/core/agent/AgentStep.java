@@ -1,6 +1,9 @@
 package com.byteq.ai.ragstudio.rag.core.agent;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Agent 单步记录
@@ -20,6 +23,9 @@ public class AgentStep {
 
     /** 多步规划（仅在首次迭代时携带） */
     private final String plan;
+
+    /** 规划拆分后的任务列表（仅在首次迭代时携带） */
+    private final List<String> planSteps;
 
     /** 推理内容（Thought） */
     private final String thought;
@@ -47,6 +53,7 @@ public class AgentStep {
                      String finalAnswer) {
         this.iteration = iteration;
         this.plan = plan;
+        this.planSteps = parsePlanSteps(plan);
         this.thought = thought;
         this.action = action;
         this.toolName = toolName;
@@ -95,6 +102,23 @@ public class AgentStep {
     public String getFinalAnswer() { return finalAnswer; }
     public long getDurationMs() { return durationMs; }
     public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
+    public List<String> getPlanSteps() { return planSteps; }
+
+    /** 按序号拆分 plan 文本为任务列表，支持多步骤在一行（如 "1. A 2. B"） */
+    private static final Pattern PLAN_SPLIT_PATTERN = Pattern.compile("\\s*\\d+[.、]\\s*");
+
+    public static List<String> parsePlanSteps(String plan) {
+        if (plan == null || plan.isBlank()) return List.of();
+        String[] parts = PLAN_SPLIT_PATTERN.split(plan);
+        List<String> steps = new ArrayList<>();
+        for (String part : parts) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                steps.add(trimmed);
+            }
+        }
+        return steps;
+    }
 
     @Override
     public String toString() {

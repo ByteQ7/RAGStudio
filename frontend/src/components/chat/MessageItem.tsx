@@ -5,6 +5,9 @@ import { AgentSteps } from "@/components/chat/AgentSteps";
 import { CitationList } from "@/components/chat/CitationList";
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
+import { Avatar } from "@/components/common/Avatar";
+import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
+import { useAuthStore } from "@/stores/authStore";
 import type { Message } from "@/types";
 
 interface MessageItemProps {
@@ -13,6 +16,7 @@ interface MessageItemProps {
 }
 
 export const MessageItem = React.memo(function MessageItem({ message, isLast }: MessageItemProps) {
+  const { user } = useAuthStore();
   const isUser = message.role === "user";
   const showFeedback =
     message.role === "assistant" &&
@@ -26,7 +30,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   if (isUser) {
     const hasImages = message.imageUrls && message.imageUrls.length > 0;
     return (
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2.5">
         <div className="user-message space-y-2">
           {message.content && <MarkdownRenderer content={message.content} compact />}
           {hasImages && (
@@ -49,6 +53,11 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             </div>
           )}
         </div>
+        <Avatar
+          name={user?.username || "用户"}
+          src={user?.avatar}
+          className="mt-1 h-10 w-10 shrink-0 rounded-lg"
+        />
 
         {/* 图片灯箱 */}
         {expandedImage && (
@@ -81,39 +90,44 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
 
   return (
     <div className="group">
-      <div className="max-w-[92%] space-y-3">
-        {message.agentSteps && message.agentSteps.length > 0 ? (
-          <AgentSteps steps={message.agentSteps} thinkingLevel={message.thinkingLevel} />
-        ) : null}
-        <div className="space-y-2">
-          {isWaiting ? (
-            <div className="ai-wait" aria-label="思考中">
-              <span className="ai-wait-dots" aria-hidden="true">
-                <span className="ai-wait-dot" />
-                <span className="ai-wait-dot" />
-                <span className="ai-wait-dot" />
-              </span>
-            </div>
+      <div className="flex gap-2.5">
+        <div className="flex mt-0.5 h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
+          <RAGStudioLogo className="h-6 w-6 text-indigo-500" />
+        </div>
+        <div className="min-w-0 max-w-[92%] space-y-3">
+          {message.agentSteps && message.agentSteps.length > 0 ? (
+            <AgentSteps steps={message.agentSteps} thinkingLevel={message.thinkingLevel} />
           ) : null}
-          {hasContent ? (
-            <div className="text-[15px] leading-relaxed text-gray-800">
-              <MarkdownRenderer content={message.content} citations={message.citations} />
-            </div>
-          ) : null}
-          {message.status === "error" ? (
-            <p className="text-xs text-rose-500">生成已中断。</p>
-          ) : null}
-          {message.role === "assistant" && message.status === "done" ? (
-            <CitationList message={message} />
-          ) : null}
-          {showFeedback ? (
-            <FeedbackButtons
-              messageId={message.id}
-              feedback={message.feedback ?? null}
-              content={message.content}
-              alwaysVisible={Boolean(isLast)}
-            />
-          ) : null}
+          <div className="space-y-2">
+            {isWaiting ? (
+              <div className="ai-wait" aria-label="思考中">
+                <span className="ai-wait-dots" aria-hidden="true">
+                  <span className="ai-wait-dot" />
+                  <span className="ai-wait-dot" />
+                  <span className="ai-wait-dot" />
+                </span>
+              </div>
+            ) : null}
+            {hasContent ? (
+              <div className="text-[15px] leading-relaxed text-gray-800">
+                <MarkdownRenderer content={message.content} citations={message.citations} />
+              </div>
+            ) : null}
+            {message.status === "error" ? (
+              <p className="text-xs text-rose-500">生成已中断。</p>
+            ) : null}
+            {message.role === "assistant" && message.status === "done" ? (
+              <CitationList message={message} />
+            ) : null}
+            {showFeedback ? (
+              <FeedbackButtons
+                messageId={message.id}
+                feedback={message.feedback ?? null}
+                content={message.content}
+                alwaysVisible={Boolean(isLast)}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

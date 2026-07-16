@@ -246,7 +246,7 @@ export function WelcomeScreen() {
     <div className="flex min-h-full flex-col items-center justify-center px-6 py-10" style={{ background: 'linear-gradient(180deg, #f8f9fc 0%, #f0f1ff 40%, #eef2ff 70%, #f8f9fc 100%)' }}>
       {/* Hero section */}
       <div
-        className="w-full max-w-[640px] text-center opacity-0 animate-fade-up"
+        className="w-[60%] text-center opacity-0 animate-fade-up"
         style={{ animationFillMode: "both" }}
       >
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl shadow-sm" style={{ background: '#e9ecef', color: '#495057' }}>
@@ -262,7 +262,7 @@ export function WelcomeScreen() {
 
       {/* Preset cards */}
       <div
-        className="mt-8 w-full max-w-[640px] opacity-0 animate-fade-up"
+        className="mt-8 w-[60%] opacity-0 animate-fade-up"
         style={{ animationDelay: "80ms", animationFillMode: "both" }}
       >
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
@@ -293,7 +293,7 @@ export function WelcomeScreen() {
 
       {/* Input area */}
       <div
-        className="mt-8 w-full max-w-[640px] opacity-0 animate-fade-up"
+        className="mt-8 w-[60%] opacity-0 animate-fade-up"
         style={{ animationDelay: "160ms", animationFillMode: "both" }}
       >
         <div className="mb-3">

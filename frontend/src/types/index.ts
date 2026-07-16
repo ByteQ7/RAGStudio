@@ -66,6 +66,7 @@ export interface AgentStepPayload {
   iteration: number;
   action: "TOOL_CALL" | "FINISH" | "ERROR";
   plan?: string;
+  planSteps?: string[];
   thought: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
@@ -77,6 +78,7 @@ export interface AgentStepPayload {
 export interface AgentStep {
   iteration: number;
   plan?: string;
+  planSteps?: string[];
   thought: string;
   action: "TOOL_CALL" | "FINISH" | "ERROR";
   toolName?: string;
