@@ -380,6 +380,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const step: AgentStep = {
               iteration: payload.iteration,
               plan: payload.plan,
+              planSteps: payload.planSteps,
               thought: payload.thought,
               action: payload.action,
               toolName: payload.toolName,

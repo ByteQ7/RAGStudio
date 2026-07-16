@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.rag.dto;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -21,6 +22,7 @@ public record AgentStepPayload(
         int iteration,
         String action,
         String plan,
+        List<String> planSteps,
         String thought,
         String toolName,
         Map<String, Object> toolInput,
@@ -37,6 +39,7 @@ public record AgentStepPayload(
                 step.getIteration(),
                 step.getAction().name(),
                 step.getPlan(),
+                step.getPlanSteps(),
                 step.getThought(),
                 step.getToolName(),
                 step.getToolInput(),

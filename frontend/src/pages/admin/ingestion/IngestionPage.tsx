@@ -44,6 +44,8 @@ import {
   getIngestionTasks,
   updateIngestionPipeline,
 } from "@/services/ingestionService";
+import { listModels } from "@/services/aiModelConfigService";
+import type { AiModel } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
 const PIPELINE_PAGE_SIZE = 10;
 const TASK_PAGE_SIZE = 10;
@@ -260,6 +262,11 @@ export function IngestionPage() {
   const [pipelineDeleteTarget, setPipelineDeleteTarget] = useState<IngestionPipeline | null>(null);
 
   const [pipelineOptions, setPipelineOptions] = useState<IngestionPipeline[]>([]);
+  const [embeddingModels, setEmbeddingModels] = useState<AiModel[]>([]);
+
+  useEffect(() => {
+    listModels("EMBEDDING").then(setEmbeddingModels).catch(() => {});
+  }, []);
 
   const [taskPage, setTaskPage] = useState<PageResult<IngestionTask> | null>(null);
   const [taskStatus, setTaskStatus] = useState<string | undefined>();
@@ -604,6 +611,7 @@ export function IngestionPage() {
         open={pipelineDialog.open}
         mode={pipelineDialog.mode}
         pipeline={pipelineDialog.pipeline}
+        embeddingModels={embeddingModels}
         onOpenChange={(open) => setPipelineDialog((prev) => ({ ...prev, open }))}
         onSubmit={async (payload, mode) => {
           if (mode === "create") {
@@ -685,9 +693,10 @@ interface PipelineDialogProps {
   pipeline: IngestionPipeline | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (payload: IngestionPipelinePayload, mode: "create" | "edit") => Promise<void>;
+  embeddingModels: AiModel[];
 }
 
-function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: PipelineDialogProps) {
+function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit, embeddingModels }: PipelineDialogProps) {
   const [saving, setSaving] = useState(false);
   const [nodes, setNodes] = useState<PipelineNodeForm[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
@@ -779,7 +788,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
           : ""
       },
       indexer: {
-        embeddingModel: String((settings as { embeddingModel?: string }).embeddingModel || ""),
+        embeddingModel: (settings as { embeddingModel?: string }).embeddingModel
+          ? String((settings as { embeddingModel?: string }).embeddingModel)
+          : "__default__",
         metadataFields: Array.isArray((settings as { metadataFields?: string[] }).metadataFields)
           ? (settings as { metadataFields?: string[] }).metadataFields?.join(", ") || ""
           : ""
@@ -1083,8 +1094,9 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
           .map((item) => item.trim())
           .filter(Boolean);
         const payload: Record<string, unknown> = {};
-        if (node.indexer.embeddingModel.trim()) {
-          payload.embeddingModel = node.indexer.embeddingModel.trim();
+        const embedModel = node.indexer.embeddingModel.trim();
+        if (embedModel && embedModel !== "__default__") {
+          payload.embeddingModel = embedModel;
         }
         if (fields.length > 0) {
           payload.metadataFields = fields;
@@ -1791,15 +1803,26 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit }: Pipeli
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
                         <label className="text-sm font-medium">Embedding 模型</label>
-                        <Input
+                        <Select
                           value={node.indexer.embeddingModel}
-                          onChange={(e) =>
+                          onValueChange={(value) =>
                             updateNodeDeep(node.id, "indexer", {
-                              embeddingModel: e.target.value
+                              embeddingModel: value
                             })
                           }
-                          placeholder="可选，使用系统默认模型"
-                        />
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="使用系统默认模型" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__default__">系统默认</SelectItem>
+                            {embeddingModels.map((model) => (
+                              <SelectItem key={model.id} value={model.modelId}>
+                                {model.modelName}{model.isDefault ? "（默认）" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-2">
                         <label className="text-sm font-medium">元数据字段</label>
