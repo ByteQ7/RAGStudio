@@ -33,7 +33,7 @@ public class ReActResponseParser {
 
     // Level 1: 严格格式的行模式
     private static final Pattern THOUGHT_PATTERN = Pattern.compile(
-            "Thought\\s*[:：]\\s*(.*?)(?=\\n\\s*(?:Action|Observation|Final|$))",
+            "Thought\\s*[:：]\\s*(.*?)(?=\\n\\s*(?:Action\\s*[:：]|Observation|Final|$)|\\s+Action\\s*[:：])",
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private static final Pattern PLAN_PATTERN = Pattern.compile(
             "Plan\\s*[:：]\\s*(.*?)(?=\\n\\s*(?:Thought|Action|Observation|Final|$))",
@@ -142,6 +142,11 @@ public class ReActResponseParser {
             Matcher faMatcher = FINAL_ANSWER_PATTERN.matcher(text);
             if (faMatcher.find()) {
                 finalAnswer = faMatcher.group(1).trim();
+            }
+            // 如果 LLM 未输出 Final Answer 字段（常见于反问/简答），用 thought 内容兜底
+            if (StrUtil.isBlank(finalAnswer) && StrUtil.isNotBlank(thought)) {
+                // 去掉 thought 中可能残留的 "Action: FINISH" 后缀
+                finalAnswer = thought.replaceAll("\\s*Action\\s*[:：]\\s*FINISH\\s*$", "").trim();
             }
             // 无 plan 时用普通 finish
             if (plan.isEmpty()) {

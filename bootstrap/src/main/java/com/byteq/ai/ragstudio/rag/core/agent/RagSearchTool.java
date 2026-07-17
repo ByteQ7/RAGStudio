@@ -35,6 +35,7 @@ public class RagSearchTool implements Tool {
     private static final String TOOL_DESCRIPTION =
             "搜索知识库获取相关文档内容。当需要查找规章制度、技术文档、操作手册等存储于知识库中的信息时使用此工具。";
 
+    private final String kbSummaryText;
     private final RetrievalEngine retrievalEngine;
     private final SearchChannelProperties searchProperties;
     private final List<String> knowledgeBaseIds;
@@ -49,9 +50,23 @@ public class RagSearchTool implements Tool {
     public RagSearchTool(RetrievalEngine retrievalEngine,
                          SearchChannelProperties searchProperties,
                          List<String> knowledgeBaseIds) {
+        this(retrievalEngine, searchProperties, knowledgeBaseIds, null);
+    }
+
+    /**
+     * @param retrievalEngine  检索引擎
+     * @param searchProperties 检索配置（TopK 等）
+     * @param knowledgeBaseIds 当前请求选择的知识库 ID 列表
+     * @param kbSummaryText    知识库概要（如 "人事制度: HR制度文档, 技术文档: API文档"），用于工具描述中让 LLM 了解知识库内容
+     */
+    public RagSearchTool(RetrievalEngine retrievalEngine,
+                         SearchChannelProperties searchProperties,
+                         List<String> knowledgeBaseIds,
+                         String kbSummaryText) {
         this.retrievalEngine = retrievalEngine;
         this.searchProperties = searchProperties;
         this.knowledgeBaseIds = knowledgeBaseIds != null ? List.copyOf(knowledgeBaseIds) : List.of();
+        this.kbSummaryText = kbSummaryText;
     }
 
     /** 设置 Chunk 收集回调（Agent 模式下用于引用溯源） */
@@ -66,6 +81,9 @@ public class RagSearchTool implements Tool {
 
     @Override
     public String description() {
+        if (StrUtil.isNotBlank(kbSummaryText)) {
+            return TOOL_DESCRIPTION + "\n当前可选知识库：\n" + kbSummaryText;
+        }
         return TOOL_DESCRIPTION;
     }
 

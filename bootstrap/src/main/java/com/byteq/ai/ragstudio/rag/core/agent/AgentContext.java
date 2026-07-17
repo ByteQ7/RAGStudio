@@ -43,6 +43,9 @@ public class AgentContext {
     /** 图片 S3 URL 列表（用于多模态识别） */
     private final List<String> imageUrls;
 
+    /** 深度思考级别（0=关闭，1-100=开启） */
+    private final int thinkingLevel;
+
     // ==================== 运行时累积 ====================
 
     /** Agent 推理步骤记录（用于前端回放和日志） */
@@ -57,13 +60,20 @@ public class AgentContext {
     public AgentContext(String question, List<ChatMessage> history,
                         String kbContext, boolean kbRelevant,
                         List<Tool> tools, int maxIterations, long timeoutMs) {
-        this(question, history, kbContext, kbRelevant, tools, maxIterations, timeoutMs, List.of());
+        this(question, history, kbContext, kbRelevant, tools, maxIterations, timeoutMs, List.of(), 0);
     }
 
     public AgentContext(String question, List<ChatMessage> history,
                         String kbContext, boolean kbRelevant,
                         List<Tool> tools, int maxIterations, long timeoutMs,
                         List<String> imageUrls) {
+        this(question, history, kbContext, kbRelevant, tools, maxIterations, timeoutMs, imageUrls, 0);
+    }
+
+    public AgentContext(String question, List<ChatMessage> history,
+                        String kbContext, boolean kbRelevant,
+                        List<Tool> tools, int maxIterations, long timeoutMs,
+                        List<String> imageUrls, int thinkingLevel) {
         this.question = question;
         this.history = history != null ? List.copyOf(history) : List.of();
         this.kbContext = kbContext != null ? kbContext : "";
@@ -72,6 +82,7 @@ public class AgentContext {
         this.maxIterations = maxIterations > 0 ? maxIterations : 10;
         this.timeoutMs = timeoutMs > 0 ? timeoutMs : 120_000L;
         this.imageUrls = imageUrls != null ? List.copyOf(imageUrls) : List.of();
+        this.thinkingLevel = Math.max(0, Math.min(100, thinkingLevel));
     }
 
     /** 标记循环开始 */
@@ -107,6 +118,7 @@ public class AgentContext {
     public List<AgentStep> getSteps() { return List.copyOf(steps); }
     public List<ChatMessage> getMessages() { return messages; }
     public long getStartTimeMs() { return startTimeMs; }
+    public int getThinkingLevel() { return thinkingLevel; }
 
     /** 是否包含 KB 上下文 */
     public boolean hasKb() {

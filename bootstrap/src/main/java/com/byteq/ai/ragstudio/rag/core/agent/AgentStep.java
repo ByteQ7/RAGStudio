@@ -107,6 +107,9 @@ public class AgentStep {
     /** 按序号拆分 plan 文本为任务列表，支持多步骤在一行（如 "1. A 2. B"） */
     private static final Pattern PLAN_SPLIT_PATTERN = Pattern.compile("\\s*\\d+[.、]\\s*");
 
+    /** 去掉任务文本开头的"第N步"、"步骤N"等前缀 */
+    private static final Pattern STEP_PREFIX_PATTERN = Pattern.compile("^(?:第\\d+步|步骤\\d+)[\\s:：]*", Pattern.CASE_INSENSITIVE);
+
     public static List<String> parsePlanSteps(String plan) {
         if (plan == null || plan.isBlank()) return List.of();
         String[] parts = PLAN_SPLIT_PATTERN.split(plan);
@@ -114,7 +117,12 @@ public class AgentStep {
         for (String part : parts) {
             String trimmed = part.trim();
             if (!trimmed.isEmpty()) {
-                steps.add(trimmed);
+                // 去掉任务文本开头的"第N步/步骤N"前缀
+                java.util.regex.Matcher m = STEP_PREFIX_PATTERN.matcher(trimmed);
+                String cleaned = m.find() ? trimmed.substring(m.end()).trim() : trimmed;
+                if (!cleaned.isEmpty()) {
+                    steps.add(cleaned);
+                }
             }
         }
         return steps;
