@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowUpRight, BookOpen, Check, ImagePlus, Lightbulb, Loader2, Send, Square, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, Check, ImagePlus, Lightbulb, Loader2, Mic, MicOff, Send, Square, X } from "lucide-react";
 
 import { DeepThinkingSlider } from "@/components/chat/DeepThinkingSlider";
 import { KnowledgeBaseSelector } from "@/components/chat/KnowledgeBaseSelector";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { listSampleQuestions } from "@/services/sampleQuestionService";
 import { useChatStore } from "@/stores/chatStore";
 import { storage } from "@/utils/storage";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 
 const MAX_IMAGES = 10;
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -239,7 +240,23 @@ export function WelcomeScreen() {
     focusInput();
   };
 
-  const hasContent = value.trim().length > 0 || images.length > 0;
+  const [interimTranscript, setInterimTranscript] = React.useState("");
+
+  const onSpeechResult = React.useCallback(
+    (result: { transcript: string; isFinal: boolean }) => {
+      if (result.isFinal) {
+        setValue((prev) => prev + result.transcript);
+        setInterimTranscript("");
+      } else {
+        setInterimTranscript(result.transcript);
+      }
+    },
+    []
+  );
+
+  const { isListening, isSupported, toggle: toggleMic } = useSpeechRecognition(onSpeechResult);
+
+  const hasContent = value.trim().length > 0 || images.length > 0 || interimTranscript.length > 0;
   const uploadingCount = images.filter((img) => img.uploading).length;
 
   return (
@@ -314,8 +331,15 @@ export function WelcomeScreen() {
         >
           <textarea
             ref={textareaRef}
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
+            value={interimTranscript ? value + interimTranscript : value}
+            onChange={(event) => {
+              const newVal = event.target.value;
+              if (interimTranscript && newVal.endsWith(interimTranscript)) {
+                setValue(newVal.slice(0, -interimTranscript.length));
+              } else {
+                setValue(newVal);
+              }
+            }}
             onPaste={handlePaste}
             placeholder={"输入你的问题..."}
             className="max-h-40 min-h-[64px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none"
@@ -403,6 +427,24 @@ export function WelcomeScreen() {
                 onChange={handleImageSelect}
               />
             </div>
+
+            {/* 语音输入按钮 */}
+            {isSupported && (
+              <button
+                type="button"
+                onClick={toggleMic}
+                className={cn(
+                  "flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors",
+                  isListening
+                    ? "text-rose-500 bg-rose-50 animate-pulse"
+                    : "text-gray-400 hover:text-indigo-500 hover:bg-indigo-50"
+                )}
+                title={isListening ? "点击停止录音" : "语音输入"}
+              >
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                <span className="hidden sm:inline">{isListening ? "录音中" : "语音"}</span>
+              </button>
+            )}
 
             <DeepThinkingSlider />
 
