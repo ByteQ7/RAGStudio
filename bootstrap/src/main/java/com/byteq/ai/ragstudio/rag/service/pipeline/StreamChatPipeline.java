@@ -3,49 +3,37 @@ package com.byteq.ai.ragstudio.rag.service.pipeline;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
-import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
-import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
-import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
-import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentContext;
-
-import com.byteq.ai.ragstudio.rag.core.agent.AgentLoop;
 import com.byteq.ai.ragstudio.rag.core.agent.KbRelevanceChecker;
-import com.byteq.ai.ragstudio.rag.core.agent.McpToolAdapter;
-import com.byteq.ai.ragstudio.rag.core.agent.RagSearchTool;
+import com.byteq.ai.ragstudio.rag.core.agent.OrchestratorAgent;
+import com.byteq.ai.ragstudio.rag.core.agent.QaSubAgent;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActPromptBuilder;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActResponseParser;
-import com.byteq.ai.ragstudio.rag.core.agent.TimeTool;
-import com.byteq.ai.ragstudio.rag.core.agent.ToolRegistry;
-import com.byteq.ai.ragstudio.rag.core.skill.SkillDefinition;
+import com.byteq.ai.ragstudio.rag.core.agent.ToolSubAgent;
+import com.byteq.ai.ragstudio.rag.core.agent.TitleSubAgent;
+import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
+import com.byteq.ai.ragstudio.rag.core.prompt.RAGPromptService;
+import com.byteq.ai.ragstudio.rag.core.rewrite.QueryRewriteService;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
-import com.byteq.ai.ragstudio.rag.core.skill.SkillReaderTool;
-import com.byteq.ai.ragstudio.rag.core.skill.SkillTool;
 import com.byteq.ai.ragstudio.rag.core.skill.SandboxExecutor;
 import okhttp3.OkHttpClient;
-import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
-import com.byteq.ai.ragstudio.rag.core.mcp.McpToolExecutor;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
 import com.byteq.ai.ragstudio.rag.core.memory.ConversationMemoryService;
 import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeBaseDO;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeBaseMapper;
-import com.byteq.ai.ragstudio.rag.core.prompt.PromptContext;
 import com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader;
-import com.byteq.ai.ragstudio.rag.core.prompt.RAGPromptService;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RetrievalEngine;
-import com.byteq.ai.ragstudio.rag.core.rewrite.QueryRewriteService;
-import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
-import com.byteq.ai.ragstudio.rag.dto.RetrievalContext;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
-import com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler;
 import com.byteq.ai.ragstudio.rag.service.handler.StreamTaskManager;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.ImageContent;
@@ -175,12 +163,7 @@ public class StreamChatPipeline {
     /** 取消异常前缀标识，用于在 catch 中区分用户取消 vs 其他 IllegalStateException */
     private static final String CANCEL_MARKER = "任务已被用户取消";
 
-    /** 线程安全的 ObjectMapper 单例，避免每次调用都创建新实例 */
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    /** 用于从 LLM 回答中提取 [^chunk_{id}] 引用的正则 */
-    private static final java.util.regex.Pattern CHUNK_REF_PATTERN =
-            java.util.regex.Pattern.compile("\\[\\^chunk_(\\w+)\\]");
 
     /**
      * 执行流式对话流水线
@@ -289,92 +272,83 @@ public class StreamChatPipeline {
             log.info("未选择知识库，跳过检索");
         }
 
-        // 2. 构建 ToolRegistry（MCP 工具 + 过滤后的 RAG 检索工具）
+        // 2. 构建知识库概要文本（名称 + collection + 描述），供 LLM 了解知识库内容
         List<String> finalKbIds = effectiveKbIds;
-        ToolRegistry toolRegistry = traceNode("工具注册", "TOOL_REGISTRY", () -> buildAgentToolRegistry(ctx, finalKbIds));
+        final String kbSummaryText;
+        if (CollUtil.isNotEmpty(finalKbIds)) {
+            List<KnowledgeBaseDO> selectedKbs = knowledgeBaseMapper.selectList(
+                    com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
+                            .in(KnowledgeBaseDO::getId, finalKbIds)
+                            .eq(KnowledgeBaseDO::getDeleted, 0));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < selectedKbs.size(); i++) {
+                KnowledgeBaseDO kb = selectedKbs.get(i);
+                sb.append("  ").append(i + 1).append(". ").append(kb.getName());
+                if (StrUtil.isNotBlank(kb.getCollectionName())) {
+                    sb.append(" [collection: ").append(kb.getCollectionName()).append("]");
+                }
+                if (StrUtil.isNotBlank(kb.getDescription())) {
+                    sb.append(" - ").append(kb.getDescription());
+                }
+                sb.append("\n");
+            }
+            kbSummaryText = sb.length() > 0 ? sb.toString().stripTrailing() : "";
+        } else {
+            kbSummaryText = "";
+        }
+
+        // 3. 构建 Agent 注册中心
+        OrchestratorAgent orchestrator = new OrchestratorAgent();
+
+        // Q&A Agent
+        QaSubAgent qaSubAgent = traceNode("工具注册", "TOOL_REGISTRY", () -> new QaSubAgent(
+                llmService, retrievalEngine, searchProperties,
+                mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor,
+                reactResponseParser, reactPromptBuilder,
+                () -> taskManager.isCancelled(ctx.getTaskId()),
+                finalKbIds, kbSummaryText
+        ));
+        orchestrator.register(qaSubAgent);
+
+        // Tool Agent（纯工具执行）
+        try {
+            ToolSubAgent toolAgent = new ToolSubAgent(
+                    mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor);
+            orchestrator.register(toolAgent);
+        } catch (Exception e) {
+            log.warn("Tool Agent 注册失败，跳过", e);
+        }
+
+        // Title Agent（LLM 调用生成标题）
+        try {
+            TitleSubAgent titleAgent = new TitleSubAgent(llmService, promptTemplateLoader);
+            orchestrator.register(titleAgent);
+        } catch (Exception e) {
+            log.warn("Title Agent 注册失败，跳过", e);
+        }
+
         checkCancellation(ctx);
 
-        // 3. 构建 AgentContext 并执行 AgentLoop（含图片 URL 支持）
+        // 4. 构建 AgentContext
         AgentContext agentCtx = new AgentContext(
                 ctx.getQuestion(),
                 ctx.getHistory(),
                 "",        // kbContext：不预检索，Agent 自主调用 rag_search
                 kbRelevant,
-                toolRegistry.listAll(),
-                10,        // maxIterations
-                120_000L,  // timeoutMs
-                ctx.getImageUrls()
+                List.of(),
+                10,
+                120_000L,
+                ctx.getImageUrls(),
+                ctx.getDeepThinkingLevel()
         );
 
-        // 构建 AgentLoop（per-request 实例，因为 ToolRegistry 是 per-request 的）
-        AgentLoop agentLoop = new AgentLoop(llmService, toolRegistry,
-                reactResponseParser, reactPromptBuilder,
-                () -> taskManager.isCancelled(ctx.getTaskId()),
-                ctx.getDeepThinkingLevel());
-
-        // 在 Agent 完成回答但 SSE 连接关闭前，推送引用溯源
-        agentLoop.setBeforeCompleteCallback(() -> {
-            // 此时 final answer 已完整推送到 callback 中，提取用于过滤未引用的 chunks
-            String finalAnswer = ctx.getCallback() instanceof StreamChatEventHandler ?
-                    ((StreamChatEventHandler) ctx.getCallback()).getAnswerString() : null;
-            fireCitations(ctx, finalAnswer);
-        });
-
+        // 5. 执行 Orchestrator（Task 驱动，SSE 事件透传）
         traceNode("Agent循环", "AGENT_LOOP", () -> {
-            agentLoop.run(agentCtx, ctx.getCallback());
+            orchestrator.run(ctx.getQuestion(), agentCtx, ctx.getCallback());
             return null;
         });
 
         logPipelineComplete(ctx);
-    }
-
-    /**
-     * 构建 Agent 模式下的 ToolRegistry
-     * <p>
-     * 包含四类工具：
-     * <ol>
-     *   <li>MCP 工具：通过 {@link McpToolAdapter} 包装现有 {@link McpToolExecutor}</li>
-     *   <li>内置时间工具：{@link TimeTool}，零依赖</li>
-     *   <li>RAG 检索工具：{@link RagSearchTool}，允许 Agent 在循环中主动检索知识库</li>
-     *   <li>用户自定义 SKILL：从 skills 目录加载的 JSON 工具</li>
-     * </ol>
-     */
-    private ToolRegistry buildAgentToolRegistry(StreamChatContext ctx, List<String> kbIds) {
-        ToolRegistry registry = new ToolRegistry();
-
-        // 1. MCP 工具
-        for (McpToolExecutor executor : mcpToolRegistry.listAllExecutors()) {
-            registry.register(new McpToolAdapter(executor));
-        }
-
-        // 2. 内置时间工具（始终注册，零依赖）
-        registry.register(new TimeTool());
-
-        // 3. RAG 检索工具（仅当选择了知识库时添加）
-        if (CollUtil.isNotEmpty(kbIds)) {
-            RagSearchTool ragTool = new RagSearchTool(
-                    retrievalEngine, searchProperties, kbIds);
-            // 收集检索到的 Chunk 用于引用溯源
-            ragTool.setChunksConsumer(chunks -> ctx.setRetrievedChunks(chunks));
-            registry.register(ragTool);
-        }
-
-        // 4. SKILL 阅读器（始终注册，让 LLM 能读取 SKILL 详情）
-        registry.register(new SkillReaderTool(skillLoader));
-
-        // 5. 用户自定义 SKILL
-        List<SkillDefinition> skills = skillLoader.getAllSkills();
-        for (SkillDefinition def : skills) {
-            registry.register(new SkillTool(def, syncHttpClient, sandboxExecutor));
-        }
-
-        int skillCount = skills.size();
-        log.info("Agent 工具注册完成 - MCP: {}, RAG: {}, SKILL: {}, 内置: 2, 总计: {}",
-                mcpToolRegistry.size(),
-                CollUtil.isNotEmpty(kbIds) ? 1 : 0,
-                skillCount,
-                registry.size());
-        return registry;
     }
 
     // 加载对话历史记忆并将当前用户问题（含图片 URL）追加到上下文中
@@ -389,52 +363,6 @@ public class StreamChatPipeline {
                 userMsg
         );
         ctx.setHistory(history);
-    }
-
-    // RAG 管线已移除——所有检索由 Agent 通过 ToolRegistry 中的 RagSearchTool 自主管理
-
-    // ==================== 引用溯源 ====================
-
-    // 将检索到的 Chunk 列表推送到前端用于引用展示
-    // 根据 LLM 回答中的 [^chunk_{id}] 标记过滤，只推送被实际引用的 Chunk
-    private void fireCitations(StreamChatContext ctx, String finalAnswer) {
-        List<RetrievedChunk> chunks = ctx.getRetrievedChunks();
-        if (CollUtil.isEmpty(chunks)) return;
-
-        // 解析 answer 中被引用的 chunk ID 集合
-        java.util.Set<String> referencedIds = new java.util.HashSet<>();
-        if (StrUtil.isNotBlank(finalAnswer)) {
-            java.util.regex.Matcher matcher = CHUNK_REF_PATTERN.matcher(finalAnswer);
-            while (matcher.find()) {
-                referencedIds.add(matcher.group(1));
-            }
-        }
-
-        try {
-            String json = OBJECT_MAPPER.writeValueAsString(chunks.stream()
-                    .filter(chunk -> {
-                        // finalAnswer 为空时不过滤（兼容旧逻辑）
-                        if (StrUtil.isBlank(finalAnswer)) return true;
-                        // 只保留被 [^chunk_{id}] 引用的 chunk
-                        return chunk.getId() != null && referencedIds.contains(chunk.getId());
-                    })
-                    .map(chunk -> {
-                        java.util.Map<String, Object> m = new java.util.HashMap<>();
-                        m.put("id", chunk.getId() != null ? chunk.getId() : "");
-                        m.put("text", chunk.getText() != null ? chunk.getText() : "");
-                        m.put("score", chunk.getScore() != null ? chunk.getScore() : 0f);
-                        m.put("kbName", chunk.getKbName() != null ? chunk.getKbName() : "");
-                        m.put("docName", chunk.getDocName() != null ? chunk.getDocName() : "");
-                        return m;
-                    })
-                    .toList());
-            ctx.getCallback().onCitation(json);
-        } catch (Exception e) {
-            // 取消状态下不警告（SSE 连接已关闭）
-            if (!taskManager.isCancelled(ctx.getTaskId())) {
-                log.warn("推送引用溯源失败", e);
-            }
-        }
     }
 
     // ==================== 链路追踪 ====================

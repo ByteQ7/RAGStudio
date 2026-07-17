@@ -82,10 +82,23 @@ export const AgentSteps = React.memo(function AgentSteps({ steps, thinkingLevel 
     });
   };
 
-  // ── 提取 planSteps ────────────────────────────────────────────
-  const firstPlanStep = steps.find((s) => s.planSteps && s.planSteps.length > 0);
-  const planSteps: string[] = firstPlanStep?.planSteps ?? [];
+  // ── 提取 planSteps（取最后一个有 plan 的 step，支持中途变更） ──
+  const planSteps: string[] = (() => {
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const ps = steps[i].planSteps;
+      if (ps && ps.length > 0) return ps;
+    }
+    return [];
+  })();
   const hasPlan = planSteps.length > 0;
+
+  // 检测 plan 是否发生过变更（存在多个不同长度的 plan）
+  const planVersions = new Set(
+    steps.filter(s => s.planSteps && s.planSteps.length > 0)
+         .map(s => s.planSteps!.length)
+  );
+  const planChanged = planVersions.size > 1;
+  const originalPlanCount = planVersions.size > 0 ? Math.min(...planVersions) : 0;
 
   // ── 计算每条 plan 任务的状态 ──────────────────────────────────
   // 已完成的任务数 = 有 observation 的 step 数
@@ -127,7 +140,7 @@ export const AgentSteps = React.memo(function AgentSteps({ steps, thinkingLevel 
           </span>
         )}
         <span className="ml-auto rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-500">
-          {steps.length} 步
+          {hasPlan ? planSteps.length : steps.length} 步
         </span>
         {allDone && (
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
@@ -137,6 +150,15 @@ export const AgentSteps = React.memo(function AgentSteps({ steps, thinkingLevel 
       {/* ── Plan Checklist ──────────────────────────────────── */}
       {hasPlan && (
         <div className="px-4 py-3">
+          {/* Plan 变更提示 */}
+          {planChanged && (
+            <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5">
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+              <span className="text-[12px] font-medium text-amber-700">
+                计划已更新（{originalPlanCount}→{planSteps.length}步）
+              </span>
+            </div>
+          )}
           <div className="space-y-1">
             {planSteps.map((task, idx) => {
               const status = planItemStatus(idx);

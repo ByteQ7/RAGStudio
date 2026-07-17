@@ -21,6 +21,7 @@
 - [亮点十一：对话记忆管理](#亮点十一对话记忆管理)
 - [亮点十二：全链路追踪](#亮点十二全链路追踪)
 - [亮点十三：前端引用渲染系统](#亮点十三前端引用渲染系统)
+- [亮点十四：A2A 多 Agent 架构](#亮点十四a2a-多-agent-架构)
 - [AI 设计模式总结](#ai-设计模式总结)
 
 ---
@@ -38,6 +39,7 @@
 
 ### 核心亮点
 
+- **设计 A2A 多 Agent 架构**：基于 Agent Card / Task / Artifact 的 A2A 通信协议，Orchestrator 主 Agent 统一路由 + 子 Agent 专精执行。Task 驱动的工作流，Artifact 跟踪执行结果。已实现 Q&A 问答 Agent、Tool 工具执行 Agent、Title 标题生成 Agent，支持热插拔注册。
 - **设计并实现 ReACT Agent 循环引擎**：Thought → Action → Observation 循环，LLM 自主多步推理与工具调用。Plan-then-Execute 多步规划，三级降级解析器兼容 LLM 输出偏差，30 秒工具超时 + 失败自动重试，首轮未输出 ReACT 格式时注入纠正提示重试。
 - **设计混合检索系统**：pgvector 余弦相似度语义检索 + PostgreSQL tsvector 全文检索，通过 RRF（Reciprocal Rank Fusion）算法融合排序。两个检索通道并行执行，RRF 融合后经去重 → Rerank 排序输出。
 - **设计两阶段召回管线**：粗召阶段各通道以 topK×2 过量召回（hnsw.ef_search=200 扩大索引候选），后处理链先去重再通过语义 Rerank 模型（BaiLian API）精排截断，兼顾 HNSW 快速搜索与 Rerank 精确匹配。
@@ -528,6 +530,76 @@ MarkdownRenderer 收到 content + citations
 
 ---
 
+## 亮点十四：A2A 多 Agent 架构
+
+### 背景
+
+单 Agent 将所有能力（知识库检索、工具调用、用户交互）混在一起，prompt 越来越臃肿。不同任务对 prompt、工具集、模型的要求不同，混合在一起互相干扰。需要一种机制让不同能力的 Agent 各司其职，协同工作。
+
+### 设计思路
+
+基于 A2A（Agent-to-Agent）通信协议设计多 Agent 架构：
+- **Agent Card**：每个 Agent 发布身份卡，描述名称、能力、输入输出协议
+- **Task**：主 Agent 创建 Task 投递给目标子 Agent，Task 携带参数和状态
+- **Artifact**：Agent 执行完成后产出 Artifact，携带执行结果
+- **Orchestrator**：统一路由、任务编排、结果汇总
+
+### 实现细节
+
+**核心模型（4个 record/class）：**
+
+| 模型 | 字段 | 用途 |
+|------|------|------|
+| `AgentCard` | name, description, capabilities | Agent 身份发布与发现 |
+| `Task` | id, targetAgent, input, status | 跨 Agent 工作单元 |
+| `Artifact` | id, taskId, agentName, type, content | 执行结果封装 |
+| `AgentMailbox` | agentName, inbox queue | Task 投递队列 |
+
+**OrchestratorAgent 注册制：**
+```java
+OrchestratorAgent orchestrator = new OrchestratorAgent();
+orchestrator.register(qaSubAgent);    // Q&A 问答
+orchestrator.register(toolSubAgent);  // 工具执行
+orchestrator.register(titleSubAgent); // 标题生成
+orchestrator.run(question, ctx, callback);
+```
+
+**已实现的子 Agent：**
+
+| Agent | 名称 | 能力 | 核心逻辑 |
+|-------|------|------|---------|
+| **Q&A Agent** | `qa` | kb_retrieval, mcp_tools, skill_tools | 包装 AgentLoop 运行 ReACT 循环 |
+| **Tool Agent** | `tool` | mcp_tools, skill_tools, time_tool | 直接执行 MCP/SKILL 工具 |
+| **Title Agent** | `title` | title_generation | 调用标题生成 prompt |
+
+**Agent 间通信流程：**
+
+```
+用户问题
+    │
+    ▼
+OrchestratorAgent.run()
+    │
+    ├── 1. 路由 → Q&A Agent
+    │      ├── Task{target:"qa", input:{question}}
+    │      ├── Q&A Agent.run() → AgentLoop → SSE 流式输出
+    │      └── 返回 Artifact[{type:"answer"}, {type:"steps"}, {type:"citations"}]
+    │
+    ├── 2. 有 answer → 路由 → Title Agent
+    │      ├── Task{target:"title", input:{question, answer}}
+    │      ├── Title Agent.run() → LLM 调用
+    │      └── 返回 Artifact[{type:"title"}]
+    │
+    └── 收集所有 Artifact（框架层可扩展持久化跟踪）
+```
+
+**可扩展性：**
+- 新增 Agent 只需实现 `SubAgent` 接口 + `orchestrator.register()`
+- Agent 之间通过 Task/Artifact 解耦，不共享内部状态
+- 路由策略可替换（当前单 Agent 直通，可扩展 LLM 路由）
+
+---
+
 ## AI 设计模式总结
 
 | 模式 | 应用场景 | 实现位置 |
@@ -544,6 +616,9 @@ MarkdownRenderer 收到 content + citations
 | **Docker 沙箱** | 安全执行用户工具 | SandboxExecutor + SecurityAuditor |
 | **目录监听** | SKILL 热更新 | SkillLoader（15s 轮询） |
 | **观察者** | SSE 事件推送 | StreamChatEventHandler |
+| **A2A 通信** | 多 Agent 协同（Card/Task/Artifact） | OrchestratorAgent + SubAgent |
+| **注册制** | Agent 热插拔 | OrchestratorAgent.register() |
+| **策略模式** | 可切换的路由策略 | OrchestratorAgent.resolveAgent() |
 
 ---
 
