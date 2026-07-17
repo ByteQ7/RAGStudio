@@ -40,6 +40,12 @@ scripts/logs/
 ### 运行时日志 ###
 logs/
 
+### 调试反编译产物 ###
+dev/
+
+### stray 目录（脚本误创建） ###
+~/
+
 ### Windows ###
 nul
 
