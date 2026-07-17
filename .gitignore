@@ -37,6 +37,9 @@ build/
 .vscode/
 scripts/logs/
 
+### 运行时日志 ###
+logs/
+
 ### Windows ###
 nul
 
