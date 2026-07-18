@@ -234,6 +234,16 @@ public class LangChain4jModelFactory {
 
     /**
      * 构建 OpenAI 兼容的请求参数
+     * <p>
+     * LangChain4j 标准路径仅支持 {@link OpenAiChatRequestParameters#reasoningEffort(String)}
+     * 这一标准 OpenAI 推理参数。以下类型的推理参数需要通过原始 OkHttp 路径
+     * ({@link #buildRequestBody(ChatRequest, ModelTarget, boolean)}) 注入：
+     * </p>
+     * <ul>
+     *   <li><b>CONTINUOUS</b> — {@code budget_tokens}（Claude / Gemini 等）</li>
+     *   <li><b>BOOLEAN(thinking.type)</b> — {@code {"thinking": {"type": "enabled"}}}（DeepSeek 等）</li>
+     *   <li><b>BOOLEAN(enable_thinking)</b> — {@code enable_thinking: true}（国产模型）</li>
+     * </ul>
      */
     public OpenAiChatRequestParameters buildChatRequestParameters(ChatRequest request, ModelTarget target) {
         OpenAiChatRequestParameters.Builder builder = OpenAiChatRequestParameters.builder();
@@ -248,7 +258,7 @@ public class LangChain4jModelFactory {
             builder.maxOutputTokens(request.getMaxTokens());
         }
 
-        // 注入 reasoning_effort 标准参数
+        // 注入 reasoning_effort 标准参数（OpenAI o-series 等）
         int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
         String modelName = target.candidate().getModel();
         if (reasoningRouter != null && thinkingLevel > 0) {
@@ -259,10 +269,14 @@ public class LangChain4jModelFactory {
                             "[REQ] Model: " + modelName + " | ThinkingLevel: " + thinkingLevel
                                     + " | Params: " + reasoningParams + "\n");
                 }
+                // reasoning_effort: 标准 OpenAI 参数，可通过 OpenAiChatRequestParameters 注入
                 Object reasoningEffort = reasoningParams.get("reasoning_effort");
                 if (reasoningEffort instanceof String effort && !effort.isEmpty()) {
                     builder.reasoningEffort(effort);
                 }
+                // 非标准参数（thinking/budget_tokens/enable_thinking 等）
+                // 在 LangChain4j 标准路径中无法注入，由 buildRequestBody() 的原始 OkHttp 路径处理
+                // 这里仅记录日志以便调试
             }
         }
 
