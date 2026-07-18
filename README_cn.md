@@ -10,6 +10,12 @@
 
 ---
 
+<p align="center">
+  <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">
+    <img src="https://img.shields.io/badge/📺_演示视频-gray?style=for-the-badge" alt="演示视频"/>
+  </a>
+</p>
+
 ## 概述
 
 **RAGStudio** 基于 **Java 17 + Spring Boot 3.5** 构建，所有请求统一走 **ReACT Agent 循环**（Thought → Action → Observation），LLM 自主推理、调用工具、观察结果，直到给出最终答案。
