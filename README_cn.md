@@ -11,7 +11,7 @@
 ---
 
 <p align="center">
-  <video src="https://openlist.qbyte.top/sd/GVWZlUAk/" controls width="800">
+  <video src="https://openlist.qbyte.top/@s/GVWZlUAk?preview=video" controls width="800">
     您的浏览器不支持 video 标签。 <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">在线观看演示视频</a>
   </video>
 </p>

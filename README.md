@@ -11,7 +11,7 @@
 ---
 
 <p align="center">
-  <video src="https://openlist.qbyte.top/sd/GVWZlUAk/" controls width="800">
+  <video src="https://openlist.qbyte.top/@s/GVWZlUAk?preview=video" controls width="800">
     Your browser does not support the video tag. <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">Watch Demo Video</a>
   </video>
 </p>
