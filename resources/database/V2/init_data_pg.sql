@@ -48,7 +48,7 @@ VALUES
 (1831730000000000206, 1821730000000000101, 'qwen3-rerank',       'qwen3-rerank',                   'RERANK', 1, 1,   1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1831730000000000207, 1821730000000000104, 'rerank-noop',        'noop',                           'RERANK', 0, 100, 1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1831730000000000224, 1821730000000000101, 'qwen-vl-plus',       'qwen-vl-plus-latest',            'CHAT', 0, 5,  1, 0, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
-(1831730000000000225, 1821730000000000101, 'qwen3.5-9B',         'qwen3.5-9b',                     'CHAT', 0, 6,  1, 1, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(1831730000000000225, 1821730000000000101, 'qwen3.5-9B',         'qwen3.5-9B',                     'CHAT', 0, 6,  1, 1, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 
 -- ============================================
 -- 新增 Provider（12个）

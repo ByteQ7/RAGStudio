@@ -93,20 +93,14 @@ public class DefaultModelConfigServiceImpl implements DefaultModelConfigService 
         String modelName = model != null ? model.getModelName() : config.getModelId();
         Boolean modelEnabled = model != null ? (model.getEnabled() == 1) : false;
 
-        // 查询供应商 API Key 状态
-        Boolean hasApiKey = false;
-        if (model != null) {
-            AiProviderDO provider = aiProviderMapper.selectById(model.getProviderId());
-            hasApiKey = provider != null
-                    && provider.getApiKey() != null
-                    && !provider.getApiKey().isEmpty();
-        }
-
+        // 查询供应商信息（一次查询复用结果）
         String providerName = "";
+        Boolean hasApiKey = false;
         if (model != null) {
             AiProviderDO provider = aiProviderMapper.selectById(model.getProviderId());
             if (provider != null) {
                 providerName = provider.getName();
+                hasApiKey = provider.getApiKey() != null && !provider.getApiKey().isEmpty();
             }
         }
 
