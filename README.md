@@ -5,14 +5,14 @@
 </p>
 
 <p align="center">
-  <a href="README_cn.md"><img src="https://img.shields.io/badge/中文版-blue?style=for-the-badge" alt="中文版"/></a>
+  <a href="README_cn.md"><img src="https://img.shields.io/badge/📖_中文版-6366f1?style=for-the-badge&logo=readme&logoColor=white" alt="中文版" height="36"/></a>
 </p>
 
 ---
 
 <p align="center">
-  <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">
-    <img src="https://img.shields.io/badge/▶_Watch_Demo_Video-8B5CF6?style=for-the-badge&logo=playerdotme&logoColor=white" alt="Watch Demo Video"/>
+  <a href="https://openlist.qbyte.top/@s/GVWZlUAk?preview=video" target="_blank">
+    <img src="https://img.shields.io/badge/▶_Watch_Demo_Video-7c3aed?style=for-the-badge&logo=youtubegaming&logoColor=white&labelColor=581c87" alt="Watch Demo Video" height="48"/>
   </a>
 </p>
 
