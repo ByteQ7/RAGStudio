@@ -54,6 +54,7 @@ import com.byteq.ai.ragstudio.knowledge.mq.event.KnowledgeDocumentChunkEvent;
 import com.byteq.ai.ragstudio.knowledge.schedule.CronScheduleHelper;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeChunkService;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeDocumentScheduleService;
+import com.byteq.ai.ragstudio.knowledge.service.DocumentVisionExtractor;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeDocumentService;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorSpaceId;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorStoreService;
@@ -102,6 +103,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final MessageQueueProducer messageQueueProducer;
     private final KnowledgeScheduleProperties scheduleProperties;
     private final RemoteFileFetcher remoteFileFetcher;
+    private final DocumentVisionExtractor documentVisionExtractor;
 
     @Value("knowledge-document-chunk_topic${unique-name:}")
     private String chunkTopic;
@@ -322,11 +324,30 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         String embeddingModel = kbDO.getEmbeddingModel();
         ChunkingOptions config = buildChunkingOptions(chunkingMode, documentDO);
+        String mimeType = documentDO.getFileType();
 
         long extractStart = System.currentTimeMillis();
         try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
             String text = parserSelector.select(ParserType.TIKA.getType()).extractText(is, documentDO.getDocName());
             long extractDuration = System.currentTimeMillis() - extractStart;
+
+            // 如果 Tika 提取的文字太少，尝试用多模态模型兜底
+            if (documentVisionExtractor.needsVisionExtraction(text)) {
+                log.info("Tika 提取文字不足 ({} 字符), 触发视觉提取: fileUrl={}, mimeType={}",
+                        text != null ? text.trim().length() : 0,
+                        documentDO.getFileUrl(), mimeType);
+
+                if (documentVisionExtractor.isDirectVisionSupported(mimeType)) {
+                    // 图片文件：直接尝试多模态模型提取
+                    log.info("支持直接视觉提取的文件类型: {}", mimeType);
+                    // 注：后续集成 DefaultModelConfigService.getModelId("doc_image") + RoutingLLMService
+                    // 调用多模态模型提取文字并替换 text 内容
+                } else if (documentVisionExtractor.isPdf(mimeType)) {
+                    log.info("PDF 文件需要渲染后视觉提取 (暂未实现 PDF 渲染)");
+                } else {
+                    log.info("不支持的文件类型: {}", mimeType);
+                }
+            }
 
             ChunkingStrategy chunkingStrategy = chunkingStrategyFactory.requireStrategy(chunkingMode);
             long chunkStart = System.currentTimeMillis();

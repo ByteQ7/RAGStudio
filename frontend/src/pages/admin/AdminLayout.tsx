@@ -18,6 +18,7 @@ import {
   Plug,
   Search,
   Settings,
+  SlidersHorizontal,
   Upload,
   Users,
   Workflow,
@@ -63,6 +64,7 @@ const navItems: NavItem[] = [
   { path: "/admin/mcp-servers", label: "MCP 服务", icon: Plug },
   { path: "/admin/skills", label: "SKILL管理", icon: Zap },
   { path: "/admin/ai-models", label: "模型管理", icon: BrainCircuit },
+  { path: "/admin/defaults", label: "默认模型", icon: SlidersHorizontal },
   { path: "/admin/alert", label: "告警设置", icon: Bell },
   { path: "/admin/settings", label: "系统设置", icon: Settings },
 ];
@@ -125,7 +127,7 @@ export function AdminLayout() {
       dashboard: "仪表盘", knowledge: "知识库", ingestion: "数据通道",
       traces: "链路追踪", mappings: "关键词映射", users: "用户管理",
       "sample-questions": "示例问题", "mcp-servers": "MCP 服务",
-      "ai-models": "模型管理", skills: "SKILL管理", settings: "系统设置",
+      "ai-models": "模型管理", defaults: "默认模型", skills: "SKILL管理", settings: "系统设置",
       alert: "告警设置"
     };
     const section = segments[1];

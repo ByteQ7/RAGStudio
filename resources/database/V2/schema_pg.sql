@@ -788,6 +788,24 @@ COMMENT ON COLUMN t_ai_model.update_time IS '更新时间';
 COMMENT ON COLUMN t_ai_model.deleted IS '是否删除 0：正常 1：删除';
 
 -- ============================================
+-- Default Model Config (场景默认模型配置)
+-- ============================================
+
+CREATE TABLE t_default_model_config (
+    id              VARCHAR(64)  NOT NULL PRIMARY KEY,
+    config_key      VARCHAR(64)  NOT NULL UNIQUE,
+    model_id        VARCHAR(128) NOT NULL,
+    create_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+COMMENT ON TABLE t_default_model_config IS '场景默认模型配置表';
+COMMENT ON COLUMN t_default_model_config.id IS '主键ID';
+COMMENT ON COLUMN t_default_model_config.config_key IS '配置键: chat/summary/title/multimodal/doc_image';
+COMMENT ON COLUMN t_default_model_config.model_id IS '关联 t_ai_model.modelId';
+COMMENT ON COLUMN t_default_model_config.create_time IS '创建时间';
+COMMENT ON COLUMN t_default_model_config.update_time IS '更新时间';
+
+-- ============================================
 -- Alert Config (模型调用告警配置)
 -- ============================================
 

@@ -4,6 +4,14 @@ export type FeedbackValue = "like" | "dislike" | null;
 
 export type MessageStatus = "streaming" | "done" | "cancelled" | "error";
 
+export interface UserChoiceOption {
+  text: string;
+}
+
+export interface UserChoiceData {
+  options: UserChoiceOption[];
+}
+
 export interface User {
   userId: string;
   username?: string;

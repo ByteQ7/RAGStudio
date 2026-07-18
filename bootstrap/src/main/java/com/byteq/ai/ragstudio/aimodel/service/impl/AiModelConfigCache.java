@@ -115,8 +115,9 @@ public class AiModelConfigCache implements ModelConfigProvider {
         );
 
         List<DynamicModelConfig.ModelEntry> modelEntries = models.stream()
+                .filter(m -> idToName.containsKey(m.getProviderId()))
                 .map(m -> {
-                    String providerName = idToName.getOrDefault(m.getProviderId(), "");
+                    String providerName = idToName.get(m.getProviderId());
                     return DynamicModelConfig.ModelEntry.builder()
                             .id(m.getModelId())
                             .provider(providerName)

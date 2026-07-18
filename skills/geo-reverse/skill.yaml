@@ -1,0 +1,18 @@
+name: geo_reverse
+description: "经纬度坐标逆地理编码。输入纬度和经度，返回对应的省份、城市、区县名称及行政编码。完全离线运行，使用本地中国行政区划边界数据。当你从用户消息中获取到经纬度坐标后，可以调用此工具将坐标转换为城市名。"
+type: script
+config:
+  scriptFile: "geo_reverse.py"
+  interpreter: "python3"
+parameters:
+  type: object
+  properties:
+    lat:
+      type: string
+      description: 纬度坐标，如 39.9042
+    lng:
+      type: string
+      description: 经度坐标，如 116.4074
+  required:
+    - lat
+    - lng

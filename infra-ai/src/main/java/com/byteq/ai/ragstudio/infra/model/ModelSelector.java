@@ -57,6 +57,28 @@ public class ModelSelector {
     }
 
     /**
+     * 选择 Chat 模型候选列表（支持指定默认模型 + 多模态过滤）
+     * <p>
+     * 用于场景化默认模型（如对话、摘要、标题、多模态、文档图片），
+     * 允许外部传入 preferredModelId 作为首选，覆盖 group 级别的默认模型。
+     * </p>
+     *
+     * @param preferredModelId 首选模型 ID，为空时使用 group 默认
+     * @param deepThinking     是否要求深度思考能力
+     * @param multimodal       是否要求多模态（图片识别）能力
+     * @return 按优先级排序的可用模型列表
+     */
+    public List<ModelTarget> selectChatCandidates(String preferredModelId, boolean deepThinking, boolean multimodal) {
+        DynamicModelConfig config = configProvider.getConfig();
+        DynamicModelConfig.ModelGroup group = config.getChatGroup();
+        if (group == null || group.getCandidates().isEmpty()) {
+            return List.of();
+        }
+        String firstChoiceModelId = preferredModelId != null ? preferredModelId : resolveFirstChoiceModel(group, deepThinking);
+        return selectCandidates(group, firstChoiceModelId, deepThinking, multimodal, config.getProviders());
+    }
+
+    /**
      * 选择 Embedding 模型候选列表
      */
     public List<ModelTarget> selectEmbeddingCandidates() {
@@ -116,9 +138,10 @@ public class ModelSelector {
 
     // 候选模型筛选与排序:
     // 1. 过滤掉已禁用的模型
-    // 2. 深度思考模式下过滤不支持 thinking 的模型
-    // 3. 多模态模式下过滤不支持 multimodial 的模型
-    // 4. 按首选模型优先、优先级升序、ID 字典序排列
+    // 2. 过滤掉供应商已禁用的模型（provider 为空或不在 providers 映射中）
+    // 3. 深度思考模式下过滤不支持 thinking 的模型
+    // 4. 多模态模式下过滤不支持 multimodial 的模型
+    // 5. 按首选模型优先、优先级升序、ID 字典序排列
     private List<DynamicModelConfig.ModelEntry> filterAndSortCandidates(
             List<DynamicModelConfig.ModelEntry> candidates,
             String firstChoiceModelId,
@@ -133,8 +156,12 @@ public class ModelSelector {
             boolean deepThinking,
             boolean multimodal) {
 
+        // 注意：此方法无 providers 参数，仅做模型级别过滤。
+        // 供应商级别的过滤在 buildAvailableTargets/buildModelTarget 中完成。
+        // 但如果 provider 信息明显为空（数据加载阶段已出错），此处提前丢弃。
         List<DynamicModelConfig.ModelEntry> enabled = candidates.stream()
                 .filter(c -> c != null && !Boolean.FALSE.equals(c.getEnabled()))
+                .filter(c -> StrUtil.isNotBlank(c.getProvider()))
                 .filter(c -> !deepThinking || Boolean.TRUE.equals(c.getSupportsThinking()))
                 .filter(c -> !multimodal || Boolean.TRUE.equals(c.getSupportsMultimodal()))
                 .sorted(Comparator

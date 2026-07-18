@@ -47,6 +47,8 @@ VALUES
 -- Rerank 模型
 (1831730000000000206, 1821730000000000101, 'qwen3-rerank',       'qwen3-rerank',                   'RERANK', 1, 1,   1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1831730000000000207, 1821730000000000104, 'rerank-noop',        'noop',                           'RERANK', 0, 100, 1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(1831730000000000224, 1821730000000000101, 'qwen-vl-plus',       'qwen-vl-plus-latest',            'CHAT', 0, 5,  1, 0, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
+(1831730000000000225, 1821730000000000101, 'qwen3.5-9B',         'qwen3.5-9b',                     'CHAT', 0, 6,  1, 1, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 
 -- ============================================
 -- 新增 Provider（12个）
@@ -86,4 +88,16 @@ INSERT INTO t_ai_model (id, provider_id, model_id, model_name, capability, is_de
 (1831730000000000221, 1821730000000000116, 'mistral-large',     'mistral-large-latest', 'CHAT', 1, 1, 1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1831730000000000222, 1821730000000000117, 'step-2',            'step-2-16k',           'CHAT', 1, 1, 1, 0, 0, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0),
 (1831730000000000223, 1821730000000000118, 'sensechat-5',       'sensechat-5',          'CHAT', 0, 1, 1, 0, 1, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- 默认模型配置 (场景默认模型)
+-- ============================================
+
+INSERT INTO t_default_model_config (id, config_key, model_id, create_time, update_time) VALUES
+(1851730000000000001, 'chat',       'deepseek-v4-flash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+(1851730000000000002, 'summary',    'deepseek-v4-flash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+(1851730000000000003, 'title',      'deepseek-v4-flash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+(1851730000000000004, 'multimodal', 'qwen-vl-plus',      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+(1851730000000000005, 'doc_image',  'qwen3.5-9B',        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
