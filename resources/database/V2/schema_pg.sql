@@ -805,6 +805,10 @@ COMMENT ON COLUMN t_default_model_config.model_id IS '关联 t_ai_model.modelId'
 COMMENT ON COLUMN t_default_model_config.create_time IS '创建时间';
 COMMENT ON COLUMN t_default_model_config.update_time IS '更新时间';
 
+-- 说明：t_ai_model 使用软删除 (deleted=1)，唯一约束为 (model_id, deleted) 组合，
+-- 单列 model_id 无唯一约束，因此无法建立标准外键。
+-- model_id 的有效性由 DefaultModelConfigServiceImpl.updateConfig() 业务层保障。
+
 -- ============================================
 -- Alert Config (模型调用告警配置)
 -- ============================================

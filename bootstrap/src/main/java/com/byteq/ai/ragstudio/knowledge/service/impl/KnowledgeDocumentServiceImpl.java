@@ -337,15 +337,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                         text != null ? text.trim().length() : 0,
                         documentDO.getFileUrl(), mimeType);
 
-                if (documentVisionExtractor.isDirectVisionSupported(mimeType)) {
-                    // 图片文件：直接尝试多模态模型提取
-                    log.info("支持直接视觉提取的文件类型: {}", mimeType);
-                    // 注：后续集成 DefaultModelConfigService.getModelId("doc_image") + RoutingLLMService
-                    // 调用多模态模型提取文字并替换 text 内容
-                } else if (documentVisionExtractor.isPdf(mimeType)) {
-                    log.info("PDF 文件需要渲染后视觉提取 (暂未实现 PDF 渲染)");
-                } else {
-                    log.info("不支持的文件类型: {}", mimeType);
+                String visionText = documentVisionExtractor.extractTextWithVision(
+                        documentDO.getFileUrl(), mimeType, documentDO.getDocName());
+                if (StrUtil.isNotBlank(visionText)) {
+                    log.info("视觉提取成功: 获取到 {} 字符", visionText.length());
+                    text = visionText;
                 }
             }
 

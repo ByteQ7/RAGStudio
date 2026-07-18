@@ -17,6 +17,7 @@ import {
   listDefaults,
   updateDefault
 } from "@/services/defaultModelConfigService";
+import { listProviders } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
 
 // 配置键 → 中文描述
@@ -49,12 +50,14 @@ export function DefaultModelConfigPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [defaults, models] = await Promise.all([
+      const [defaults, models, providers] = await Promise.all([
         listDefaults(),
-        listModels("CHAT")
+        listModels("CHAT"),
+        listProviders()
       ]);
       setConfigs(defaults);
       setChatModels(models);
+      setAllProviders(providers.map((p) => ({ name: p.name, apiKey: p.apiKey ?? null })));
     } catch (err) {
       toast.error(getErrorMessage(err, "加载默认模型配置失败"));
     } finally {
@@ -68,13 +71,15 @@ export function DefaultModelConfigPage() {
 
   // ==================== 供应商 API Key 状态 ====================
 
+  const [allProviders, setAllProviders] = useState<Array<{ name: string; apiKey: string | null }>>([]);
+
   const providerApiKeyMap = useMemo(() => {
     const map = new Map<string, boolean>();
-    for (const c of configs) {
-      map.set(c.providerName, c.hasApiKey);
+    for (const p of allProviders) {
+      map.set(p.name, p.apiKey !== null && p.apiKey !== "");
     }
     return map;
-  }, [configs]);
+  }, [allProviders]);
 
   // ==================== 模型选择变更 ====================
 
