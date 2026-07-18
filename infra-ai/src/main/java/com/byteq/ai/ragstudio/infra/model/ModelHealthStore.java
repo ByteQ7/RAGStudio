@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 /**
  * 模型健康状态存储器
@@ -34,11 +36,14 @@ public class ModelHealthStore {
 
     private final ModelRoutingProperties routingProperties;
 
-    /**
-     * 模型健康状态缓存，key 为模型 ID，value 为健康状态对象
-     * 使用 ConcurrentHashMap 保证并发安全
-     */
+    /** 模型健康状态缓存，key 为模型 ID，value 为健康状态对象 */
     private final Map<String, ModelHealth> healthById = new ConcurrentHashMap<>();
+
+    /**
+     * 断路器进入 OPEN 状态的回调（modelId + 当前连续失败次数）
+     * <p>用于告警系统感知熔断事件</p>
+     */
+    private BiConsumer<String, Integer> onOpenCallback;
 
     /**
      * 判断模型当前是否不可用
@@ -167,6 +172,25 @@ public class ModelHealthStore {
      *
      * @param id 模型 ID
      */
+    /**
+     * 设置 OPEN 状态回调
+     */
+    public void setOnOpenCallback(BiConsumer<String, Integer> callback) {
+        this.onOpenCallback = callback;
+    }
+
+    /**
+     * 获取指定模型的当前状态（用于告警系统查询）
+     */
+    public String getModelState(String id) {
+        if (id == null) return null;
+        ModelHealth health = healthById.get(id);
+        return health != null ? health.state.name() : "CLOSED";
+    }
+
+    /**
+     * 标记模型调用失败
+     */
     public void markFailure(String id) {
         if (id == null) {
             return;
@@ -176,12 +200,17 @@ public class ModelHealthStore {
             if (v == null) {
                 v = new ModelHealth();
             }
+            boolean changedToOpen = false;
+            int failureCount = 0;
+
             // HALF_OPEN 状态下失败：探测失败，立即回到 OPEN 状态并重置冷却
             if (v.state == State.HALF_OPEN) {
                 v.state = State.OPEN;
                 v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
                 v.consecutiveFailures = 0;
                 v.halfOpenInFlight = false;
+                changedToOpen = true;
+                failureCount = routingProperties.getSelection().getFailureThreshold();
                 return v;
             }
             // CLOSED 状态下失败：累加失败次数，达到阈值时切换到 OPEN 状态
@@ -191,9 +220,15 @@ public class ModelHealthStore {
                 v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
                 v.consecutiveFailures = 0;
                 v.halfOpenInFlight = false;
+                changedToOpen = true;
+                failureCount = v.consecutiveFailures;
             }
             return v;
         });
+        // 在 compute 外部调用回调（避免在锁内部发送通知）
+        if (onOpenCallback != null) {
+            onOpenCallback.accept(id, 1);
+        }
     }
 
     /**

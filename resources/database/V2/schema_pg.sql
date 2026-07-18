@@ -786,3 +786,37 @@ COMMENT ON COLUMN t_ai_model.custom_url IS '自定义URL（覆盖供应商地址
 COMMENT ON COLUMN t_ai_model.create_time IS '创建时间';
 COMMENT ON COLUMN t_ai_model.update_time IS '更新时间';
 COMMENT ON COLUMN t_ai_model.deleted IS '是否删除 0：正常 1：删除';
+
+-- ============================================
+-- Alert Config (模型调用告警配置)
+-- ============================================
+
+CREATE TABLE t_alert_config (
+    id                  VARCHAR(64)  NOT NULL PRIMARY KEY,
+    enabled             SMALLINT     NOT NULL DEFAULT 0,
+    smtp_host           VARCHAR(255),
+    smtp_port           INTEGER      NOT NULL DEFAULT 465,
+    smtp_username       VARCHAR(255),
+    smtp_password       VARCHAR(255),
+    from_address        VARCHAR(255),
+    to_address          VARCHAR(255),
+    time_window_hours   INTEGER      NOT NULL DEFAULT 5,
+    failure_threshold   INTEGER      NOT NULL DEFAULT 5,
+    create_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted             SMALLINT     NOT NULL DEFAULT 0
+);
+COMMENT ON TABLE t_alert_config IS '模型调用告警配置表';
+COMMENT ON COLUMN t_alert_config.id IS '主键ID';
+COMMENT ON COLUMN t_alert_config.enabled IS '是否启用告警 1：启用 0：禁用';
+COMMENT ON COLUMN t_alert_config.smtp_host IS 'SMTP服务器地址';
+COMMENT ON COLUMN t_alert_config.smtp_port IS 'SMTP服务器端口';
+COMMENT ON COLUMN t_alert_config.smtp_username IS 'SMTP用户名';
+COMMENT ON COLUMN t_alert_config.smtp_password IS 'SMTP密码';
+COMMENT ON COLUMN t_alert_config.from_address IS '发件人邮箱';
+COMMENT ON COLUMN t_alert_config.to_address IS '收件人邮箱';
+COMMENT ON COLUMN t_alert_config.time_window_hours IS '熔断统计时间窗口（小时），1-24';
+COMMENT ON COLUMN t_alert_config.failure_threshold IS '窗口内熔断次数阈值，1-10';
+COMMENT ON COLUMN t_alert_config.create_time IS '创建时间';
+COMMENT ON COLUMN t_alert_config.update_time IS '更新时间';
+COMMENT ON COLUMN t_alert_config.deleted IS '是否删除 0：正常 1：删除';

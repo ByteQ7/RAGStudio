@@ -8,29 +8,28 @@ import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
 import com.byteq.ai.ragstudio.infra.enums.ModelProvider;
 import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
 import com.byteq.ai.ragstudio.infra.http.ModelClientException;
+import com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jModelFactory;
+import com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jStreamBridge;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
-import com.byteq.ai.ragstudio.infra.springai.FluxToStreamCallbackBridge;
-import com.byteq.ai.ragstudio.infra.springai.SpringAiChatModelFactory;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 
 /**
- * 阿里云百炼（DashScope）ChatClient —— 基于 Spring AI OpenAI 兼容模式
+ * 阿里云百炼（DashScope）ChatClient —— 基于 LangChain4j 1.0.0
  * <p>
- * 通过 DashScope 的 OpenAI 兼容端点（/compatible-mode/v1/chat/completions）调用通义千问系列模型。
- * 底层由 Spring AI 的 OpenAiChatModel 处理 HTTP 通信和 SSE 流式解析。
+ * 通过 DashScope 的 OpenAI 兼容端点调用通义千问系列模型。
+ * </p>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class BaiLianChatClient implements ChatClient {
 
-    private final SpringAiChatModelFactory modelFactory;
+    private final LangChain4jModelFactory modelFactory;
 
     @Override
     public String provider() {
@@ -41,27 +40,28 @@ public class BaiLianChatClient implements ChatClient {
     @RagTraceNode(name = "bailian-chat", type = "LLM_PROVIDER")
     public String chat(ChatRequest request, ModelTarget target) {
         ChatModel model = modelFactory.getOrCreateChatModel(target);
-        Prompt prompt = modelFactory.toPrompt(request, target);
-        ChatResponse response = model.call(prompt);
+        dev.langchain4j.model.chat.request.ChatRequest lcRequest =
+                modelFactory.buildLangChainChatRequest(request, target);
+        ChatResponse response = model.chat(lcRequest);
         return extractText(response, "bailian");
     }
 
     @Override
     @RagTraceNode(name = "bailian-stream-chat", type = "LLM_PROVIDER")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
-        ChatModel model = modelFactory.getOrCreateChatModel(target);
-        Prompt prompt = modelFactory.toPrompt(request, target);
-        Flux<ChatResponse> flux = model.stream(prompt);
-        return FluxToStreamCallbackBridge.subscribe(flux, callback, request.getThinkingLevel() != null ? request.getThinkingLevel() : 0, null);
+        StreamingChatModel model = modelFactory.getOrCreateStreamingChatModel(target);
+        dev.langchain4j.model.chat.request.ChatRequest lcRequest =
+                modelFactory.buildLangChainChatRequest(request, target);
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        return LangChain4jStreamBridge.subscribe(model, lcRequest, callback, thinkingLevel, null);
     }
 
-    // 从 ChatResponse 中提取响应文本，若响应为空则抛出异常
     private static String extractText(ChatResponse response, String provider) {
-        if (response.getResult() == null || response.getResult().getOutput() == null) {
+        if (response == null || response.aiMessage() == null) {
             throw new ModelClientException(
                     provider + " 返回空响应", ModelClientErrorType.INVALID_RESPONSE, null);
         }
-        String text = response.getResult().getOutput().getText();
+        String text = response.aiMessage().text();
         return text != null ? text : "";
     }
 }

@@ -26,8 +26,7 @@
         <rocketmq-spring-boot-starter.version>2.3.5</rocketmq-spring-boot-starter.version>
         <okhttp.version>4.12.0</okhttp.version>
         <mcp-sdk.version>1.1.2</mcp-sdk.version>
-        <spring-ai.version>1.1.2</spring-ai.version>
-        <spring-ai-alibaba.version>1.1.2.2</spring-ai-alibaba.version>
+        <langchain4j.version>1.0.0</langchain4j.version>
         <spotless-maven-plugin.version>2.22.1</spotless-maven-plugin.version>
     </properties>
 
@@ -47,10 +46,11 @@
                 <scope>import</scope>
             </dependency>
 
+            <!-- LangChain4j BOM -->
             <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-bom</artifactId>
-                <version>${spring-ai.version}</version>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

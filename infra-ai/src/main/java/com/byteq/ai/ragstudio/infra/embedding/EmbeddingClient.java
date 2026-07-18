@@ -29,7 +29,7 @@ import java.util.List;
  * </p>
  *
  * @author byteq
- * @see com.byteq.ai.ragstudio.infra.springai.SpringAiChatModelFactory
+ * @see com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jModelFactory
  * @see ModelTarget
  */
 public interface EmbeddingClient {

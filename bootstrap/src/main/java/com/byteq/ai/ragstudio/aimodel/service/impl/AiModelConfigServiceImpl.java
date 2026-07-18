@@ -25,7 +25,7 @@ import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiProviderMapper;
 import com.byteq.ai.ragstudio.aimodel.service.AiModelConfigService;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
-import com.byteq.ai.ragstudio.infra.springai.SpringAiChatModelFactory;
+import com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jModelFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -50,7 +50,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     private final AiProviderMapper providerMapper;
     private final AiModelMapper modelMapper;
     private final AiModelConfigCache configCache;
-    private final SpringAiChatModelFactory chatModelFactory;
+    private final LangChain4jModelFactory chatModelFactory;
     private final ObjectMapper objectMapper;
     private final ProviderAdapterRegistry adapterRegistry;
     private final FileStorageService fileStorageService;
@@ -284,7 +284,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         modelMapper.updateById(existing);
         log.info("更新 AI 模型: id={}, modelId={}", id, existing.getModelId());
 
-        // 清除该模型的 Spring AI 实例缓存
+        // 清除该模型的 LangChain4j 实例缓存
         chatModelFactory.evict(existing.getModelId());
         configCache.reload();
     }
