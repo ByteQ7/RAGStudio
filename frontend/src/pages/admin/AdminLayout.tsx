@@ -176,7 +176,7 @@ export function AdminLayout() {
         {/* Logo */}
         <div className={cn("flex h-14 items-center border-b border-gray-100/80", collapsed ? "justify-center px-0" : "px-4")}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: '#e9ecef', color: '#495057' }}>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50">
               <RAGStudioLogo className="h-6 w-6" />
             </div>
             {!collapsed && (
@@ -201,11 +201,11 @@ export function AdminLayout() {
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 group",
                   isActive
-                    ? "font-medium shadow-sm"
+                    ? "font-medium"
                     : "text-gray-500 hover:text-gray-700",
                   collapsed && "justify-center px-2"
                 )}
-                style={isActive ? { background: '#e9ecef', color: '#495057' } : {}}
+                style={isActive ? { background: 'linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.06))', color: '#6366f1' } : {}}
                 title={collapsed ? item.label : undefined}
               >
                 <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-[#6366f1]" : "text-gray-400 group-hover:text-gray-600")} />
