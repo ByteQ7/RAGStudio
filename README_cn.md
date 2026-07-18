@@ -11,9 +11,9 @@
 ---
 
 <p align="center">
-  <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">
-    <img src="https://img.shields.io/badge/📺_演示视频-gray?style=for-the-badge" alt="演示视频"/>
-  </a>
+  <video src="https://openlist.qbyte.top/sd/GVWZlUAk/" controls width="800">
+    您的浏览器不支持 video 标签。 <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">在线观看演示视频</a>
+  </video>
 </p>
 
 ## 概述

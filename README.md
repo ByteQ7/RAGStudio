@@ -11,9 +11,9 @@
 ---
 
 <p align="center">
-  <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">
-    <img src="https://img.shields.io/badge/📺_Demo_Video-gray?style=for-the-badge" alt="Demo Video"/>
-  </a>
+  <video src="https://openlist.qbyte.top/sd/GVWZlUAk/" controls width="800">
+    Your browser does not support the video tag. <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">Watch Demo Video</a>
+  </video>
 </p>
 
 ## Overview
