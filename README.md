@@ -10,6 +10,12 @@
 
 ---
 
+<p align="center">
+  <a href="https://openlist.qbyte.top/@s/GVWZlUAk" target="_blank">
+    <img src="https://img.shields.io/badge/📺_Demo_Video-gray?style=for-the-badge" alt="Demo Video"/>
+  </a>
+</p>
+
 ## Overview
 
 **RAGStudio** is a **Java 17 + Spring Boot 3.5** powered AI Q&A platform. All requests flow through a **ReACT Agent Loop** — the LLM autonomously reasons, calls tools (KB search, MCP, custom skills), observes results, and iterates until producing a final answer.
