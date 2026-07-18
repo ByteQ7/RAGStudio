@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.aimodel.controller;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.DefaultModelConfigVO;
 import com.byteq.ai.ragstudio.aimodel.service.DefaultModelConfigService;
 import com.byteq.ai.ragstudio.framework.convention.Result;
+import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,8 +56,12 @@ public class DefaultModelConfigController {
     @PutMapping("/{configKey}")
     public Result<Void> updateConfig(@PathVariable("configKey") String configKey,
                                      @RequestBody Map<String, String> body) {
-        String modelId = body.get("modelId");
-        defaultModelConfigService.updateConfig(configKey, modelId);
+        String modelId = body != null ? body.get("modelId") : null;
+        // 校验 modelId 不为空
+        if (modelId == null || modelId.isBlank()) {
+            throw new ClientException("modelId 不能为空");
+        }
+        defaultModelConfigService.updateConfig(configKey, modelId.trim());
         return Results.success();
     }
 }
