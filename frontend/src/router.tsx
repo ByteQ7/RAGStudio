@@ -18,6 +18,7 @@ import { QueryTermMappingPage } from "@/pages/admin/query-term-mapping/QueryTerm
 import { UserListPage } from "@/pages/admin/users/UserListPage";
 import { McpServerPage } from "@/pages/admin/mcp/McpServerPage";
 import { AiModelConfigPage } from "@/pages/admin/ai-models/AiModelConfigPage";
+import { DefaultModelConfigPage } from "@/pages/admin/defaults/DefaultModelConfigPage";
 import { SkillListPage } from "@/pages/admin/skills/SkillListPage";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -153,6 +154,10 @@ export const router = createBrowserRouter([
       {
         path: "ai-models",
         element: <AiModelConfigPage />
+      },
+      {
+        path: "defaults",
+        element: <DefaultModelConfigPage />
       },
       {
         path: "skills",

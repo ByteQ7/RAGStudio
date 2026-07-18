@@ -4,11 +4,55 @@ import { X } from "lucide-react";
 import { AgentSteps } from "@/components/chat/AgentSteps";
 import { CitationList } from "@/components/chat/CitationList";
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
+import { LocationRequest } from "@/components/chat/LocationRequest";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
+import { UserChoices } from "@/components/chat/UserChoices";
 import { Avatar } from "@/components/common/Avatar";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
 import { useAuthStore } from "@/stores/authStore";
-import type { Message } from "@/types";
+import type { Message, UserChoiceData } from "@/types";
+
+// ==================== 标记解析工具 ====================
+
+interface ParsedMarkers {
+  /** 移除标记后的纯文本 */
+  cleanContent: string;
+  /** 是否包含位置请求标记 */
+  hasLocationRequest: boolean;
+  /** 用户选项数据（如有） */
+  userChoice: UserChoiceData | null;
+}
+
+/**
+ * 解析 AI 消息内容中的协议标记
+ * - [LOCATION_REQUEST] — 位置请求
+ * - [USER_CHOICE]...[/USER_CHOICE] — 用户选项
+ */
+function parseMessageMarkers(content: string): ParsedMarkers {
+  let cleanContent = content;
+
+  // 检测位置请求标记
+  const hasLocationRequest = cleanContent.includes("[LOCATION_REQUEST]");
+  cleanContent = cleanContent.replace("[LOCATION_REQUEST]", "");
+
+  // 检测用户选项块
+  const choiceMatch = cleanContent.match(/\[USER_CHOICE\]([\s\S]*?)\[\/USER_CHOICE\]/);
+  let userChoice: UserChoiceData | null = null;
+  if (choiceMatch) {
+    const rawOptions = choiceMatch[1].trim();
+    const options = rawOptions
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((text) => ({ text }));
+    if (options.length > 0) {
+      userChoice = { options };
+    }
+    cleanContent = cleanContent.replace(choiceMatch[0], "");
+  }
+
+  return { cleanContent, hasLocationRequest, userChoice };
+}
 
 interface MessageItemProps {
   message: Message;
@@ -88,6 +132,12 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
     );
   }
 
+  // 解析协议标记（仅在助理消息中处理）
+  const { cleanContent, hasLocationRequest, userChoice } = React.useMemo(
+    () => (!isUser ? parseMessageMarkers(message.content) : { cleanContent: message.content, hasLocationRequest: false, userChoice: null }),
+    [message.content, isUser]
+  );
+
   return (
     <div className="group">
       <div className="flex gap-2.5">
@@ -110,7 +160,16 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             ) : null}
             {hasContent ? (
               <div className="text-[15px] leading-relaxed text-gray-800">
-                <MarkdownRenderer content={message.content} citations={message.citations} />
+                <MarkdownRenderer content={cleanContent} citations={message.citations} />
+                {/* 位置请求组件：仅当这是最后一条消息时才触发 */}
+                {/* 历史消息中的 [LOCATION_REQUEST] 已有后续位置回复，不再重定位 */}
+                {hasLocationRequest && !isUser && isLast && (
+                  <LocationRequest />
+                )}
+                {/* 用户选项组件 */}
+                {userChoice && !isUser && (
+                  <UserChoices options={userChoice.options} />
+                )}
               </div>
             ) : null}
             {message.status === "error" ? (
