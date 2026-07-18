@@ -12,6 +12,7 @@ import { IngestionPage } from "@/pages/admin/ingestion/IngestionPage";
 import { RagTracePage } from "@/pages/admin/traces/RagTracePage";
 import { RagTraceDetailPage } from "@/pages/admin/traces/RagTraceDetailPage";
 import { SystemSettingsPage } from "@/pages/admin/settings/SystemSettingsPage";
+import { AlertSettingsPage } from "@/pages/admin/alert/AlertSettingsPage";
 import { SampleQuestionPage } from "@/pages/admin/sample-questions/SampleQuestionPage";
 import { QueryTermMappingPage } from "@/pages/admin/query-term-mapping/QueryTermMappingPage";
 import { UserListPage } from "@/pages/admin/users/UserListPage";
@@ -128,6 +129,10 @@ export const router = createBrowserRouter([
       {
         path: "settings",
         element: <SystemSettingsPage />
+      },
+      {
+        path: "alert",
+        element: <AlertSettingsPage />
       },
       {
         path: "sample-questions",

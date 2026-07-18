@@ -211,45 +211,128 @@ public class RoutingLLMService implements LLMService {
                 continue;
             }
             if (!healthStore.allowCall(target.id())) {
+                log.debug("流式路由-熔断器跳过模型: modelId={}, provider={}",
+                        target.id(), target.candidate().getProvider());
                 continue;
             }
 
+            // 包装回调：在 stream 真正完成/失败时才标记健康状态
+            // 之前直接在启动后 markSuccess() 导致后续流错误不会被熔断记录
+            String modelId = target.id();
+            HealthTrackingCallback healthCb = new HealthTrackingCallback(callback, modelId, healthStore);
+
             StreamCancellationHandle handle;
             try {
-                handle = client.streamChat(request, callback, target);
+                handle = client.streamChat(request, healthCb, target);
             } catch (Exception e) {
                 healthStore.markFailure(target.id());
                 lastError = e;
-                log.warn("{} 流式请求启动失败，切换下一个模型。modelId：{}，provider：{}",
-                        label, target.id(), target.candidate().getProvider(), e);
+                log.error("{} 流式请求启动失败，切换下一个模型。modelId：{}，provider：{}, error：{}",
+                        label, target.id(), target.candidate().getProvider(), e.getMessage());
                 continue;
             }
             if (handle == null) {
                 healthStore.markFailure(target.id());
                 lastError = new RemoteException("流式请求启动失败", BaseErrorCode.REMOTE_ERROR);
-                log.warn("{} 流式请求未返回取消句柄，切换下一个模型。modelId：{}，provider：{}",
+                log.error("{} 流式请求未返回取消句柄，切换下一个模型。modelId：{}，provider：{}",
                         label, target.id(), target.candidate().getProvider());
                 continue;
             }
 
-            healthStore.markSuccess(target.id());
-            return handle;
+            // 只在流式真正完成时 markSuccess，此处不标记
+            return wrapCancellationHandle(handle, healthCb);
         }
 
         throw notifyAllFailed(callback, lastError);
     }
 
+    /**
+     * 包装流式取消句柄，取消时不触发 markSuccess
+     */
+    private StreamCancellationHandle wrapCancellationHandle(
+            StreamCancellationHandle original, HealthTrackingCallback healthCb) {
+        return () -> {
+            healthCb.markCancelled();
+            if (original != null) {
+                original.cancel();
+            }
+        };
+    }
+
+    /**
+     * 健康追踪回调包装器
+     * <p>
+     * 拦截 onComplete / onError 来更新熔断器状态，
+     * 避免在流式请求刚启动时就标记成功。
+     * </p>
+     */
+    private static class HealthTrackingCallback implements StreamCallback {
+        private final StreamCallback delegate;
+        private final String modelId;
+        private final ModelHealthStore healthStore;
+        private volatile boolean completed = false;
+        private volatile boolean cancelled = false;
+
+        HealthTrackingCallback(StreamCallback delegate, String modelId, ModelHealthStore healthStore) {
+            this.delegate = delegate;
+            this.modelId = modelId;
+            this.healthStore = healthStore;
+        }
+
+        void markCancelled() {
+            this.cancelled = true;
+        }
+
+        @Override
+        public void onContent(String content) { delegate.onContent(content); }
+
+        @Override
+        public void onThinking(String content) { delegate.onThinking(content); }
+
+        @Override
+        public void onComplete() {
+            if (completed) return;
+            completed = true;
+            if (!cancelled) {
+                healthStore.markSuccess(modelId);
+            }
+            delegate.onComplete();
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            if (completed) return;
+            completed = true;
+            // 取消后底层连接关闭导致的 onError 不标记为失败
+            if (!cancelled) {
+                healthStore.markFailure(modelId);
+            }
+            delegate.onError(error);
+        }
+
+        @Override
+        public void onAgentStep(Object step) { delegate.onAgentStep(step); }
+
+        @Override
+        public void onAgentStepsComplete(String json) { delegate.onAgentStepsComplete(json); }
+
+        @Override
+        public void onCitation(String citations) { delegate.onCitation(citations); }
+    }
+
     // 校验候选模型列表是否非空且至少有一个配置了有效 API Key 的模型
     private void validateTargets(List<ModelTarget> targets) {
         if (CollUtil.isEmpty(targets)) {
-            throw new RemoteException(NO_MODEL_OR_APIKEY_MESSAGE);
+            throw new RemoteException("所有模型暂不可用（可能正在熔断冷却中），请稍后重试",
+                    BaseErrorCode.REMOTE_ERROR);
         }
         boolean hasValidTarget = targets.stream()
                 .anyMatch(t -> t.provider() != null
                         && (ModelProvider.NOOP.matches(t.candidate().getProvider())
                             || StringUtils.hasText(t.provider().getApiKey())));
         if (!hasValidTarget) {
-            throw new RemoteException(NO_MODEL_OR_APIKEY_MESSAGE);
+            throw new RemoteException("未设置模型或API KEY，请检查",
+                    BaseErrorCode.REMOTE_ERROR);
         }
     }
 

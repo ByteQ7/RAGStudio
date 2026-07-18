@@ -172,10 +172,10 @@ public class ModelSelector {
             Map<String, DynamicModelConfig.ProviderEntry> providers) {
 
         String modelId = resolveId(candidate);
-        if (healthStore.isUnavailable(modelId)) {
-            return null;
-        }
 
+        // 注意：不在此处用 isUnavailable() 过滤熔断中模型。
+        // 熔断状态由 ModelRoutingExecutor 在运行时通过 allowCall() 处理，
+        // 确保候选列表完整，让 executor 的 fallback 循环能遍历所有模型。
         DynamicModelConfig.ProviderEntry provider = providers.get(candidate.getProvider());
         if (provider == null && !ModelProvider.NOOP.matches(candidate.getProvider())) {
             log.warn("Provider配置缺失: provider={}, modelId={}", candidate.getProvider(), modelId);

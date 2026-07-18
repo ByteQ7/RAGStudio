@@ -8,10 +8,10 @@ import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
 import com.byteq.ai.ragstudio.infra.enums.ModelProvider;
 import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
 import com.byteq.ai.ragstudio.infra.http.ModelClientException;
+import com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jModelFactory;
+import com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jStreamBridge;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.infra.springai.AiLogHolder;
-import com.byteq.ai.ragstudio.infra.springai.FluxToStreamCallbackBridge;
-import com.byteq.ai.ragstudio.infra.springai.SpringAiChatModelFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -21,26 +21,29 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.Prompt;
+import okhttp3.ResponseBody;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.time.Duration;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * DeepSeek ChatClient —— 绕过 Spring AI，直接通过 OkHttp 调用 API
+ * DeepSeek ChatClient
+ * <p>
+ * 同步调用：直接通过 OkHttp 调用 API（支持 thinking.budget_tokens 等非标准参数）。
+ * 流式调用：无思考时使用 LangChain4j；有非标准思考参数时使用 OkHttp + SSE 流式解析。
+ * </p>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DeepSeekChatClient implements ChatClient {
 
-    private final SpringAiChatModelFactory modelFactory;
+    private final LangChain4jModelFactory modelFactory;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final OkHttpClient okHttpClient = new OkHttpClient.Builder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -97,10 +100,123 @@ public class DeepSeekChatClient implements ChatClient {
 
     @Override
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
-        ChatModel model = modelFactory.getOrCreateChatModel(target);
-        Prompt prompt = modelFactory.toPrompt(request, target);
-        Flux<ChatResponse> flux = model.stream(prompt);
-        return FluxToStreamCallbackBridge.subscribe(flux, callback,
-                request.getThinkingLevel() != null ? request.getThinkingLevel() : 0, null);
+        // 判断是否需要通过原始 OkHttp 处理流式（当需要注入非标准 thinking 参数时）
+        Map<String, Object> reasoningParams = modelFactory.resolveReasoningParams(request, target);
+        boolean needsRawStream = !reasoningParams.isEmpty()
+                && (reasoningParams.containsKey("thinking") || reasoningParams.containsKey("extra_body"));
+
+        if (needsRawStream) {
+            return rawStreamChat(request, callback, target, reasoningParams);
+        }
+
+        // 标准流式：使用 LangChain4j
+        StreamingChatModel model = modelFactory.getOrCreateStreamingChatModel(target);
+        dev.langchain4j.model.chat.request.ChatRequest lcRequest =
+                modelFactory.buildLangChainChatRequest(request, target);
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        return LangChain4jStreamBridge.subscribe(model, lcRequest, callback, thinkingLevel, null);
+    }
+
+    /**
+     * 通过原始 OkHttp + SSE 解析实现流式调用（支持 extra_body 等非标准参数注入）
+     */
+    private StreamCancellationHandle rawStreamChat(
+            ChatRequest request, StreamCallback callback, ModelTarget target,
+            Map<String, Object> reasoningParams) {
+
+        String baseUrl = modelFactory.resolveBaseUrl(target);
+        String apiKey = modelFactory.resolveApiKey(target);
+        String traceId = String.valueOf(System.currentTimeMillis());
+        AtomicBoolean terminated = new AtomicBoolean(false);
+
+        Map<String, Object> reqBody = modelFactory.buildRequestBody(request, target, true);
+
+        try {
+            String jsonBody = objectMapper.writeValueAsString(reqBody);
+            AiLogHolder.log(traceId, "[REQ-STREAM] " + jsonBody + "\n");
+
+            Request httpReq = new Request.Builder()
+                    .url(baseUrl + "/chat/completions")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Accept", "text/event-stream")
+                    .post(RequestBody.create(jsonBody, JSON))
+                    .build();
+
+            Thread sseThread = new Thread(() -> {
+                try (Response httpResp = okHttpClient.newCall(httpReq).execute()) {
+                    if (!httpResp.isSuccessful()) {
+                        String errMsg = "DeepSeek 流式 HTTP " + httpResp.code();
+                        if (!terminated.compareAndSet(false, true)) return;
+                        callback.onError(new ModelClientException(errMsg,
+                                ModelClientErrorType.fromHttpStatus(httpResp.code()), httpResp.code()));
+                        return;
+                    }
+
+                    ResponseBody body = httpResp.body();
+                    if (body == null) {
+                        if (!terminated.compareAndSet(false, true)) return;
+                        callback.onError(new ModelClientException("DeepSeek 流式响应体为空",
+                                ModelClientErrorType.INVALID_RESPONSE, null));
+                        return;
+                    }
+
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(body.byteStream()))) {
+                        String line;
+                        while ((line = reader.readLine()) != null && !terminated.get()) {
+                            if (line.isEmpty() || line.startsWith(":")) continue;
+
+                            if (line.startsWith("data: ")) {
+                                String data = line.substring(6).trim();
+                                if ("[DONE]".equals(data)) {
+                                    break;
+                                }
+                                try {
+                                    JsonNode event = objectMapper.readTree(data);
+                                    JsonNode choices = event.path("choices");
+                                    if (choices.isArray() && choices.size() > 0) {
+                                        JsonNode delta = choices.get(0).path("delta");
+                                        if (delta.has("reasoning_content")) {
+                                            String rc = delta.get("reasoning_content").asText();
+                                            if (!rc.isEmpty()) {
+                                                callback.onThinking(rc);
+                                            }
+                                        }
+                                        if (delta.has("content")) {
+                                            String content = delta.get("content").asText();
+                                            if (!content.isEmpty()) {
+                                                callback.onContent(content);
+                                            }
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("DeepSeek SSE 解析异常: {}", e.getMessage());
+                                }
+                            }
+                        }
+                    }
+
+                    if (!terminated.compareAndSet(false, true)) return;
+                    callback.onComplete();
+
+                } catch (Exception e) {
+                    if (!terminated.compareAndSet(false, true)) return;
+                    callback.onError(e);
+                }
+            }, "deepseek-sse-" + traceId);
+            sseThread.setDaemon(true);
+            sseThread.start();
+
+        } catch (Exception e) {
+            if (terminated.compareAndSet(false, true)) {
+                callback.onError(e);
+            }
+        }
+
+        return () -> {
+            if (terminated.compareAndSet(false, true)) {
+                callback.onComplete();
+            }
+        };
     }
 }

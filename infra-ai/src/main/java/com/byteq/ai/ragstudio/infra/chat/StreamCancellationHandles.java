@@ -8,8 +8,7 @@ import lombok.NoArgsConstructor;
  * <p>
  * 提供常见的取消句柄构建方法，统一幂等取消语义。
  * <p>
- * 注意：原有的 OkHttp 相关取消句柄已随 Spring AI 迁移移除，
- * 流式取消现由 FluxToStreamCallbackBridge 通过 Reactor Disposable 实现。
+ * 注意：流式取消现由 LangChain4jStreamBridge 通过 AtomicBoolean 终止标记实现。
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class StreamCancellationHandles {

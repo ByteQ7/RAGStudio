@@ -21,19 +21,12 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * </p>
  *
  * <p>
- * <b>Spring AI 说明：</b>
- * 排除 Spring AI 的自动配置，由 SpringAiChatModelFactory 动态创建模型实例，
- * 以支持多提供商、多候选模型的路由切换架构。
+ * <b>模型管理说明：</b>
+ * 所有 AI 模型实例（ChatLanguageModel / StreamingChatLanguageModel / EmbeddingModel）
+ * 由 LangChain4jModelFactory 动态创建并缓存，以支持多提供商、多候选模型的路由切换架构。
  * </p>
  */
 @SpringBootApplication(exclude = {
-        // OpenAI 兼容模式 —— 排除全部自动配置，由 SpringAiChatModelFactory 动态创建
-        org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration.class,
-        org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration.class,
-        org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration.class,
-        org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration.class,
-        org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration.class,
-        org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration.class,
         // 排除 Spring Security 自动配置，应用使用 Sa-Token 进行认证
         org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration.class,
         org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration.class
@@ -45,7 +38,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.byteq.ai.ragstudio.knowledge.dao.mapper",
         "com.byteq.ai.ragstudio.user.dao.mapper",
         "com.byteq.ai.ragstudio.mcp.dao.mapper",
-        "com.byteq.ai.ragstudio.aimodel.dao.mapper"
+        "com.byteq.ai.ragstudio.aimodel.dao.mapper",
+        "com.byteq.ai.ragstudio.alert.dao.mapper"
 })
 public class RAGStudioApplication {
 

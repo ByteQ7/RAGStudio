@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -40,6 +41,19 @@ import java.util.function.Function;
 public class ModelRoutingExecutor {
 
     private final ModelHealthStore healthStore;
+
+    /**
+     * 所有候选模型均失败时的回调（传入尝试过的目标列表）
+     * <p>用于告警系统感知全失败事件</p>
+     */
+    private Consumer<List<ModelTarget>> onAllFailedCallback;
+
+    /**
+     * 设置全部失败回调
+     */
+    public void setOnAllFailedCallback(Consumer<List<ModelTarget>> callback) {
+        this.onAllFailedCallback = callback;
+    }
 
     /**
      * 带故障转移的模型调用执行
@@ -84,6 +98,8 @@ public class ModelRoutingExecutor {
             }
             // 检查断路器状态，如果模型当前不可用则跳过
             if (!healthStore.allowCall(target.id())) {
+                log.debug("{} model skipped by circuit breaker: modelId={}, provider={}",
+                        label, target.id(), target.candidate().getProvider());
                 continue;
             }
 
@@ -97,10 +113,15 @@ public class ModelRoutingExecutor {
                 // 调用失败：记录异常信息，标记失败状态，继续尝试下一个候选
                 last = e;
                 healthStore.markFailure(target.id());
-                log.warn("{} model failed, fallback to next. modelId={}, provider={}", label, target.id(), target.candidate().getProvider(), e);
+                log.error("{} model failed, fallback to next. modelId={}, provider={}, error={}",
+                        label, target.id(), target.candidate().getProvider(), e.getMessage());
             }
         }
 
+        // 所有候选模型均失败，通知告警系统
+        if (onAllFailedCallback != null) {
+            onAllFailedCallback.accept(targets);
+        }
         // 所有候选模型均失败，抛出异常
         throw new RemoteException(
                 "All " + label + " model candidates failed: " + (last == null ? "unknown" : last.getMessage()),

@@ -17,10 +17,10 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Spring AI: OpenAI 兼容协议（覆盖 DeepSeek / SiliconFlow / 百炼兼容模式） -->
+        <!-- LangChain4j: OpenAI 兼容协议 -->
         <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-openai</artifactId>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
         </dependency>
 
 
