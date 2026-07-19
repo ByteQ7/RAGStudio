@@ -3,7 +3,6 @@ import {
   Bot,
   Loader2,
   Pencil,
-  Star,
   Trash2,
   MessageSquare,
   FileSearch,
@@ -53,9 +52,7 @@ interface ModelGroupListProps {
   models: AiModel[];
   providerEnabled: boolean;
   togglingEnabledId: string | null;
-  settingDefaultId: string | null;
   onToggle: (model: AiModel) => void;
-  onSetDefault: (model: AiModel) => void;
   onEdit: (model: AiModel) => void;
   onDelete: (model: AiModel) => void;
   onPriorityChange: (model: AiModel, priority: number) => void;
@@ -67,9 +64,7 @@ export function ModelGroupList({
   models,
   providerEnabled,
   togglingEnabledId,
-  settingDefaultId,
   onToggle,
-  onSetDefault,
   onEdit,
   onDelete,
   onPriorityChange
@@ -153,7 +148,6 @@ export function ModelGroupList({
           <TabsContent key={cap} value={cap} className="mt-3 space-y-1.5">
             {currentModels.map((model) => {
               const isDisabled = model.enabled !== 1;
-              const isModelDefault = model.isDefault === 1;
 
               return (
                 <div
@@ -177,11 +171,6 @@ export function ModelGroupList({
                       >
                         {model.modelName}
                       </span>
-                      {isModelDefault && (
-                        <Badge className="rounded-full border-amber-200 bg-amber-50 px-2 py-0 text-[10px] font-medium text-amber-700">
-                          默认
-                        </Badge>
-                      )}
                       {model.supportsThinking === 1 && (
                         <Badge className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[10px] text-violet-600">
                           深度思考
@@ -229,35 +218,6 @@ export function ModelGroupList({
 
                   {/* 操作区 */}
                   <div className="flex items-center gap-0.5">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            className={cn(
-                              "inline-flex items-center justify-center rounded-lg p-1.5 transition-colors",
-                              isModelDefault
-                                ? "text-amber-500"
-                                : "text-gray-300 hover:text-amber-400"
-                            )}
-                            onClick={() => onSetDefault(model)}
-                            disabled={settingDefaultId === model.id || !providerEnabled}
-                          >
-                            {settingDefaultId === model.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Star
-                                className="h-3.5 w-3.5"
-                                fill={isModelDefault ? "currentColor" : "none"}
-                              />
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="text-xs">
-                          {isModelDefault ? "当前默认模型" : "设为默认"}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>

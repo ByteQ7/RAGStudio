@@ -49,7 +49,6 @@ import {
   createModel,
   updateModel,
   deleteModel,
-  setDefaultModel,
   updatePriorities,
   uploadProviderIcon
 } from "@/services/aiModelConfigService";
@@ -125,7 +124,6 @@ export function AiModelConfigPage() {
 
   // ---------- Action state ----------
   const [togglingProviderId, setTogglingProviderId] = useState<string | null>(null);
-  const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
   const [togglingModelEnabledId, setTogglingModelEnabledId] = useState<string | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchDialogOpen, setFetchDialogOpen] = useState(false);
@@ -388,19 +386,6 @@ export function AiModelConfigPage() {
     }
   };
 
-  const handleSetDefault = async (model: AiModel) => {
-    try {
-      setSettingDefaultId(model.id);
-      await setDefaultModel(model.id);
-      toast.success(`已将 ${model.modelName} 设为默认模型`);
-      await loadModels();
-    } catch (error) {
-      toast.error(getErrorMessage(error, "设置默认模型失败"));
-    } finally {
-      setSettingDefaultId(null);
-    }
-  };
-
   const handleModelToggle = async (model: AiModel) => {
     const nextEnabled = model.enabled === 1 ? 0 : 1;
     try {
@@ -512,12 +497,10 @@ export function AiModelConfigPage() {
             togglingProviderId={togglingProviderId}
             // Model operations
             onModelToggle={handleModelToggle}
-            onModelSetDefault={handleSetDefault}
             onModelEdit={openEditModel}
             onModelDelete={setDeleteModelTarget}
             onModelPriorityChange={handlePriorityChange}
             togglingModelEnabledId={togglingModelEnabledId}
-            settingDefaultId={settingDefaultId}
             // Fetch models
             onFetchModels={handleFetchModels}
             fetchingModels={fetchingModels}
