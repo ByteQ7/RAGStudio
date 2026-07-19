@@ -40,7 +40,7 @@
 
 ### 核心亮点
 
-- **设计文档智能解析管线**：PDF/Word/ODT 双通道提取——Tika XHTML→Markdown 保留表格/标题结构，嵌入图片由轻量多模态模型 (Qwen3.5-9B) 提取文字并以 Markdown 输出。Base64 data URI 内联传递图片，无需额外 S3 存储。
+- **设计文档智能解析管线**：PDF/Word/ODT 双通道并行提取——Tika XHTML→Markdown 提取文字，嵌入图片由轻量多模态模型 (Qwen3.5-9B) 独立提取文字，两者 Markdown 追加合并，互不覆盖。Base64 data URI 内联传递图片，无需额外 S3 存储。
 - **设计 A2A 多 Agent 架构**：基于 Agent Card / Task / Artifact 的 A2A 通信协议，Orchestrator 主 Agent 统一路由 + 子 Agent 专精执行。Task 驱动的工作流，Artifact 跟踪执行结果。已实现 Q&A 问答 Agent、Tool 工具执行 Agent、Title 标题生成 Agent，支持热插拔注册。
 - **设计并实现 ReACT Agent 循环引擎**：Thought → Action → Observation 循环，LLM 自主多步推理与工具调用。Plan-then-Execute 多步规划，三级降级解析器兼容 LLM 输出偏差，30 秒工具超时 + 失败自动重试，首轮未输出 ReACT 格式时注入纠正提示重试。
 - **设计混合检索系统**：pgvector 余弦相似度语义检索 + PostgreSQL tsvector 全文检索，通过 RRF（Reciprocal Rank Fusion）算法融合排序。两个检索通道并行执行，RRF 融合后经去重 → Rerank 排序输出。
@@ -608,11 +608,23 @@ PDF / Word / ODT / PPTX / 图片
         └──────────┘               │
                    │               │
                    ▼               │
-              合并文字 ────────────┘
+          Tika 文字 + "\n\n"
+          + 图片文字（追加） ────┘
                    │
                    ▼
              分块 + Embedding → 向量库
 ```
+
+**关键设计：文字与图片分别提取后追加合并**
+
+与常见的"Tika 提取不充分时用多模态兜底替换"方案不同，本系统是**始终并行提取**：
+
+| 通道 | 提取内容 | 输出格式 |
+|------|----------|----------|
+| Tika | 文档中所有文字 | Markdown |
+| 多模态模型 (Qwen3.5-9B) | 文档中所有嵌入图片 | Markdown |
+
+两者通过 `text + "\n\n" + visionText` **追加合并**，互不覆盖。这样文档中的文字段落和图片中的信息都能完整保留，不会出现"文字很多但图片信息被忽略"或"有图片但文字内容被替换"的问题。
 
 ### 实现细节
 
@@ -643,9 +655,20 @@ PDF / Word / ODT / PPTX / 图片
 
 **触发策略（runChunkProcess）：**
 ```
-if (text < 50 字 || 文档类型可能含嵌入图片) {
-    → 执行视觉提取
-    → 结果不为空则替换 text
+// 始终从 Tika 获取文字
+text = extractAsMarkdown(stream)
+
+// 文档类型含嵌入图片 → 独立提取图片文字并追加
+if (mayContainEmbeddedImages(fileType)) {
+    visionText = extractTextWithVision(fileUrl, fileType, fileName)
+    if (visionText 不为空) {
+        text = text + "\n\n" + visionText
+    }
+}
+
+// 纯图片文件无 Tika 文字
+if (mimeType.startsWith("image/") && text 为空) {
+    text = extractTextWithVision(...)
 }
 ```
 
