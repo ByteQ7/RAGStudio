@@ -332,16 +332,21 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             String text = parserSelector.select(ParserType.TIKA.getType()).extractAsMarkdown(is, documentDO.getDocName());
             long extractDuration = System.currentTimeMillis() - extractStart;
 
-            // 如果 Tika 提取文字不足或文档含嵌入图片，尝试用多模态模型兜底
-            if (documentVisionExtractor.needsVisionExtraction(text, mimeType)) {
-                log.info("Tika 提取文字不足 ({} 字符), 触发视觉提取: fileUrl={}, mimeType={}",
-                        text != null ? text.trim().length() : 0,
-                        documentDO.getFileUrl(), mimeType);
-
+            // 如果文档含嵌入图片（PDF/ODT/DOCX/PPTX），独立提取图片中的文字并追加
+            if (documentVisionExtractor.mayContainEmbeddedImages(mimeType)) {
                 String visionText = documentVisionExtractor.extractTextWithVision(
                         documentDO.getFileUrl(), mimeType, documentDO.getDocName());
                 if (StrUtil.isNotBlank(visionText)) {
-                    log.info("视觉提取成功: 获取到 {} 字符", visionText.length());
+                    log.info("视觉提取成功: 从嵌入图片中获取到 {} 字符", visionText.length());
+                    text = text + "\n\n" + visionText;
+                }
+            }
+            // 纯图片文件无 Tika 文字，视觉提取结果是唯一来源
+            if (mimeType != null && mimeType.startsWith("image/") && text.trim().isEmpty()) {
+                String visionText = documentVisionExtractor.extractTextWithVision(
+                        documentDO.getFileUrl(), mimeType, documentDO.getDocName());
+                if (StrUtil.isNotBlank(visionText)) {
+                    log.info("图片视觉提取成功: 获取到 {} 字符", visionText.length());
                     text = visionText;
                 }
             }
