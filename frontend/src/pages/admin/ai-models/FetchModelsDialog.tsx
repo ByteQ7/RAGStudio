@@ -68,6 +68,7 @@ export function FetchModelsDialog({
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [importNameOverrides, setImportNameOverrides] = useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = useState("");
 
   // 已有的 modelId 集合
   const existingModelIds = useMemo(
@@ -85,6 +86,7 @@ export function FetchModelsDialog({
       setRemoteModels([]);
       setSelectedIds(new Set());
       setImportNameOverrides({});
+      setSearchQuery("");
 
       try {
         const result = await fetchRemoteModels(provider.id);
@@ -99,17 +101,28 @@ export function FetchModelsDialog({
     doFetch();
   }, [open, provider]);
 
-  // 按 capability 分组
+  // 搜索过滤
+  const filteredModels = useMemo(() => {
+    if (!searchQuery.trim()) return remoteModels;
+    const q = searchQuery.trim().toLowerCase();
+    return remoteModels.filter(
+      (m) =>
+        m.modelId.toLowerCase().includes(q) ||
+        m.modelName.toLowerCase().includes(q)
+    );
+  }, [remoteModels, searchQuery]);
+
+  // 按 capability 分组（基于过滤后的模型）
   const groupedByCapability = useMemo(() => {
     const groups: Record<string, RemoteModelInfo[]> = {};
-    for (const model of remoteModels) {
+    for (const model of filteredModels) {
       for (const cap of model.capabilities) {
         if (!groups[cap]) groups[cap] = [];
         groups[cap].push(model);
       }
     }
     return groups;
-  }, [remoteModels]);
+  }, [filteredModels]);
 
   // 判断是否已存在
   const isExisting = (modelId: string) => existingModelIds.has(modelId);
@@ -235,15 +248,42 @@ export function FetchModelsDialog({
             </div>
           )}
 
-          {/* 模型列表 */}
-          {!loading && !error && remoteModels.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <AlertCircle className="mb-3 h-8 w-8" strokeWidth={1.5} />
-              <p className="text-sm">该供应商暂无可获取的模型列表</p>
+          {/* 搜索框 */}
+          {!loading && !error && remoteModels.length > 0 && (
+            <div className="relative mb-3">
+              <svg
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索模型名称或 ID..."
+                className="h-9 w-full rounded-xl border border-gray-200/60 bg-white pl-9 pr-3 text-sm text-gray-700 placeholder:text-gray-400 transition-all duration-200 focus:border-indigo-300/50 focus:shadow-[0_0_0_3px_rgba(99,102,241,0.06)] focus:outline-none"
+              />
             </div>
           )}
 
-          {!loading && !error && remoteModels.length > 0 && (
+          {/* 模型列表 */}
+          {!loading && !error && filteredModels.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+              <AlertCircle className="mb-3 h-8 w-8" strokeWidth={1.5} />
+              <p className="text-sm">
+                {searchQuery.trim() ? `没有匹配 "${searchQuery.trim()}" 的模型` : "该供应商暂无可获取的模型列表"}
+              </p>
+            </div>
+          )}
+
+          {!loading && !error && filteredModels.length > 0 && (
             <div>
               {/* Tab 导航 */}
               <Tabs defaultValue={availableCaps[0]} className="w-full">
