@@ -220,7 +220,7 @@ public class LangChain4jModelFactory {
 
             for (String url : imageUrls) {
                 String dataUri = resolveImageDataUri(url);
-                if (dataUri != null && !dataUri.isEmpty() && !dataUri.equals(url)) {
+                if (dataUri != null && dataUri.startsWith("data:")) {
                     contents.add(new ImageContent(dataUri));
                 }
             }
@@ -334,7 +334,7 @@ public class LangChain4jModelFactory {
                             msg.getContent() != null ? msg.getContent() : ""));
                     for (String url : imageUrls) {
                         String dataUri = resolveImageDataUri(url);
-                        if (dataUri != null && !dataUri.isEmpty() && !dataUri.equals(url)) {
+                        if (dataUri != null && dataUri.startsWith("data:")) {
                             contentArray.add(Map.of("type", "image_url",
                                     "image_url", Map.of("url", dataUri)));
                         }
