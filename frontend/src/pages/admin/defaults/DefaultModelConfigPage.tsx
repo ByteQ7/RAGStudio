@@ -35,7 +35,7 @@ const CONFIG_KEY_DESCRIPTIONS: Record<string, string> = {
   summary: "对话历史摘要压缩时使用的模型",
   title: "自动生成对话标题时使用的模型",
   multimodal: "聊天中用户上传图片时使用的模型（需支持多模态）",
-  doc_image: "文档入库时，Tika 提取文字不足时使用多模态模型解析（需支持多模态）"
+  doc_image: "文档入库时，提取嵌入图片中的文字（需支持多模态）"
 };
 
 export function DefaultModelConfigPage() {
