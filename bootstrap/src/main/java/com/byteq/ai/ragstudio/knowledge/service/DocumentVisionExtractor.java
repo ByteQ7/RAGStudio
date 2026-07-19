@@ -113,7 +113,7 @@ public class DocumentVisionExtractor {
 
             // 构建多模态请求：将图片 URL 附在 user message 上
             ChatMessage userMsg = ChatMessage.user(
-                    "请提取以下文档中的所有文字内容，保持原有结构和顺序。如果包含表格、图表，请尽量还原其内容。"
+                    "请提取以下文档中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法（| 列名 | 列名 |\\n|--- |--- |\\n| 内容 |），标题用 # 号标记，列表保持层级。"
             );
             userMsg.setImageUrls(imageUrls);
 
