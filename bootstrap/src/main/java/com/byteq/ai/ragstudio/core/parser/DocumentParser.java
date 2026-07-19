@@ -61,6 +61,22 @@ public interface DocumentParser {
     }
 
     /**
+     * 从文档中提取 Markdown 格式的内容（保留表格、标题、列表等结构）
+     * <p>
+     * 相比 {@link #extractText} 输出的纯文本，Markdown 格式能最大程度保留
+     * 文档的表格、标题层级、列表等结构化信息，有利于后续分块和检索。
+     * </p>
+     *
+     * @param stream   文档输入流
+     * @param fileName 文件名（用于推断文档类型和编码）
+     * @return 解析后的 Markdown 格式内容
+     */
+    default String extractAsMarkdown(InputStream stream, String fileName) {
+        // 默认降级为纯文本提取
+        return extractText(stream, fileName);
+    }
+
+    /**
      * 检查当前解析器是否支持指定的 MIME 类型
      * <p>
      * 由 {@link DocumentParserSelector#selectByMimeType(String)} 调用，

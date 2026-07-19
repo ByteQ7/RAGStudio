@@ -9,6 +9,11 @@ import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.pdf.PDFParserConfig;
 import org.apache.tika.sax.BodyContentHandler;
+import org.apache.tika.sax.ToXMLContentHandler;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
@@ -103,6 +108,218 @@ public class TikaDocumentParser implements DocumentParser {
             log.error("从文件中提取文本内容失败: {}", fileName, e);
             throw new ServiceException("解析文件失败: " + fileName);
         }
+    }
+
+    /**
+     * 提取 Markdown 格式内容（保留表格、标题、列表等结构）
+     * <p>
+     * 使用 Tika 的 ToXMLContentHandler 输出 XHTML，再经 Jsoup 解析后
+     * 转换为 Markdown 格式，最大程度保留文档的表格和层级结构。
+     * </p>
+     */
+    @Override
+    public String extractAsMarkdown(InputStream stream, String fileName) {
+        try {
+            AutoDetectParser parser = new AutoDetectParser(TikaConfig.getDefaultConfig());
+            ToXMLContentHandler handler = new ToXMLContentHandler();
+            ParseContext parseContext = new ParseContext();
+            parseContext.set(PDFParserConfig.class, PDF_CONFIG);
+            parser.parse(stream, handler, new Metadata(), parseContext);
+            String xhtml = handler.toString();
+            return convertXhtmlToMarkdown(xhtml);
+        } catch (Exception e) {
+            log.error("Tika Markdown 提取失败: {}", fileName, e);
+            // 降级为纯文本提取
+            try {
+                stream.reset();
+                return extractText(stream, fileName);
+            } catch (Exception ex) {
+                throw new ServiceException("解析文件失败: " + fileName);
+            }
+        }
+    }
+
+    /**
+     * 将 Tika 输出的 XHTML 转换为 Markdown 格式
+     */
+    private String convertXhtmlToMarkdown(String xhtml) {
+        if (xhtml == null || xhtml.isBlank()) return "";
+
+        Document doc = Jsoup.parse(xhtml);
+        StringBuilder md = new StringBuilder();
+
+        // 遍历 body 的子元素
+        Element body = doc.body();
+        if (body == null) return TextCleanupUtil.cleanup(doc.text());
+
+        for (Element el : body.children()) {
+            convertElement(el, md, 0);
+        }
+
+        return TextCleanupUtil.cleanup(md.toString().strip());
+    }
+
+    // 递归转换 XHTML 元素为 Markdown
+    private void convertElement(Element el, StringBuilder md, int depth) {
+        String tag = el.tagName().toLowerCase();
+
+        switch (tag) {
+            case "h1" -> md.append("# ").append(el.text()).append("\n\n");
+            case "h2" -> md.append("## ").append(el.text()).append("\n\n");
+            case "h3" -> md.append("### ").append(el.text()).append("\n\n");
+            case "h4" -> md.append("#### ").append(el.text()).append("\n\n");
+            case "h5" -> md.append("##### ").append(el.text()).append("\n\n");
+            case "h6" -> md.append("###### ").append(el.text()).append("\n\n");
+            case "p" -> {
+                md.append(convertInline(el)).append("\n\n");
+            }
+            case "ul", "ol" -> {
+                boolean ordered = tag.equals("ol");
+                int index = 1;
+                for (Element li : el.children()) {
+                    if (li.tagName().equals("li")) {
+                        String prefix = ordered ? (index++) + ". " : "- ";
+                        md.append("  ".repeat(depth)).append(prefix).append(convertInline(li)).append("\n");
+                        // 处理嵌套列表
+                        for (Element child : li.children()) {
+                            if (child.tagName().equals("ul") || child.tagName().equals("ol")) {
+                                convertElement(child, md, depth + 1);
+                            }
+                        }
+                    }
+                }
+                md.append("\n");
+            }
+            case "table" -> {
+                convertTable(el, md);
+                md.append("\n");
+            }
+            case "pre" -> {
+                md.append("```\n").append(el.text()).append("\n```\n\n");
+            }
+            case "blockquote" -> {
+                for (Element child : el.children()) {
+                    String text = convertInline(child);
+                    if (!text.isBlank()) {
+                        md.append("> ").append(text).append("\n");
+                    }
+                }
+                md.append("\n");
+            }
+            case "hr" -> md.append("---\n\n");
+            case "div" -> {
+                for (Element child : el.children()) {
+                    convertElement(child, md, depth);
+                }
+            }
+            default -> {
+                // 其他标签当作段落处理
+                String text = convertInline(el);
+                if (!text.isBlank()) {
+                    md.append(text).append("\n\n");
+                }
+            }
+        }
+    }
+
+    // 转换内联元素为 Markdown 文本
+    private String convertInline(Element el) {
+        StringBuilder sb = new StringBuilder();
+        for (org.jsoup.nodes.Node node : el.childNodes()) {
+            if (node instanceof org.jsoup.nodes.TextNode tn) {
+                sb.append(tn.text());
+            } else if (node instanceof Element child) {
+                String tag = child.tagName().toLowerCase();
+                switch (tag) {
+                    case "strong", "b" -> sb.append("**").append(child.text()).append("**");
+                    case "em", "i" -> sb.append("*").append(child.text()).append("*");
+                    case "code" -> sb.append("`").append(child.text()).append("`");
+                    case "a" -> {
+                        String href = child.attr("href");
+                        if (!href.isBlank()) {
+                            sb.append("[").append(child.text()).append("](").append(href).append(")");
+                        } else {
+                            sb.append(child.text());
+                        }
+                    }
+                    case "br" -> sb.append("\n");
+                    case "img" -> {
+                        String src = child.attr("src");
+                        String alt = child.attr("alt");
+                        if (!src.isBlank()) {
+                            sb.append("![").append(alt).append("](").append(src).append(")");
+                        }
+                    }
+                    case "sub" -> sb.append("<sub>").append(child.text()).append("</sub>");
+                    case "sup" -> sb.append("<sup>").append(child.text()).append("</sup>");
+                    default -> sb.append(child.text());
+                }
+            }
+        }
+        // 如果元素本身还有自己的文本（直接文本节点）
+        if (el.childNodes().isEmpty()) {
+            sb.append(el.text());
+        }
+        String result = sb.toString().replaceAll("\\s+", " ").trim();
+        // 转义 Markdown 特殊字符
+        return result;
+    }
+
+    // 转换表格为 Markdown 表格格式
+    private void convertTable(Element table, StringBuilder md) {
+        Elements rows = table.select("tr");
+        if (rows.isEmpty()) return;
+
+        int colCount = 0;
+        // 计算最大列数
+        for (Element row : rows) {
+            int cols = row.select("th, td").size();
+            if (cols > colCount) colCount = cols;
+        }
+        if (colCount == 0) return;
+
+        boolean headerDone = false;
+        for (int i = 0; i < rows.size(); i++) {
+            Element row = rows.get(i);
+            Elements cells = row.select("th, td");
+            if (cells.isEmpty()) continue;
+
+            // 写入表头分隔行
+            if (!headerDone && row.select("th").size() > 0) {
+                appendTableRow(md, cells, colCount);
+                // 分隔线
+                md.append("|");
+                for (int c = 0; c < colCount; c++) {
+                    md.append(" --- |");
+                }
+                md.append("\n");
+                headerDone = true;
+            } else if (!headerDone) {
+                // 无 thead，第一行作为表头
+                appendTableRow(md, cells, colCount);
+                md.append("|");
+                for (int c = 0; c < colCount; c++) {
+                    md.append(" --- |");
+                }
+                md.append("\n");
+                headerDone = true;
+            } else {
+                appendTableRow(md, cells, colCount);
+            }
+        }
+    }
+
+    private void appendTableRow(StringBuilder md, Elements cells, int colCount) {
+        md.append("|");
+        for (int c = 0; c < colCount; c++) {
+            if (c < cells.size()) {
+                String text = cells.get(c).text().replace("|", "\\|");
+                md.append(" ").append(text).append(" |");
+            } else {
+                md.append(" |");
+            }
+        }
+        md.append("\n");
     }
 
     @Override

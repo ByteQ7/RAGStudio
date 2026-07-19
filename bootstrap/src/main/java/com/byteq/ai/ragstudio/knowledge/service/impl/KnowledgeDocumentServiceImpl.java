@@ -328,7 +328,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         long extractStart = System.currentTimeMillis();
         try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
-            String text = parserSelector.select(ParserType.TIKA.getType()).extractText(is, documentDO.getDocName());
+            // 优先提取 Markdown 格式（保留表格、标题等结构）
+            String text = parserSelector.select(ParserType.TIKA.getType()).extractAsMarkdown(is, documentDO.getDocName());
             long extractDuration = System.currentTimeMillis() - extractStart;
 
             // 如果 Tika 提取的文字太少，尝试用多模态模型兜底
