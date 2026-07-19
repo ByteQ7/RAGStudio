@@ -22,6 +22,7 @@
 - [亮点十二：全链路追踪](#亮点十二全链路追踪)
 - [亮点十三：前端引用渲染系统](#亮点十三前端引用渲染系统)
 - [亮点十四：A2A 多 Agent 架构](#亮点十四a2a-多-agent-架构)
+- [亮点十五：文档智能解析管线](#亮点十五文档智能解析管线tika--markdown--多模态兜底)
 - [AI 设计模式总结](#ai-设计模式总结)
 
 ---
@@ -39,6 +40,7 @@
 
 ### 核心亮点
 
+- **设计文档智能解析管线**：PDF/Word/ODT 双通道提取——Tika XHTML→Markdown 保留表格/标题结构，嵌入图片由轻量多模态模型 (Qwen3.5-9B) 提取文字并以 Markdown 输出。Base64 data URI 内联传递图片，无需额外 S3 存储。
 - **设计 A2A 多 Agent 架构**：基于 Agent Card / Task / Artifact 的 A2A 通信协议，Orchestrator 主 Agent 统一路由 + 子 Agent 专精执行。Task 驱动的工作流，Artifact 跟踪执行结果。已实现 Q&A 问答 Agent、Tool 工具执行 Agent、Title 标题生成 Agent，支持热插拔注册。
 - **设计并实现 ReACT Agent 循环引擎**：Thought → Action → Observation 循环，LLM 自主多步推理与工具调用。Plan-then-Execute 多步规划，三级降级解析器兼容 LLM 输出偏差，30 秒工具超时 + 失败自动重试，首轮未输出 ReACT 格式时注入纠正提示重试。
 - **设计混合检索系统**：pgvector 余弦相似度语义检索 + PostgreSQL tsvector 全文检索，通过 RRF（Reciprocal Rank Fusion）算法融合排序。两个检索通道并行执行，RRF 融合后经去重 → Rerank 排序输出。
@@ -531,6 +533,132 @@ MarkdownRenderer 收到 content + citations
 ---
 
 ## 亮点十四：A2A 多 Agent 架构
+
+...
+
+---
+
+## 亮点十五：文档智能解析管线（Tika → Markdown + 多模态兜底）
+
+### 背景
+
+企业知识库中包含大量 PDF、Word、ODT 等格式的文档，这些文档既有文字又有图片、表格、图表等复杂结构。传统方案只用 Apache Tika 提取纯文本，会丢失表格结构和图片中的文字信息。
+
+### 设计思路
+
+双通道互补提取：
+1. **文字通道**：Tika 解析 XHTML → 转 Markdown，保留表格、标题、列表等结构化信息
+2. **图片通道**：从文档中提取嵌入图片（或 PDF 渲染为图片）→ 轻量多模态模型 (Qwen3.5-9B) → Markdown 输出
+
+两通道结果合并后分块 + Embedding，最大程度保留文档的原始结构和完整信息。
+
+### Pipeline 架构
+
+```
+PDF / Word / ODT / PPTX / 图片
+        │
+        ├─ Tika 解析 (ToXMLContentHandler)
+        │     │
+        │     ▼
+        │  XHTML → Jsoup 递归转换
+        │     │  <h1~h6>     → # ~ ###### 标题
+        │     │  <table>     → | 列名 | 列名 |\n | --- | --- |\n | 内容 |
+        │     │  <ul>/<ol>   → - / 1. 列表，支持嵌套
+        │     │  <strong>    → **加粗**
+        │     │  <code>/<pre>→ `代码` / ```代码块```
+        │     │  <a>         → [链接](url)
+        │     │  <blockquote>→ > 引用
+        │     │
+        │     ▼
+        │  Markdown 文本
+        │
+        ├── 判断是否需要视觉补充 ──┐
+        │   • 提取文字 < 50 字     │
+        │   • 文档类型含嵌入图片    │
+        │   (PDF/ODT/DOCX/PPTX)   │
+        │                         │
+        │         需要              │
+        │          │               │
+        │          ▼               │
+        │   ┌─ PDF  → PDFBox 渲染  │
+        │   │        每页为图片     │
+        │   │         (150 DPI)    │
+        │   │                      │
+        │   ├─ ODT/DOCX/PPTX       │
+        │   │   → ZIP 解压         │
+        │   │   → 提取嵌入图片     │
+        │   │   (Pictures/,        │
+        │   │    word/media/,      │
+        │   │    ppt/media/)       │
+        │   │                      │
+        │   └─ 图片文件            │
+        │       → 直接使用          │
+        │          │               │
+        │          ▼               │
+        │   Base64 data URI        │
+        │          │               │
+        │          ▼               │
+        │   轻量多模态模型          │
+        │   (Qwen3.5-9B)           │
+        │          │               │
+        │          ▼               │
+        │   Markdown 格式输出      │
+        │   (同结构化格式)          │
+        │          │               │
+        └──────────┘               │
+                   │               │
+                   ▼               │
+              合并文字 ────────────┘
+                   │
+                   ▼
+             分块 + Embedding → 向量库
+```
+
+### 实现细节
+
+**文字通道（TikaDocumentParser.extractAsMarkdown()）：**
+
+关键实现在 `TikaDocumentParser.java`：
+- 使用 `ToXMLContentHandler` 替代 `BodyContentHandler`，获取 XHTML
+- `convertXhtmlToMarkdown()` 用 Jsoup 解析 XHTML 为 DOM 树
+- `convertElement()` 递归处理各节点，支持 6 级标题、嵌套列表、Markdown 表格、代码块、引用块
+- `convertTable()` 通过 `<tr>` / `<th>` / `<td>` 构建 `| --- | --- |` 格式的 Markdown 表格
+- `convertInline()` 处理内联样式：粗体、斜体、行内代码、链接、图片、上下标
+- 失败时降级为 `extractText()` 纯文本提取
+
+**图片通道（DocumentVisionExtractor）：**
+
+| 文档类型 | 图片提取方式 | 原因 |
+|----------|-------------|------|
+| PDF | PDFBox 渲染 150 DPI | PDF 不是 ZIP 包，无嵌入文件 |
+| ODT/DOCX/PPTX | ZIP 解压提取 `Pictures/`、`word/media/` 等目录 | 原生嵌入图片 |
+| 图片文件 | 直接读取字节 | 本身就是图片 |
+
+提取的图片统一转 Base64 data URI（`data:image/jpeg;base64,...`），通过 `ChatMessage.imageUrls` 传递给多模态模型（默认 `qwen3.5-9B`），prompt 要求以 Markdown 格式输出文字内容。
+
+**Base64 传递优化：**
+- 不将提取的图片上传到 S3（避免存储浪费和权限管理）
+- 直接通过 `data:` URI 内联传递给 LLM API
+- S3 中只存储原始文档文件
+
+**触发策略（runChunkProcess）：**
+```
+if (text < 50 字 || 文档类型可能含嵌入图片) {
+    → 执行视觉提取
+    → 结果不为空则替换 text
+}
+```
+
+**格式一致性：**
+- 无论来自文字通道还是图片通道，最终输出都是 Markdown
+- 分块时统一按 Markdown 文本处理
+- 检索时保留 Markdown 格式，LLM 上下文中的表格/标题结构清晰
+
+---
+
+## 模式总结
+
+### 已使用的设计模式
 
 ### 背景
 
