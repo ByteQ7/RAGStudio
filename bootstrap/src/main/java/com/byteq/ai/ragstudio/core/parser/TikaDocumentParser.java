@@ -120,22 +120,28 @@ public class TikaDocumentParser implements DocumentParser {
     @Override
     public String extractAsMarkdown(InputStream stream, String fileName) {
         try {
-            AutoDetectParser parser = new AutoDetectParser(TikaConfig.getDefaultConfig());
-            ToXMLContentHandler handler = new ToXMLContentHandler();
-            ParseContext parseContext = new ParseContext();
-            parseContext.set(PDFParserConfig.class, PDF_CONFIG);
-            parser.parse(stream, handler, new Metadata(), parseContext);
-            String xhtml = handler.toString();
-            return convertXhtmlToMarkdown(xhtml);
-        } catch (Exception e) {
-            log.error("Tika Markdown 提取失败: {}", fileName, e);
-            // 降级为纯文本提取
-            try {
-                stream.reset();
-                return extractText(stream, fileName);
-            } catch (Exception ex) {
-                throw new ServiceException("解析文件失败: " + fileName);
+            // 预读字节到内存，支持 reset() 以便降级时重用
+            byte[] bytes = stream.readAllBytes();
+
+            // 首次尝试：Markdown 提取
+            try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes)) {
+                AutoDetectParser parser = new AutoDetectParser(TikaConfig.getDefaultConfig());
+                ToXMLContentHandler handler = new ToXMLContentHandler();
+                ParseContext parseContext = new ParseContext();
+                parseContext.set(PDFParserConfig.class, PDF_CONFIG);
+                parser.parse(bis, handler, new Metadata(), parseContext);
+                String xhtml = handler.toString();
+                return convertXhtmlToMarkdown(xhtml);
+            } catch (Exception e) {
+                log.warn("Tika Markdown 提取失败，降级为纯文本: {}", fileName, e);
+                // 降级：纯文本提取
+                try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes)) {
+                    return TIKA.parseToString(bis);
+                }
             }
+        } catch (Exception e) {
+            log.error("读取文件流失败: {}", fileName, e);
+            throw new ServiceException("解析文件失败: " + fileName);
         }
     }
 

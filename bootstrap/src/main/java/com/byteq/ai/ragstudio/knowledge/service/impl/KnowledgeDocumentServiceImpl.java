@@ -341,8 +341,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     text = text + "\n\n" + visionText;
                 }
             }
-            // 纯图片文件无 Tika 文字，视觉提取结果是唯一来源
-            if (mimeType != null && mimeType.startsWith("image/") && text.trim().isEmpty()) {
+            // 纯图片文件（扩展名如 png/jpg/gif 等），视觉提取是唯一文字来源
+            if (isImageExtension(mimeType) && text.trim().isEmpty()) {
+                log.info("图片文件, 触发视觉提取: mimeType={}, fileUrl={}", mimeType, documentDO.getFileUrl());
                 String visionText = documentVisionExtractor.extractTextWithVision(
                         documentDO.getFileUrl(), mimeType, documentDO.getDocName());
                 if (StrUtil.isNotBlank(visionText)) {
@@ -364,6 +365,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         } catch (Exception e) {
             throw new RuntimeException("文档内容提取或分块失败", e);
         }
+    }
+
+    // 判断文件扩展名是否为常见图片格式
+    private static boolean isImageExtension(String fileType) {
+        if (fileType == null) return false;
+        return switch (fileType.toLowerCase()) {
+            case "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "svg", "ico" -> true;
+            default -> fileType.startsWith("image/");
+        };
     }
 
     private record ChunkProcessResult(List<VectorChunk> chunks, long extractDuration, long chunkDuration,

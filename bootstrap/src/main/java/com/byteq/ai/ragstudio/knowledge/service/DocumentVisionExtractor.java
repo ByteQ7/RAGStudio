@@ -18,9 +18,12 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -64,6 +67,11 @@ public class DocumentVisionExtractor {
             "docx", "xlsx", "pptx",
             "doc", "xls", "ppt"
     );
+
+    // ZIP 图片提取上限
+    private static final int MAX_EMBEDDED_IMAGES = 20;
+    private static final long MAX_TOTAL_EXTRACTED_BYTES = 50 * 1024 * 1024; // 50 MB
+    private static final long MAX_PER_ENTRY_BYTES = 10 * 1024 * 1024;       // 10 MB
 
     // ==================== 判断方法 ====================
 
@@ -197,7 +205,7 @@ public class DocumentVisionExtractor {
             }
 
             if (totalPages > MAX_PDF_PAGES) {
-                log.info("PDF 页数超过限制，仅处理前 {} 页（共 {} 页）", MAX_PDF_PAGES, totalPages);
+                log.warn("PDF 页数超过限制，仅处理前 {} 页（共 {} 页），超出页面的图片内容将被忽略", MAX_PDF_PAGES, totalPages);
             }
         }
         return dataUris;
@@ -215,55 +223,91 @@ public class DocumentVisionExtractor {
      */
     private List<String> extractImagesFromZip(byte[] zipBytes) {
         List<String> dataUris = new ArrayList<>();
-        List<String> imagePaths = List.of(
-                "Pictures/", "media/",
-                "word/media/", "ppt/media/",
-                "META-INF/"  // 排除
+        Set<String> imageHashes = new HashSet<>();
+        long totalBytes = 0;
+        List<String> imagePathPrefixes = List.of(
+                "pictures/", "media/",
+                "word/media/", "ppt/media/"
         );
+        Set<String> imageExts = Set.of("png", "jpg", "jpeg", "gif", "bmp", "webp", "svg");
 
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 if (entry.isDirectory()) continue;
 
+                // 已达上限
+                if (dataUris.size() >= MAX_EMBEDDED_IMAGES) {
+                    log.warn("嵌入图片数量超过限制 ({}), 停止提取", MAX_EMBEDDED_IMAGES);
+                    break;
+                }
+
                 String name = entry.getName().replace('\\', '/').toLowerCase();
+
                 // 跳过 META-INF
                 if (name.startsWith("meta-inf/")) continue;
 
-                // 检查是否在图片目录中
-                boolean isImage = false;
-                for (String imgPath : imagePaths) {
-                    if (name.startsWith(imgPath.toLowerCase())) {
-                        isImage = true;
-                        break;
-                    }
-                }
-                // 也检测图片扩展名
+                // 检查是否为图片
+                boolean isImage = imagePathPrefixes.stream().anyMatch(name::startsWith);
                 if (!isImage) {
                     String ext = name.contains(".") ? name.substring(name.lastIndexOf('.') + 1) : "";
-                    isImage = List.of("png", "jpg", "jpeg", "gif", "bmp", "webp", "svg").contains(ext);
+                    isImage = imageExts.contains(ext);
                 }
-
                 if (!isImage) continue;
 
-                byte[] imageBytes = zis.readAllBytes();
-                if (imageBytes.length == 0) continue;
+                // 单 entry 大小限制（先读前 4 字节检测 magic number，再整体读）
+                long entrySize = entry.getCompressedSize();
+                if (entrySize > MAX_PER_ENTRY_BYTES) {
+                    log.warn("跳过超大嵌入图片: {}, compressedSize={}MB", name, entrySize / 1024 / 1024);
+                    continue;
+                }
 
-                // 检测 MIME
+                byte[] imageBytes = zis.readAllBytes();
+                if (imageBytes.length == 0 || imageBytes.length > MAX_PER_ENTRY_BYTES) continue;
+
+                // 总量限制
+                totalBytes += imageBytes.length;
+                if (totalBytes > MAX_TOTAL_EXTRACTED_BYTES) {
+                    log.warn("嵌入图片总大小超过限制 ({}MB), 停止提取", MAX_TOTAL_EXTRACTED_BYTES / 1024 / 1024);
+                    break;
+                }
+
+                // 内容去重（相同图片只处理一次）
+                String hash = sha256(imageBytes);
+                if (imageHashes.contains(hash)) {
+                    log.debug("跳过重复图片: {}", name);
+                    continue;
+                }
+                imageHashes.add(hash);
+
+                // 检测 MIME 并生成 data URI
                 String mime = detectImageMime(name, imageBytes);
-                String dataUri = toBase64DataUri(imageBytes, mime);
-                dataUris.add(dataUri);
-                log.debug("从 ZIP 提取嵌入图片: {}, size={}KB", name, imageBytes.length / 1024);
+                dataUris.add(toBase64DataUri(imageBytes, mime));
+                log.debug("从 ZIP 提取嵌入图片: {}, size={}KB, hash={}", name, imageBytes.length / 1024, hash.substring(0, 8));
             }
         } catch (Exception e) {
             log.warn("从 ZIP 提取嵌入图片失败: {}", e.getMessage());
         }
 
         if (dataUris.isEmpty()) {
-            log.warn("文档中未找到嵌入图片");
+            log.info("文档中未找到嵌入图片");
+        } else {
+            log.info("从 ZIP 中提取了 {} 张嵌入图片", dataUris.size());
         }
 
         return dataUris;
+    }
+
+    private String sha256(byte[] data) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(data);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return String.valueOf(data.length);
+        }
     }
 
     // ==================== 工具方法 ====================
