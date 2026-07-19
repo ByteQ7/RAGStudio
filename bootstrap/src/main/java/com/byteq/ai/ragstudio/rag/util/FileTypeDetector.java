@@ -14,7 +14,14 @@ public final class FileTypeDetector {
             Map.entry("md", "markdown"),
             Map.entry("markdown", "markdown"),
             Map.entry("doc", "doc"),
-            Map.entry("docx", "docx")
+            Map.entry("docx", "docx"),
+            Map.entry("odt", "odt"),
+            Map.entry("ods", "ods"),
+            Map.entry("odp", "odp"),
+            Map.entry("ppt", "ppt"),
+            Map.entry("pptx", "pptx"),
+            Map.entry("xls", "xls"),
+            Map.entry("xlsx", "xlsx")
     );
 
     private static final Map<String, String> MIME_MAP = Map.ofEntries(
@@ -24,7 +31,14 @@ public final class FileTypeDetector {
             Map.entry("text/x-markdown", "markdown"),
             Map.entry("application/msword", "doc"),
             Map.entry("application/vnd.ms-word", "doc"),
-            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx")
+            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
+            Map.entry("application/vnd.oasis.opendocument.text", "odt"),
+            Map.entry("application/vnd.oasis.opendocument.spreadsheet", "ods"),
+            Map.entry("application/vnd.oasis.opendocument.presentation", "odp"),
+            Map.entry("application/vnd.ms-powerpoint", "ppt"),
+            Map.entry("application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"),
+            Map.entry("application/vnd.ms-excel", "xls"),
+            Map.entry("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx")
     );
 
     private FileTypeDetector() {

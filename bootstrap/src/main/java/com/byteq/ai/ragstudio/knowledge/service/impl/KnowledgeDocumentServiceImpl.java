@@ -332,8 +332,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             String text = parserSelector.select(ParserType.TIKA.getType()).extractAsMarkdown(is, documentDO.getDocName());
             long extractDuration = System.currentTimeMillis() - extractStart;
 
-            // 如果 Tika 提取的文字太少，尝试用多模态模型兜底
-            if (documentVisionExtractor.needsVisionExtraction(text)) {
+            // 如果 Tika 提取文字不足或文档含嵌入图片，尝试用多模态模型兜底
+            if (documentVisionExtractor.needsVisionExtraction(text, mimeType)) {
                 log.info("Tika 提取文字不足 ({} 字符), 触发视觉提取: fileUrl={}, mimeType={}",
                         text != null ? text.trim().length() : 0,
                         documentDO.getFileUrl(), mimeType);
