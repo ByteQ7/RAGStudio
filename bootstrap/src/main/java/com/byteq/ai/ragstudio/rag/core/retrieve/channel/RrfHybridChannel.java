@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 
 /**
@@ -77,21 +76,43 @@ public class RrfHybridChannel implements SearchChannel {
         log.info("执行混合检索（向量 + 关键词 + RRF）");
 
         try {
-            // 并行调用向量通道和关键词通道
+            // 并行调用向量通道和关键词通道（各自容错，互不影响）
             CompletableFuture<SearchChannelResult> vectorFuture =
-                    CompletableFuture.supplyAsync(() -> vectorChannel.search(context), executor);
+                    CompletableFuture.supplyAsync(() -> vectorChannel.search(context), executor)
+                            .exceptionally(ex -> {
+                                log.error("向量检索通道异常", ex);
+                                return SearchChannelResult.builder()
+                                        .channelType(SearchChannelType.KNOWLEDGE_BASE_SELECTION)
+                                        .channelName(vectorChannel.getName())
+                                        .chunks(List.of())
+                                        .latencyMs(0)
+                                        .build();
+                            });
             CompletableFuture<SearchChannelResult> keywordFuture =
-                    CompletableFuture.supplyAsync(() -> keywordChannel.search(context), executor);
+                    CompletableFuture.supplyAsync(() -> keywordChannel.search(context), executor)
+                            .exceptionally(ex -> {
+                                log.error("关键词检索通道异常", ex);
+                                return SearchChannelResult.builder()
+                                        .channelType(SearchChannelType.KEYWORD_ES)
+                                        .channelName(keywordChannel.getName())
+                                        .chunks(List.of())
+                                        .latencyMs(0)
+                                        .build();
+                            });
 
-            CompletableFuture.allOf(vectorFuture, keywordFuture).join();
-
-            SearchChannelResult vectorResult = vectorFuture.get();
-            SearchChannelResult keywordResult = keywordFuture.get();
+            SearchChannelResult vectorResult = vectorFuture.join();
+            SearchChannelResult keywordResult = keywordFuture.join();
 
             // 收集各通道结果
             List<List<RetrievedChunk>> allResults = new ArrayList<>();
             allResults.add(vectorResult.getChunks());
             allResults.add(keywordResult.getChunks());
+
+            // 向量通道空结果告警（帮助排查 embedding 配置问题）
+            if (vectorResult.getChunks().isEmpty() && !keywordResult.getChunks().isEmpty()) {
+                log.warn(">>> 向量检索无结果但关键词检索有 {} 条结果，可能原因：① Embedding 模型未配置或不可用；② 向量维度与存储不匹配；③ pgvector 扩展/HNSW 索引异常",
+                        keywordResult.getChunks().size());
+            }
 
             // RRF 融合
             List<RetrievedChunk> fused = RrfMerger.merge(allResults, finalTopK, rrfK);
@@ -111,24 +132,18 @@ public class RrfHybridChannel implements SearchChannel {
                     .build();
 
         } catch (Exception e) {
-            if (e instanceof CompletionException ce && ce.getCause() instanceof InterruptedException) {
+            // 正常情况下每个 Future 已通过 exceptionally 容错，此处仅处理 RRF 合并阶段的异常
+            // 恢复中断标志，避免吞掉线程中断信号
+            if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            log.error("混合检索失败，降级为单通道", e);
-            // 降级：尝试返回向量检索结果
-            try {
-                SearchChannelResult vectorResult = vectorChannel.search(context);
-                log.warn("混合检索降级，使用向量检索结果，{} 条", vectorResult.getChunks().size());
-                return vectorResult;
-            } catch (Exception ex) {
-                log.error("降级向量检索也失败", ex);
-                return SearchChannelResult.builder()
-                        .channelType(SearchChannelType.HYBRID)
-                        .channelName(getName())
-                        .chunks(List.of())
-                        .latencyMs(System.currentTimeMillis() - startTime)
-                        .build();
-            }
+            log.error("RRF 融合阶段异常，返回空结果", e);
+            return SearchChannelResult.builder()
+                    .channelType(SearchChannelType.HYBRID)
+                    .channelName(getName())
+                    .chunks(List.of())
+                    .latencyMs(System.currentTimeMillis() - startTime)
+                    .build();
         }
     }
 

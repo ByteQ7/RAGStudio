@@ -34,6 +34,12 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -317,7 +323,23 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
     @Override
     public List<AiModelVO> listModels(String capability) {
+        // 只查询已启用且有 API Key 的供应商
+        List<AiProviderDO> activeProviders = providerMapper.selectList(
+                new LambdaQueryWrapper<AiProviderDO>()
+                        .eq(AiProviderDO::getEnabled, 1)
+                        .isNotNull(AiProviderDO::getApiKey)
+                        .ne(AiProviderDO::getApiKey, "")
+        );
+        if (activeProviders.isEmpty()) {
+            return List.of();
+        }
+        List<String> activeProviderIds = activeProviders.stream()
+                .map(AiProviderDO::getId)
+                .toList();
+
         LambdaQueryWrapper<AiModelDO> wrapper = new LambdaQueryWrapper<AiModelDO>()
+                .eq(AiModelDO::getEnabled, 1)
+                .in(AiModelDO::getProviderId, activeProviderIds)
                 .eq(StrUtil.isNotBlank(capability), AiModelDO::getCapability, capability != null ? capability.toUpperCase() : null)
                 .orderByAsc(AiModelDO::getCapability)
                 .orderByAsc(AiModelDO::getPriority);
@@ -498,6 +520,193 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         vo.setLatencyMs(result.latencyMs());
         vo.setError(result.error());
         return vo;
+    }
+
+    // 用于模型连通性检查的 HTTP 客户端
+    private final HttpClient modelCheckHttpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+
+    @Override
+    public ConnectivityResultVO checkModelConnectivity(String id) {
+        AiModelDO model = modelMapper.selectById(id);
+        if (model == null) {
+            throw new ClientException("模型不存在：" + id);
+        }
+        AiProviderDO provider = providerMapper.selectById(model.getProviderId());
+        if (provider == null) {
+            throw new ClientException("供应商不存在：" + model.getProviderId());
+        }
+
+        // 优先使用模型的自定义 URL
+        String baseUrl = StrUtil.isNotBlank(model.getCustomUrl())
+                ? model.getCustomUrl()
+                : provider.getBaseUrl();
+        if (StrUtil.isBlank(baseUrl)) {
+            return new ConnectivityResultVO(false, null, "供应商未配置 API 地址");
+        }
+
+        String apiKey = provider.getApiKey();
+        if (StrUtil.isBlank(apiKey)) {
+            return new ConnectivityResultVO(false, null, "供应商未配置 API Key");
+        }
+
+        // 兼容 capability 为空的情况
+        String capability = model.getCapability();
+        if (StrUtil.isBlank(capability)) {
+            log.warn("模型 {} 能力类型为空，使用 CHAT 兜底", model.getModelId());
+            capability = "CHAT";
+        }
+
+        log.info("检查模型连通性: modelId={}, capability={}, baseUrl={}",
+                model.getModelId(), capability, baseUrl);
+
+        return switch (capability.toUpperCase()) {
+            case "CHAT" -> checkChatModelConnectivity(baseUrl, apiKey, model.getModelId());
+            case "EMBEDDING" -> checkEmbeddingModelConnectivity(baseUrl, apiKey, model.getModelId());
+            case "RERANK" -> checkRerankModelConnectivity(baseUrl, apiKey, model.getModelId());
+            default -> {
+                log.warn("未知的模型能力类型: {}，使用 CHAT 方式兜底", model.getCapability());
+                yield checkChatModelConnectivity(baseUrl, apiKey, model.getModelId());
+            }
+        };
+    }
+
+    /**
+     * 检查 CHAT 模型的连通性：发送一个轻量级的 chat completion 请求
+     */
+    private ConnectivityResultVO checkChatModelConnectivity(String baseUrl, String apiKey, String modelId) {
+        Instant start = Instant.now();
+        try {
+            String url = normalizeUrl(baseUrl) + "/chat/completions";
+            String body = String.format(
+                    "{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"test\"}],\"max_tokens\":1,\"stream\":false}",
+                    modelId);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+
+            HttpResponse<String> response = modelCheckHttpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
+
+            if (response.statusCode() == 200) {
+                return new ConnectivityResultVO(true, latencyMs, null);
+            } else {
+                String errorMsg = extractError(response.body());
+                return new ConnectivityResultVO(false, latencyMs, "HTTP " + response.statusCode() + ": " + errorMsg);
+            }
+        } catch (Exception e) {
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
+            return new ConnectivityResultVO(false, latencyMs, e.getMessage());
+        }
+    }
+
+    /**
+     * 检查 EMBEDDING 模型的连通性：发送一个轻量级的 embedding 请求
+     */
+    private ConnectivityResultVO checkEmbeddingModelConnectivity(String baseUrl, String apiKey, String modelId) {
+        Instant start = Instant.now();
+        try {
+            String url = normalizeUrl(baseUrl) + "/embeddings";
+            String body = String.format(
+                    "{\"model\":\"%s\",\"input\":\"test\"}", modelId);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+
+            HttpResponse<String> response = modelCheckHttpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
+
+            if (response.statusCode() == 200) {
+                return new ConnectivityResultVO(true, latencyMs, null);
+            } else {
+                String errorMsg = extractError(response.body());
+                return new ConnectivityResultVO(false, latencyMs, "HTTP " + response.statusCode() + ": " + errorMsg);
+            }
+        } catch (Exception e) {
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
+            return new ConnectivityResultVO(false, latencyMs, e.getMessage());
+        }
+    }
+
+    /**
+     * 检查 RERANK 模型的连通性：发送一个轻量级的 rerank 请求
+     */
+    private ConnectivityResultVO checkRerankModelConnectivity(String baseUrl, String apiKey, String modelId) {
+        Instant start = Instant.now();
+        try {
+            // Cohere 兼容的 rerank API 格式
+            String url = normalizeUrl(baseUrl) + "/rerank";
+            String body = String.format(
+                    "{\"model\":\"%s\",\"query\":\"test\",\"documents\":[\"test document\"]}", modelId);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+
+            HttpResponse<String> response = modelCheckHttpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
+
+            if (response.statusCode() == 200) {
+                return new ConnectivityResultVO(true, latencyMs, null);
+            } else {
+                String errorMsg = extractError(response.body());
+                return new ConnectivityResultVO(false, latencyMs, "HTTP " + response.statusCode() + ": " + errorMsg);
+            }
+        } catch (Exception e) {
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
+            return new ConnectivityResultVO(false, latencyMs, e.getMessage());
+        }
+    }
+
+    /**
+     * 从错误响应中提取错误信息
+     */
+    private String extractError(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return "unknown error";
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(responseBody);
+            com.fasterxml.jackson.databind.JsonNode error = root.get("error");
+            if (error != null) {
+                if (error.has("message")) {
+                    return error.get("message").asText();
+                }
+                return error.toString();
+            }
+        } catch (Exception ignored) {
+        }
+        return responseBody.length() > 100 ? responseBody.substring(0, 100) : responseBody;
+    }
+
+    /**
+     * 规范化 URL：移除尾部 / → 确保以 /v1 结尾 → 拼接端点路径时得到正确 URL
+     * 例如 "https://api.siliconflow.cn" → "https://api.siliconflow.cn/v1"
+     */
+    private String normalizeUrl(String baseUrl) {
+        String url = baseUrl;
+        if (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        if (!url.endsWith("/v1")) {
+            url = url + "/v1";
+        }
+        return url;
     }
 
     @Override

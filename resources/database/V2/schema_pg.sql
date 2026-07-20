@@ -108,6 +108,7 @@ COMMENT ON COLUMN t_message.create_time IS '创建时间';
 COMMENT ON COLUMN t_message.update_time IS '更新时间';
 COMMENT ON COLUMN t_message.deleted IS '是否删除 0：正常 1：删除';
 
+
 -- Entity: MessageFeedbackDO (@TableName="t_message_feedback", @TableId=ASSIGN_ID, @TableLogic)
 CREATE TABLE t_message_feedback (
     id              VARCHAR(64)  NOT NULL PRIMARY KEY,

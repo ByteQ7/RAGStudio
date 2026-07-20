@@ -36,7 +36,13 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Strin
                             .build()
             );
         } catch (Exception e) {
-            log.error("在 collection {} 中检索失败，错误: {}", collectionName, e.getMessage(), e);
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            // 区分常见失败原因，帮助排查
+            if (msg.contains("Embedding") || msg.contains("embedding")) {
+                log.error(">>> 向量检索失败：Embedding 模型可能未配置或不可用，collection={}，请检查模型配置中的 EMBEDDING 类型模型。错误: {}", collectionName, msg, e);
+            } else {
+                log.error("在 collection {} 中向量检索失败，错误: {}", collectionName, msg, e);
+            }
             return List.of();
         }
     }

@@ -134,6 +134,8 @@ public class SystemSettingsVO {
         private Integer titleMaxLength;
     }
 
+    @Data
+    @Builder
     @Setter
     @Getter
     public static class RagSettings {

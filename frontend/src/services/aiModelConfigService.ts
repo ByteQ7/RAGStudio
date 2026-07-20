@@ -154,6 +154,16 @@ export async function checkConnectivity(providerId: string): Promise<Connectivit
 }
 
 /**
+ * 检查指定 AI 模型的连通性
+ * @param modelId 模型 ID
+ */
+export async function checkModelConnectivity(modelId: string): Promise<ConnectivityResult> {
+  return api.post<ConnectivityResult, ConnectivityResult>(
+    `/ai-model-config/models/${modelId}/check-connectivity`
+  );
+}
+
+/**
  * 从远程供应商拉取可用模型列表
  * @param providerId 供应商 ID
  */
