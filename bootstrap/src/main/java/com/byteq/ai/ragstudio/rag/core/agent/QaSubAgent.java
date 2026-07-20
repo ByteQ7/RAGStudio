@@ -62,6 +62,9 @@ public class QaSubAgent implements SubAgent {
     private final Supplier<Boolean> cancellationChecker;
     private final List<String> knowledgeBaseIds;
     private final String kbSummaryText;
+    private final Map<String, String> collectionNameToKbId;
+
+    private final com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService;
 
     private final List<RetrievedChunk> retrievedChunks = new ArrayList<>();
 
@@ -81,7 +84,9 @@ public class QaSubAgent implements SubAgent {
             ReActPromptBuilder reactPromptBuilder,
             Supplier<Boolean> cancellationChecker,
             List<String> knowledgeBaseIds,
-            String kbSummaryText
+            String kbSummaryText,
+            Map<String, String> collectionNameToKbId,
+            com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService
     ) {
         this.llmService = llmService;
         this.retrievalEngine = retrievalEngine;
@@ -95,6 +100,8 @@ public class QaSubAgent implements SubAgent {
         this.cancellationChecker = cancellationChecker;
         this.knowledgeBaseIds = knowledgeBaseIds != null ? knowledgeBaseIds : List.of();
         this.kbSummaryText = kbSummaryText;
+        this.collectionNameToKbId = collectionNameToKbId != null ? collectionNameToKbId : Map.of();
+        this.traceRecordService = traceRecordService;
     }
 
     @Override
@@ -153,6 +160,7 @@ public class QaSubAgent implements SubAgent {
 
     private ToolRegistry buildToolRegistry() {
         ToolRegistry registry = new ToolRegistry();
+        registry.setTraceRecordService(traceRecordService);
 
         for (McpToolExecutor executor : mcpToolRegistry.listAllExecutors()) {
             registry.register(new McpToolAdapter(executor));
@@ -160,7 +168,7 @@ public class QaSubAgent implements SubAgent {
         registry.register(new TimeTool());
 
         if (CollUtil.isNotEmpty(knowledgeBaseIds)) {
-            RagSearchTool ragTool = new RagSearchTool(retrievalEngine, searchProperties, knowledgeBaseIds, kbSummaryText);
+            RagSearchTool ragTool = new RagSearchTool(retrievalEngine, searchProperties, knowledgeBaseIds, kbSummaryText, collectionNameToKbId);
             ragTool.setChunksConsumer(chunks -> {
                 retrievedChunks.clear();
                 retrievedChunks.addAll(chunks);

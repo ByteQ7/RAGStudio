@@ -1,7 +1,11 @@
 package com.byteq.ai.ragstudio.rag.core.agent;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
+import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
+import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
+import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import lombok.extern.slf4j.Slf4j;
 
@@ -27,6 +31,9 @@ import java.util.concurrent.TimeUnit;
 public class ToolRegistry {
 
     private final Map<String, Tool> tools = new ConcurrentHashMap<>();
+
+    /** 链路追踪记录服务（可选，非 Spring 环境不注入） */
+    private RagTraceRecordService traceRecordService;
 
     /** 单次工具调用的超时时间（默认 30 秒） */
     private Duration toolTimeout = Duration.ofSeconds(30);
@@ -128,11 +135,37 @@ public class ToolRegistry {
      * @param params 调用参数
      * @return 执行结果
      */
+    /**
+     * 设置链路追踪记录服务（用于工具调用的追踪埋点）
+     */
+    public void setTraceRecordService(RagTraceRecordService traceRecordService) {
+        this.traceRecordService = traceRecordService;
+    }
+
     public ToolResult execute(String name, Map<String, Object> params) {
         Tool tool = get(name).orElse(null);
         if (tool == null) {
             log.warn("工具不存在: {}", name);
             return ToolResult.failure(name, "未知工具: " + name);
+        }
+
+        // 链路追踪：记录工具调用节点
+        String traceId = RagTraceContext.getTraceId();
+        boolean tracing = traceRecordService != null && StrUtil.isNotBlank(traceId);
+        String nodeId = null;
+        if (tracing) {
+            nodeId = IdUtil.getSnowflakeNextIdStr();
+            traceRecordService.startNode(RagTraceNodeDO.builder()
+                    .traceId(traceId)
+                    .nodeId(nodeId)
+                    .parentNodeId(RagTraceContext.currentNodeId())
+                    .depth(RagTraceContext.depth())
+                    .nodeType("TOOL")
+                    .nodeName(name)
+                    .status("RUNNING")
+                    .startTime(new java.util.Date())
+                    .build());
+            RagTraceContext.pushNode(nodeId);
         }
 
         long start = System.currentTimeMillis();
@@ -143,10 +176,19 @@ public class ToolRegistry {
             result.setDurationMs(System.currentTimeMillis() - start);
             log.info("工具执行完成: {}, success={}, durationMs={}",
                     name, result.isSuccess(), result.getDurationMs());
+            if (tracing) {
+                traceRecordService.finishNode(traceId, nodeId, "SUCCESS", null,
+                        new java.util.Date(), System.currentTimeMillis() - start);
+            }
             return result;
         } catch (java.util.concurrent.TimeoutException e) {
             long duration = System.currentTimeMillis() - start;
             log.warn("工具执行超时: {}, timeoutMs={}", name, toolTimeout.toMillis());
+            if (tracing) {
+                traceRecordService.finishNode(traceId, nodeId, "TIMEOUT",
+                        "超时（" + toolTimeout.toMillis() + "ms）",
+                        new java.util.Date(), duration);
+            }
             ToolResult failure = ToolResult.failure(name, "工具执行超时（" + toolTimeout.toMillis() + "ms）");
             failure.setDurationMs(duration);
             return failure;
@@ -154,9 +196,17 @@ public class ToolRegistry {
             long duration = System.currentTimeMillis() - start;
             String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             log.warn("工具执行异常: {}, durationMs={}, error={}", name, duration, errorMsg);
+            if (tracing) {
+                traceRecordService.finishNode(traceId, nodeId, "ERROR", errorMsg,
+                        new java.util.Date(), duration);
+            }
             ToolResult failure = ToolResult.failure(name, errorMsg);
             failure.setDurationMs(duration);
             return failure;
+        } finally {
+            if (nodeId != null) {
+                RagTraceContext.popNode();
+            }
         }
     }
 

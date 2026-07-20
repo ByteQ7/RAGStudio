@@ -29,18 +29,6 @@ public interface SubAgent {
     AgentCard getCard();
 
     /**
-     * @deprecated 使用 {@link #getCard()} 替代
-     */
-    @Deprecated
-    default String getName() { return getCard().name(); }
-
-    /**
-     * @deprecated 使用 {@link #getCard()} 替代
-     */
-    @Deprecated
-    default String getDescription() { return getCard().description(); }
-
-    /**
      * 执行子 Agent 逻辑
      *
      * @param task     要执行的 Task（包含目标、输入参数等）

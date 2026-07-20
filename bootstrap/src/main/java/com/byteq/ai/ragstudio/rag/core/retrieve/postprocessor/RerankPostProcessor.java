@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.rag.core.retrieve.postprocessor;
 
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
+import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.infra.rerank.RerankService;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannelResult;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchContext;
@@ -39,6 +40,7 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
     }
 
     @Override
+    @RagTraceNode(name = "重排序", type = "RERANK")
     public List<RetrievedChunk> process(List<RetrievedChunk> chunks,
                                         List<SearchChannelResult> results,
                                         SearchContext context) {

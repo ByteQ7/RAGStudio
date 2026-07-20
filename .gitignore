@@ -66,6 +66,9 @@ Java.json
 .reasonix/*
 .qoder/*
 
+### TypeScript build info ###
+*.tsbuildinfo
+
 ### SSH Keys ###
 .ssh/
 /INTERVIEW_ANSWERS.md
@@ -84,3 +87,4 @@ AILog/
 
 # Quick test DB init
 resources/database/quick-test.sql
+/resources/docker/semantic-highlight/ragstudio-highlight.tar

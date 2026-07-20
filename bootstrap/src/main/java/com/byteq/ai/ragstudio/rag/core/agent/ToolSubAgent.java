@@ -45,13 +45,16 @@ public class ToolSubAgent implements SubAgent {
     private final SkillLoader skillLoader;
     private final okhttp3.OkHttpClient syncHttpClient;
     private final SandboxExecutor sandboxExecutor;
+    private final com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService;
 
     public ToolSubAgent(McpToolRegistry mcpToolRegistry, SkillLoader skillLoader,
-                        okhttp3.OkHttpClient syncHttpClient, SandboxExecutor sandboxExecutor) {
+                        okhttp3.OkHttpClient syncHttpClient, SandboxExecutor sandboxExecutor,
+                        com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService) {
         this.mcpToolRegistry = mcpToolRegistry;
         this.skillLoader = skillLoader;
         this.syncHttpClient = syncHttpClient;
         this.sandboxExecutor = sandboxExecutor;
+        this.traceRecordService = traceRecordService;
     }
 
     @Override
@@ -88,6 +91,7 @@ public class ToolSubAgent implements SubAgent {
 
     private ToolRegistry buildToolRegistry() {
         ToolRegistry registry = new ToolRegistry();
+        registry.setTraceRecordService(traceRecordService);
 
         // MCP 工具
         for (McpToolExecutor executor : mcpToolRegistry.listAllExecutors()) {

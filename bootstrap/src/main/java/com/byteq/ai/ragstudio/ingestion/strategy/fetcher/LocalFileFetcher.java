@@ -28,15 +28,9 @@ import java.util.List;
  *   <li>S3 协议路径：如 {@code s3://bucket/docs/report.pdf}</li>
  * </ul>
  * </p>
- * <p>
- * 注意：此类已标记为 {@link Deprecated}，建议使用 {@link S3Fetcher} 处理 S3 路径。
- * </p>
- *
- * @deprecated 功能已拆分为 {@link S3Fetcher}，后续版本将移除
  */
 @Component
 @RequiredArgsConstructor
-@Deprecated
 public class LocalFileFetcher implements DocumentFetcher {
 
     /**

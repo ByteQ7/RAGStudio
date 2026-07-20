@@ -7,9 +7,9 @@ import { useChatStore } from "@/stores/chatStore";
 import { DeepThinkingSlider } from "@/components/chat/DeepThinkingSlider";
 import { storage } from "@/utils/storage";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { API_BASE_URL } from "@/services/api";
 
 const MAX_IMAGES = 10;
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 interface UploadedImage {
   url: string;
@@ -39,7 +39,7 @@ async function uploadImageToS3(file: File): Promise<{ s3Url: string; previewUrl:
   const s3Url = String(uploadData.data || uploadData);
 
   // 2. 获取预签名 HTTP URL 用于前端显示
-  const presignResp = await fetch(`${API_BASE_URL}/api/presign?url=${encodeURIComponent(s3Url)}`, { headers });
+  const presignResp = await fetch(`${API_BASE_URL}/presign?url=${encodeURIComponent(s3Url)}`, { headers });
   if (!presignResp.ok) throw new Error("获取预签名 URL 失败");
   const presignData = await presignResp.json();
   const previewUrl = String(presignData.data || presignData);

@@ -13,6 +13,7 @@ import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import com.byteq.ai.ragstudio.user.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -26,10 +27,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
-    private static final String DEFAULT_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4";
-
     private final UserMapper userMapper;
     private final FileStorageService fileStorageService;
+
+    @Value("${app.default-avatar-url}")
+    private String defaultAvatarUrl;
 
     /**
      * 用户登录
@@ -64,13 +66,13 @@ public class AuthServiceImpl implements AuthService {
         StpUtil.login(loginId);
         String avatar = user.getAvatar();
         if (StrUtil.isBlank(avatar)) {
-            avatar = DEFAULT_AVATAR_URL;
+            avatar = defaultAvatarUrl;
         } else if (avatar.startsWith("s3://")) {
             try {
                 avatar = fileStorageService.generatePresignedGetUrl(avatar);
             } catch (Exception e) {
                 log.warn("转换登录头像 URL 失败", e);
-                avatar = DEFAULT_AVATAR_URL;
+                avatar = defaultAvatarUrl;
             }
         }
         return new LoginVO(loginId, user.getRole(), StpUtil.getTokenValue(), avatar);

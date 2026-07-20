@@ -32,6 +32,10 @@
 | **Multi-Modal Chat** | Image upload (paste/file), S3 storage, presigned HTTP URLs for browser display |
 | **SKILL System** | YAML-defined custom tools loaded from `skills/` dir — no Java or MCP server required |
 | **Full-Chain Tracing** | Lightweight distributed tracing for every pipeline stage |
+| **Ingestion Pipeline** | Visual document processing pipeline: fetch → parse → chunk → enhance → index |
+| **Dashboard & Monitoring** | Admin dashboard with real-time KPI, request trends, model usage stats |
+| **Ingestion Pipeline** | Visual document processing pipeline: fetch → parse → chunk → enhance → index |
+| **Dashboard & Monitoring** | Admin dashboard with real-time KPI, request trends, model usage stats |
 
 ---
 
@@ -76,23 +80,34 @@ ragstudio
 **Prerequisites:** JDK 17+, Maven 3.8+, Node.js 18+, PostgreSQL 14+ (pgvector), Redis 6+, Docker
 
 ```bash
-# Infrastructure (Docker)
-docker compose -f resources/docker/rocketmq-stack-5.2.0.compose.yaml up -d
+# 1. Infrastructure (Docker)
+# ── RocketMQ (choose by CPU arch) ──
+docker compose -f resources/docker/rocketmq-stack-5.2.0.compose.yaml up -d       # ARM64
+docker compose -f resources/docker/rocketmq-stack-amd-5.2.0.compose.yaml up -d   # AMD64
+# ── PostgreSQL + pgvector ──
 docker run -d --name pgvector -e POSTGRES_DB=ragstudio -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg16
+# ── Redis ──
 docker run -d --name redis -p 6379:6379 redis:7-alpine
+# ── MinIO (S3-compatible storage) ──
+docker run -d --name minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=admin -e MINIO_ROOT_PASSWORD=password minio/minio server /data --console-address ":9001"
 
-# Database
+# 2. Database initialization
 createdb -U postgres ragstudio
 psql -U postgres -d ragstudio -f resources/database/V2/schema_pg.sql
 psql -U postgres -d ragstudio -f resources/database/V2/init_data_pg.sql
 
-# Backend
-cp .env-example .env   # edit DB/Redis/RocketMQ config
-cd bootstrap && mvn spring-boot:run   # → http://localhost:9090
+# 3. Environment config
+cp .env-example .env   # edit DB / Redis / RocketMQ / S3 settings
+# .env lives at project root; bootstrap reads it via spring-dotenv (../.env)
 
-# Frontend
+# 4. Start backend
+cd bootstrap && mvn spring-boot:run   # → http://localhost:9090/api/ragstudio
+
+# 5. Start frontend
 cd frontend && npm install && npm run dev   # → http://localhost:5173
 ```
+
+> **Note:** Backend context-path is `/api/ragstudio`. Vite dev proxy forwards `/api` → `localhost:9090`, so no CORS config is needed in development.
 
 ---
 
@@ -167,7 +182,7 @@ url: https://internal.example.com/api
 
 - Types: `http` (REST API), `script` (shell scripts), `command` (executables)
 - `script`/`command` run in Docker sandbox (`--read-only`, `--cap-drop=ALL`, `--network=none`, 30s timeout)
-- Auto-loaded at startup + 15s polling hot-reload
+- Auto-loaded at startup, no additional configuration needed
 
 ### Tracing & Monitoring
 
@@ -179,17 +194,27 @@ url: https://internal.example.com/api
 
 ## Config Reference
 
-Key application config (`application.yaml`):
+Key application config (`bootstrap/src/main/resources/application.yaml`):
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `rag.agent.max-iterations` | `10` | Max Agent loop iterations |
-| `rag.agent.tool-timeout-ms` | `30000` | Single tool call timeout |
-| `rag.search.default-top-k` | `5` | Top-K retrieval results |
-| `rag.memory.history-keep-turns` | `8` | Recent conversation turns to keep |
-| `rag.memory.summary-start-turns` | `9` | Summary triggers after N turns |
-| `rag.memory.compress-threshold` | `historyKeepTurns * 2` | Compression trigger threshold |
+| `rag.agent.tool-timeout-ms` | `30000` | Single tool call timeout (ms) |
+| `rag.skills.allowed-commands` | `""` | Skill command whitelist (empty = command type disabled) |
+| `rag.skills.sandbox.enabled` | `true` | Docker sandbox isolation |
+| `rag.search.default-top-k` | `10` | Top-K retrieval results |
+| `rag.search.channels.hybrid-rrf.k` | `60` | RRF smoothing constant |
+| `rag.search.channels.hybrid-rrf.top-k` | `5` | Final results after RRF fusion |
+| `rag.memory.history-keep-turns` | `4` | Recent conversation turns to keep |
+| `rag.memory.compress-threshold` | `8` | Compression trigger threshold |
+| `rag.memory.summary-enabled` | `true` | Enable conversation summary |
+| `rag.memory.title-max-length` | `30` | Max chat title length |
 | `rag.trace.enabled` | `true` | Enable distributed tracing |
+| `rag.rate-limit.global.max-concurrent` | `1` | Max concurrent chat sessions |
+| `rag.rate-limit.global.max-wait-seconds` | `15` | Queue wait timeout (seconds) |
+| `rag.semantic-highlight.enabled` | `false` | Semantic chunk cropping |
+| `rag.query-rewrite.enabled` | `true` | Multi-turn query rewriting |
+| `app.default-avatar-url` | `https://avatars.githubusercontent.com/u/583231?v=4` | Default user avatar |
 
 ---
 
