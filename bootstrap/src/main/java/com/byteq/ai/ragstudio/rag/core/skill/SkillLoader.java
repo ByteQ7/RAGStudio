@@ -3,7 +3,6 @@ package com.byteq.ai.ragstudio.rag.core.skill;
 import cn.hutool.core.util.StrUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBucket;
 import org.redisson.api.RedissonClient;
@@ -19,9 +18,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
@@ -41,8 +37,6 @@ import java.util.stream.Stream;
  * └── ip-info/
  *     └── skill.yaml
  * </pre>
- * <p>
- * 热更新采用定时轮询（默认 15 秒），对比目录的 mtime 变化。
  */
 @Slf4j
 @Service
@@ -54,26 +48,17 @@ public class SkillLoader {
     private final RedissonClient redisson;
     private final ObjectMapper objectMapper;
     private final Path skillsDir;
-    private final long pollIntervalMs;
 
     /** 内存缓存：SKILL 名称 → SkillDefinition，供 Agent 构建时使用 */
     private final ConcurrentHashMap<String, SkillDefinition> skillCache = new ConcurrentHashMap<>();
 
-    /** 上次扫描的目录 mtime 缓存 */
-    private final ConcurrentHashMap<String, Long> lastModifiedCache = new ConcurrentHashMap<>();
-
-    private ScheduledExecutorService scheduler;
-    private long lastPollTime = 0;
-
     public SkillLoader(
             RedissonClient redisson,
             ObjectMapper objectMapper,
-            @Value("${rag.skills.dir:skills}") String skillsDirPath,
-            @Value("${rag.skills.poll-interval-ms:15000}") long pollIntervalMs) {
+            @Value("${rag.skills.dir:skills}") String skillsDirPath) {
         this.redisson = redisson;
         this.objectMapper = objectMapper;
         this.skillsDir = resolveSkillsDir(skillsDirPath);
-        this.pollIntervalMs = pollIntervalMs;
     }
 
     /**
@@ -99,14 +84,7 @@ public class SkillLoader {
     @PostConstruct
     public void init() {
         scanAndLoad();
-        startPolling();
-    }
-
-    @PreDestroy
-    public void destroy() {
-        if (scheduler != null) {
-            scheduler.shutdown();
-        }
+        // 仅在启动时加载一次，不启动热更新轮询
     }
 
     // ==================== 外部接口 ====================
@@ -199,7 +177,6 @@ public class SkillLoader {
             log.warn("写入 SKILL 列表到 Redis 失败", e);
         }
 
-        lastPollTime = System.currentTimeMillis();
         log.info("SKILL 加载完成: {} 个技能（新增 {}，移除 {}）",
                 loaded.size(), loaded.size() - removed.size(), removed.size());
     }
@@ -337,55 +314,6 @@ public class SkillLoader {
         redisson.getBucket(REDIS_LIST_KEY).delete();
     }
 
-    // ==================== 热更新轮询 ====================
+    // SKILL 仅在启动时加载一次，不启动热更新轮询
 
-    private void startPolling() {
-        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "skill-loader");
-            t.setDaemon(true);
-            return t;
-        });
-        scheduler.scheduleWithFixedDelay(this::pollForChanges,
-                pollIntervalMs, pollIntervalMs, TimeUnit.MILLISECONDS);
-        log.info("SKILL 热更新轮询已启动，间隔: {}ms", pollIntervalMs);
-    }
-
-    private void pollForChanges() {
-        if (!Files.exists(skillsDir)) {
-            return;
-        }
-        try {
-            boolean changed = detectChanges(skillsDir);
-            if (changed) {
-                log.info("检测到 SKILL 目录变更，重新加载...");
-                scanAndLoad();
-            }
-        } catch (Exception e) {
-            log.warn("SKILL 轮询检测异常", e);
-        }
-    }
-
-    /**
-     * 递归检测 skills/ 目录树的 mtime 是否有变化
-     */
-    private boolean detectChanges(Path root) {
-        try (Stream<Path> walk = Files.walk(root)) {
-            return walk.filter(Files::isRegularFile).anyMatch(file -> {
-                try {
-                    long mtime = Files.getLastModifiedTime(file).toMillis();
-                    String key = file.toString();
-                    Long prev = lastModifiedCache.get(key);
-                    if (prev == null || prev != mtime) {
-                        lastModifiedCache.put(key, mtime);
-                        return true;
-                    }
-                    return false;
-                } catch (IOException e) {
-                    return false;
-                }
-            });
-        } catch (IOException e) {
-            return false;
-        }
-    }
 }

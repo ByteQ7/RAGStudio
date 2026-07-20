@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -36,9 +37,10 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @RequiredArgsConstructor
 public class UserContextInterceptor implements HandlerInterceptor {
 
-    private static final String DEFAULT_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4";
-
     private final UserMapper userMapper;
+
+    @Value("${app.default-avatar-url}")
+    private String defaultAvatarUrl;
 
     @Override
     public boolean preHandle(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) {
@@ -65,7 +67,7 @@ public class UserContextInterceptor implements HandlerInterceptor {
                         .userId(user.getId().toString())
                         .username(user.getUsername())
                         .role(user.getRole())
-                        .avatar(StrUtil.isBlank(user.getAvatar()) ? DEFAULT_AVATAR_URL : user.getAvatar())
+                        .avatar(StrUtil.isBlank(user.getAvatar()) ? defaultAvatarUrl : user.getAvatar())
                         .build()
         );
         return true;

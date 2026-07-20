@@ -64,6 +64,7 @@ public class ConversationServiceImpl implements ConversationService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public void createOrUpdate(ConversationCreateBO request) {
         String userId = request.getUserId();
@@ -96,6 +97,7 @@ public class ConversationServiceImpl implements ConversationService {
         conversationMapper.updateById(existing);
     }
 
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public void rename(String conversationId, ConversationUpdateRequest request) {
         String userId = UserContext.getUserId();

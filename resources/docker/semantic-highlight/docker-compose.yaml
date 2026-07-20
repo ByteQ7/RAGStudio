@@ -1,0 +1,23 @@
+name: ragstudio-highlight
+
+services:
+  highlight:
+    image: ragstudio-highlight:latest
+    container_name: ragstudio-highlight
+    ports:
+      - "8001:8001"
+    environment:
+      QUANTIZE: int8
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s

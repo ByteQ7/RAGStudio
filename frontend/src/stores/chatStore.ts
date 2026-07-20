@@ -10,6 +10,7 @@ import {
 } from "@/services/sessionService";
 import { stopTask, submitFeedback } from "@/services/chatService";
 import { createStreamResponse } from "@/hooks/useStreamResponse";
+import { API_BASE_URL } from "@/services/api";
 import { storage } from "@/utils/storage";
 
 interface ChatState {
@@ -137,8 +138,6 @@ function parseAgentSteps(raw: unknown): AgentStep[] | undefined {
     return undefined;
   }
 }
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
@@ -269,6 +268,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         thinkingLevel: item.thinkingLevel ?? undefined
       }));
       set({ messages: mapped });
+
     } catch (error) {
       toast.error((error as Error).message || "加载消息失败");
     } finally {
@@ -441,12 +441,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }));
         }
         if (payload.messageId) {
+          const msgId = String(payload.messageId);
           set((state) => ({
             messages: state.messages.map((message) =>
               message.id === state.streamingMessageId
                 ? {
                     ...message,
-                    id: String(payload.messageId),
+                    id: msgId,
                     status: "done"
                   }
                 : message

@@ -275,14 +275,20 @@ public class StreamChatPipeline {
         // 2. 构建知识库概要文本（名称 + collection + 描述），供 LLM 了解知识库内容
         List<String> finalKbIds = effectiveKbIds;
         final String kbSummaryText;
+        final java.util.Map<String, String> collectionToKbId;
         if (CollUtil.isNotEmpty(finalKbIds)) {
             List<KnowledgeBaseDO> selectedKbs = knowledgeBaseMapper.selectList(
                     com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
                             .in(KnowledgeBaseDO::getId, finalKbIds)
                             .eq(KnowledgeBaseDO::getDeleted, 0));
+            // 构建 collectionName → kbId 映射，供 AI 指定 collection 时精确检索
+            collectionToKbId = new java.util.HashMap<>();
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < selectedKbs.size(); i++) {
                 KnowledgeBaseDO kb = selectedKbs.get(i);
+                if (StrUtil.isNotBlank(kb.getCollectionName())) {
+                    collectionToKbId.put(kb.getCollectionName(), kb.getId());
+                }
                 sb.append("  ").append(i + 1).append(". ").append(kb.getName());
                 if (StrUtil.isNotBlank(kb.getCollectionName())) {
                     sb.append(" [collection: ").append(kb.getCollectionName()).append("]");
@@ -295,6 +301,7 @@ public class StreamChatPipeline {
             kbSummaryText = sb.length() > 0 ? sb.toString().stripTrailing() : "";
         } else {
             kbSummaryText = "";
+            collectionToKbId = java.util.Map.of();
         }
 
         // 3. 构建 Agent 注册中心
@@ -306,14 +313,16 @@ public class StreamChatPipeline {
                 mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor,
                 reactResponseParser, reactPromptBuilder,
                 () -> taskManager.isCancelled(ctx.getTaskId()),
-                finalKbIds, kbSummaryText
+                finalKbIds, kbSummaryText, collectionToKbId,
+                traceRecordService
         ));
         orchestrator.register(qaSubAgent);
 
         // Tool Agent（纯工具执行）
         try {
             ToolSubAgent toolAgent = new ToolSubAgent(
-                    mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor);
+                    mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor,
+                    traceRecordService);
             orchestrator.register(toolAgent);
         } catch (Exception e) {
             log.warn("Tool Agent 注册失败，跳过", e);

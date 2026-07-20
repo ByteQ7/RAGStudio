@@ -3,7 +3,7 @@ ai-log:
   save-enabled: ${SAVE_AI_LOG:false}
 
 server:
-  port: 9090
+  port: ${SERVER_PORT:9090}
   servlet:
     context-path: /api/ragstudio
 
@@ -15,8 +15,8 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 50MB
-      max-request-size: 100MB
+      max-file-size: ${MAX_FILE_SIZE:50MB}
+      max-request-size: ${MAX_REQUEST_SIZE:100MB}
 
   datasource:
     driver-class-name: org.postgresql.Driver
@@ -48,14 +48,18 @@ rag:
   skills:
     dir: skills              # SKILL 目录（相对于项目根目录）
     allowed-commands: ""     # 允许执行的命令前缀白名单，空表示禁用 command 类型
-    poll-interval-ms: 15000  # 热更新轮询间隔（毫秒）
     script-timeout-ms: 30000 # 脚本执行超时（毫秒）
     sandbox:
-      enabled: true          # 是否启用 Docker 沙箱（false 则禁止所有 script/command 执行）
-      image: sandbox:latest  # 沙箱镜像
+      enabled: ${SANDBOX_ENABLED:true}   # 是否启用 Docker 沙箱（false 则禁止所有 script/command 执行）
+      image: ${SANDBOX_IMAGE:sandbox:latest}  # 沙箱镜像
       memory: 256m           # 内存限制
       cpus: "0.5"            # CPU 限制
       timeout-ms: 30000      # 执行超时
+  semantic-highlight:
+    enabled: ${SEMANTIC_HIGHLIGHT_ENABLED:true}   # ContextCropper 启用语义裁剪时连接 Python 服务
+    base-url: ${SEMANTIC_HIGHLIGHT_BASE_URL:http://localhost:8001}
+    connect-timeout: 5s
+    read-timeout: ${SEMANTIC_HIGHLIGHT_READ_TIMEOUT:120s}
 
   vector:
     type: pg
@@ -72,7 +76,7 @@ rag:
   rate-limit:
     global:
       enabled: true
-      max-concurrent: 1
+      max-concurrent: ${MAX_CONCURRENT:1}
       max-wait-seconds: 15
       lease-seconds: 30
       poll-interval-ms: 200
@@ -99,13 +103,31 @@ rag:
       min-interval-seconds: 60
 
   search:
+    default-top-k: ${DEFAULT_TOP_K:10}
+
     channels:
+      # 向量全局检索（当前已禁用：VectorGlobalSearchChannel.isEnabled() 返回 false）
       vector-global:
-        confidence-threshold: 0.6
+        enabled: false
         top-k-multiplier: 3
 
+      # 知识库选择检索（用户选定知识库后生效）
+      knowledge-base-selection:
+        top-k-multiplier: 2
+
+      # 关键词检索（基于 pg_trgm gin_trgm_ops 索引）
+      keyword:
+        enabled: true
+        top-k-multiplier: 2
+
+      # 混合检索：向量 + 关键词 → RRF 融合
+      hybrid-rrf:
+        enabled: true
+        k: 60                # RRF 平滑常数
+        top-k: 5             # 融合后最终返回的结果数
+
   trace:
-    enabled: true
+    enabled: ${TRACE_ENABLED:true}
     max-error-length: 1000
 
   model-routing:
@@ -122,7 +144,7 @@ rustfs:
 
 sa-token:
   token-name: Authorization
-  timeout: 2592000
+  timeout: ${TOKEN_TIMEOUT:2592000}
   is-concurrent: true
   is-share: false
   token-style: simple-uuid
@@ -135,4 +157,5 @@ logging:
     io.modelcontextprotocol: ERROR
 
 app:
-  demo-mode: false
+  demo-mode: ${DEMO_MODE:false}
+  default-avatar-url: "${DEFAULT_AVATAR_URL:https://avatars.githubusercontent.com/u/583231?v=4}"

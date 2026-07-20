@@ -102,7 +102,7 @@ public class RAGChatController {
      * @param url s3:// 协议的 URL
      * @return 预签名 HTTP URL
      */
-    @GetMapping("/api/presign")
+    @GetMapping("/presign")
     public Result<String> presignUrl(@RequestParam("url") String url) {
         String presigned = fileStorageService.generatePresignedGetUrl(url);
         return Results.success(presigned);

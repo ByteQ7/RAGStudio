@@ -32,6 +32,10 @@
 | **多模态对话** | 图片上传（文件/粘贴），S3 存储 + 预签名 HTTP 展示 |
 | **SKILL 技能系统** | 写 YAML 定义工具，零代码接入 Agent 循环 |
 | **全链路追踪** | 自研轻量级分布式追踪，记录管线每个阶段耗时 |
+| **数据摄取管线** | 可视化编排的文档处理流水线：抓取 → 解析 → 分块 → 增强 → 索引 |
+| **仪表盘监控** | 管理后台实时展示系统 KPI、请求趋势、模型调用量、性能指标 |
+| **数据摄取管线** | 可视化编排的文档处理流水线：抓取 → 解析 → 分块 → 增强 → 索引 |
+| **仪表盘监控** | 管理后台实时展示系统 KPI、请求趋势、模型调用量、性能指标 |
 
 ---
 
@@ -76,23 +80,34 @@ ragstudio
 **环境要求：** JDK 17+, Maven 3.8+, Node.js 18+, PostgreSQL 14+ (pgvector), Redis 6+, Docker
 
 ```bash
-# 启动基础设施（Docker）
-docker compose -f resources/docker/rocketmq-stack-5.2.0.compose.yaml up -d
+# 1. 启动基础设施（Docker）
+# ── RocketMQ（根据 CPU 架构选择版本）──
+docker compose -f resources/docker/rocketmq-stack-5.2.0.compose.yaml up -d       # ARM64
+docker compose -f resources/docker/rocketmq-stack-amd-5.2.0.compose.yaml up -d   # AMD64
+# ── PostgreSQL + pgvector ──
 docker run -d --name pgvector -e POSTGRES_DB=ragstudio -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg16
+# ── Redis ──
 docker run -d --name redis -p 6379:6379 redis:7-alpine
+# ── MinIO (S3 兼容存储) ──
+docker run -d --name minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=admin -e MINIO_ROOT_PASSWORD=password minio/minio server /data --console-address ":9001"
 
-# 初始化数据库
+# 2. 初始化数据库
 createdb -U postgres ragstudio
 psql -U postgres -d ragstudio -f resources/database/V2/schema_pg.sql
 psql -U postgres -d ragstudio -f resources/database/V2/init_data_pg.sql
 
-# 启动后端
-cp .env-example .env   # 修改数据库/Redis/RocketMQ 配置
-cd bootstrap && mvn spring-boot:run   # → http://localhost:9090
+# 3. 配置环境变量
+cp .env-example .env   # 修改数据库 / Redis / RocketMQ / S3 配置
+# .env 文件在项目根目录，bootstrap 模块通过 spring-dotenv 自动读取 ../.env
 
-# 启动前端
+# 4. 启动后端
+cd bootstrap && mvn spring-boot:run   # → http://localhost:9090/api/ragstudio
+
+# 5. 启动前端
 cd frontend && npm install && npm run dev   # → http://localhost:5173
 ```
+
+> **注意：** 后端 context-path 为 `/api/ragstudio`，前端的 Vite 代理配置会将 `/api` 请求转发到 `localhost:9090`，开发环境下无需跨域配置。
 
 ---
 
@@ -167,7 +182,7 @@ url: https://internal.example.com/api
 
 - 类型：`http`（REST API）、`script`（脚本）、`command`（命令）
 - `script`/`command` 在 Docker 沙箱隔离运行（只读文件系统、去权、无网络、30 秒超时）
-- 启动时自动加载 + 15 秒轮询热更新
+- 启动时自动加载，无需额外配置
 
 ### 链路追踪
 
@@ -179,17 +194,27 @@ url: https://internal.example.com/api
 
 ## 配置参考
 
-核心配置（`application.yaml`）：
+核心配置（`bootstrap/src/main/resources/application.yaml`）：
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | `rag.agent.max-iterations` | `10` | Agent 循环最大迭代次数 |
 | `rag.agent.tool-timeout-ms` | `30000` | 单工具调用超时（毫秒） |
-| `rag.search.default-top-k` | `5` | 检索返回 Top-K 条数 |
-| `rag.memory.history-keep-turns` | `8` | 保留最近对话轮数 |
-| `rag.memory.summary-start-turns` | `9` | 摘要触发轮数 |
-| `rag.memory.compress-threshold` | `historyKeepTurns * 2` | 压缩触发阈值 |
+| `rag.skills.allowed-commands` | `""` | SKILL 命令白名单（空=禁用 command 类型） |
+| `rag.skills.sandbox.enabled` | `true` | Docker 沙箱隔离执行 |
+| `rag.search.default-top-k` | `10` | 检索返回 Top-K 条数 |
+| `rag.search.channels.hybrid-rrf.k` | `60` | RRF 融合平滑常数 |
+| `rag.search.channels.hybrid-rrf.top-k` | `5` | RRF 融合后最终返回数 |
+| `rag.memory.history-keep-turns` | `4` | 保留最近对话轮数 |
+| `rag.memory.compress-threshold` | `8` | 压缩触发阈值 |
+| `rag.memory.summary-enabled` | `true` | 启用对话摘要 |
+| `rag.memory.title-max-length` | `30` | 会话标题最大字符数 |
 | `rag.trace.enabled` | `true` | 启用链路追踪 |
+| `rag.rate-limit.global.max-concurrent` | `1` | 全局并发对话数限制 |
+| `rag.rate-limit.global.max-wait-seconds` | `15` | 排队最大等待秒数 |
+| `rag.semantic-highlight.enabled` | `false` | 语义裁剪开关 |
+| `rag.query-rewrite.enabled` | `true` | 多轮查询改写开关 |
+| `app.default-avatar-url` | `https://avatars.githubusercontent.com/u/583231?v=4` | 用户默认头像 |
 
 ---
 
