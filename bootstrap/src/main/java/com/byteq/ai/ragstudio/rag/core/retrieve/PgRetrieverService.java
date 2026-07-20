@@ -70,8 +70,10 @@ public class PgRetrieverService implements RetrieverService {
     @Override
     @Transactional(readOnly = true)
     public List<RetrievedChunk> retrieveByKeyword(String query, RetrieveRequest request) {
-        // PostgreSQL 默认分词器不拆分中文词（无空格），tsvector/tsquery 无法命中中文关键词。
-        // 改用 ILIKE 子串匹配：将 query 按标点拆成多词，所有词都必须匹配。
+        // 使用 pg_trgm 的 gin_trgm_ops 索引实现中文模糊匹配
+        // pg_trgm 按 3 字符片段建索引，对中文友好（不受分词限制）
+        // 将 query 按标点拆成多词，OR 条件（任一匹配即可）相比 AND 大幅提高召回率
+        // 注：similarity() 分数仅用于排序，不参与 WHERE 过滤（依靠 ILIKE OR 通过 gin 索引快速定位）
         String[] words = query.split("[\\s,，。.；;：:！!？?]+");
         java.util.List<String> meaningful = java.util.Arrays.stream(words)
                 .filter(w -> !w.isBlank() && w.length() >= 2)
@@ -81,20 +83,23 @@ public class PgRetrieverService implements RetrieverService {
             meaningful = java.util.List.of(query);
         }
 
-        // 构建 ILIKE AND 条件
+        // 构建 ILIKE OR 条件
+        // 使用 pg_trgm.similarity(content, ?) 计算全局 trigram 重叠率作为相关性分数
         StringBuilder sql = new StringBuilder(
-            "SELECT id, content, 0.5 AS score FROM t_knowledge_vector " +
-            "WHERE metadata->>'collection_name' = ? "
+            "SELECT id, content, similarity(content, ?) AS score FROM t_knowledge_vector " +
+            "WHERE metadata->>'collection_name' = ? AND ("
         );
         java.util.List<Object> params = new java.util.ArrayList<>();
+        params.add(query);  // similarity 的基准文本（全量查询）
         params.add(request.getCollectionName());
 
-        for (String w : meaningful) {
-            sql.append(" AND content ILIKE ?");
-            params.add("%" + w + "%");
+        for (int i = 0; i < meaningful.size(); i++) {
+            if (i > 0) sql.append(" OR ");
+            sql.append("content ILIKE ?");
+            params.add("%" + meaningful.get(i) + "%");
         }
-        sql.append(" LIMIT ?");
-        params.add(request.getTopK());  // Integer, not String
+        sql.append(") ORDER BY score DESC LIMIT ?");
+        params.add(request.getTopK());
 
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         return jdbcTemplate.query(

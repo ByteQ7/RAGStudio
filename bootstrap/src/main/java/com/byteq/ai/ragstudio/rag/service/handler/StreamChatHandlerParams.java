@@ -48,4 +48,5 @@ public class StreamChatHandlerParams {
      * 任务管理器
      */
     private final StreamTaskManager taskManager;
+
 }

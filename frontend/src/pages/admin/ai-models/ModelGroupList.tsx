@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   Bot,
   Loader2,
@@ -6,8 +6,12 @@ import {
   Trash2,
   MessageSquare,
   FileSearch,
-  ArrowUpDown
+  ArrowUpDown,
+  Wifi,
+  WifiOff,
+  RefreshCw
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +25,12 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { AiModel } from "@/services/aiModelConfigService";
+import type {
+  AiModel,
+  ConnectivityResult
+} from "@/services/aiModelConfigService";
+import { checkModelConnectivity } from "@/services/aiModelConfigService";
+import { getErrorMessage } from "@/utils/error";
 
 // ==================== Constants ====================
 
@@ -69,6 +78,39 @@ export function ModelGroupList({
   onDelete,
   onPriorityChange
 }: ModelGroupListProps) {
+  // 每个模型的连通性检查状态（modelId → { loading, result }）
+  const [modelConnectivity, setModelConnectivity] = useState<
+    Record<string, { loading: boolean; result?: ConnectivityResult }>
+  >({});
+
+  const handleCheckConnectivity = useCallback(async (modelId: string) => {
+    setModelConnectivity((prev) => ({
+      ...prev,
+      [modelId]: { loading: true }
+    }));
+    try {
+      const result = await checkModelConnectivity(modelId);
+      setModelConnectivity((prev) => ({
+        ...prev,
+        [modelId]: { loading: false, result }
+      }));
+      if (result.success) {
+        toast.success(`模型连通性正常 (${result.latencyMs}ms)`);
+      } else {
+        toast.error(`模型连通性检查失败: ${result.error || "未知错误"}`);
+      }
+    } catch (error) {
+      const errResult: ConnectivityResult = {
+        success: false,
+        error: getErrorMessage(error, "检查失败")
+      };
+      setModelConnectivity((prev) => ({
+        ...prev,
+        [modelId]: { loading: false, result: errResult }
+      }));
+      toast.error(getErrorMessage(error, "连通性检查失败"));
+    }
+  }, []);
   // 找出有模型的 capability
   const availableCaps = useMemo(() => {
     const caps = new Set(models.map((m) => m.capability));
@@ -215,6 +257,55 @@ export function ModelGroupList({
                       }}
                     />
                   </div>
+
+                  {/* 连通性检查结果 */}
+                  {(() => {
+                    const connResult = modelConnectivity[model.id]?.result;
+                    if (!connResult) return null;
+                    return (
+                      <div
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5",
+                          connResult.success
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-red-50 text-red-600"
+                        )}
+                      >
+                        {connResult.success ? (
+                          <Wifi className="h-3 w-3" />
+                        ) : (
+                          <WifiOff className="h-3 w-3" />
+                        )}
+                        <span className="text-[11px] font-medium whitespace-nowrap">
+                          {connResult.success
+                            ? `${connResult.latencyMs ?? "?"}ms`
+                            : "失败"}
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 连通性检查按钮 */}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="inline-flex items-center justify-center rounded-lg p-1.5 text-gray-300 transition-colors hover:text-indigo-500 disabled:opacity-30"
+                          onClick={() => handleCheckConnectivity(model.id)}
+                          disabled={modelConnectivity[model.id]?.loading || !providerEnabled}
+                        >
+                          {modelConnectivity[model.id]?.loading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        连通性检查
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
 
                   {/* 操作区 */}
                   <div className="flex items-center gap-0.5">

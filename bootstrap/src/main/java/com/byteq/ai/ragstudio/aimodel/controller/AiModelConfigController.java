@@ -229,6 +229,21 @@ public class AiModelConfigController {
     }
 
     /**
+     * 检查指定 AI 模型的连通性
+     * <p>
+     * 根据模型的能力类型（CHAT/EMBEDDING/RERANK）发送对应的轻量 API 请求，
+     * 验证该模型是否可正常调用。支持模型自定义 URL。
+     * </p>
+     *
+     * @param id 模型 ID
+     * @return 连通性检查结果
+     */
+    @PostMapping("/models/{id}/check-connectivity")
+    public Result<ConnectivityResultVO> checkModelConnectivity(@PathVariable("id") String id) {
+        return Results.success(aiModelConfigService.checkModelConnectivity(id));
+    }
+
+    /**
      * 批量创建模型
      * <p>
      * 用于从远程拉取模型列表后批量导入，会自动跳过已存在的模型。

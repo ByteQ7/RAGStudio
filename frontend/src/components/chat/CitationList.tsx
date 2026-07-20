@@ -70,7 +70,7 @@ export function CitationList({ message }: CitationListProps) {
   useEffect(() => {
     const handler = (e: Event) => {
       const chunkId = (e as CustomEvent).detail as string;
-      if (!chunkId || !matchedCitations.some((c) => c.id === chunkId)) return;
+      if (!chunkId || !matchedCitations?.some((c) => c.id === chunkId)) return;
 
       setExpandedIds((prev) => {
         if (prev.has(chunkId)) return prev;
@@ -173,3 +173,4 @@ export function CitationList({ message }: CitationListProps) {
     </div>
   );
 }
+

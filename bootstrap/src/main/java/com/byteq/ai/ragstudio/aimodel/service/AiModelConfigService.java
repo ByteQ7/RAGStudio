@@ -129,6 +129,18 @@ public interface AiModelConfigService {
     ConnectivityResultVO checkConnectivity(String providerId);
 
     /**
+     * 检查指定 AI 模型的连通性
+     * <p>
+     * 根据模型的能力类型（CHAT/EMBEDDING/RERANK），发送对应的轻量 API 请求，
+     * 验证该特定模型是否可正常调用。
+     * </p>
+     *
+     * @param id 模型 ID（数据库主键）
+     * @return 连通性检查结果
+     */
+    ConnectivityResultVO checkModelConnectivity(String id);
+
+    /**
      * 从远程供应商拉取模型列表
      *
      * @param providerId 供应商 ID

@@ -70,6 +70,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const hasContent = message.content.trim().length > 0;
   const isWaiting = message.status === "streaming" && !hasContent;
   const [expandedImage, setExpandedImage] = React.useState<string | null>(null);
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
 
   if (isUser) {
     const hasImages = message.imageUrls && message.imageUrls.length > 0;
@@ -159,7 +160,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
               </div>
             ) : null}
             {hasContent ? (
-              <div className="text-[15px] leading-relaxed text-gray-800">
+              <div ref={contentRef} className="text-[15px] leading-relaxed text-gray-800">
                 <MarkdownRenderer content={cleanContent} citations={message.citations} />
                 {/* 位置请求组件：仅当这是最后一条消息时才触发 */}
                 {/* 历史消息中的 [LOCATION_REQUEST] 已有后续位置回复，不再重定位 */}
