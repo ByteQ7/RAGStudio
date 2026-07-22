@@ -6,12 +6,14 @@ import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
+import com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader;
 import com.google.gson.Gson;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * ReACT Agent 循环引擎
@@ -35,9 +37,13 @@ public class AgentLoop {
     private final ToolRegistry toolRegistry;
     private final ReActResponseParser responseParser;
     private final ReActPromptBuilder promptBuilder;
+    private final PromptTemplateLoader templateLoader;
 
     /** 最终回答流式输出时每次推送的字符数 */
     private static final int FINAL_ANSWER_CHUNK_SIZE = 5;
+
+    /** Agent 提示模板路径 */
+    private static final String AGENT_REMINDER_PATH = "prompt/agent-reminder.st";
 
     /** 取消异常标记 */
     private static final String CANCEL_MARKER = "任务已被用户取消";
@@ -54,31 +60,38 @@ public class AgentLoop {
     /** 深度思考级别（0-100），0 表示关闭 */
     private final int thinkingLevel;
 
+    /** 是否已调用过 rag_search（用于抑制 kb_forced 持续生效） */
+    private boolean ragSearchCalled = false;
+
     public AgentLoop(LLMService llmService,
                      ToolRegistry toolRegistry,
                      ReActResponseParser responseParser,
-                     ReActPromptBuilder promptBuilder) {
-        this(llmService, toolRegistry, responseParser, promptBuilder, () -> false, 0);
+                     ReActPromptBuilder promptBuilder,
+                     PromptTemplateLoader templateLoader) {
+        this(llmService, toolRegistry, responseParser, promptBuilder, templateLoader, () -> false, 0);
     }
 
     public AgentLoop(LLMService llmService,
                      ToolRegistry toolRegistry,
                      ReActResponseParser responseParser,
                      ReActPromptBuilder promptBuilder,
+                     PromptTemplateLoader templateLoader,
                      java.util.function.Supplier<Boolean> cancellationChecker) {
-        this(llmService, toolRegistry, responseParser, promptBuilder, cancellationChecker, 0);
+        this(llmService, toolRegistry, responseParser, promptBuilder, templateLoader, cancellationChecker, 0);
     }
 
     public AgentLoop(LLMService llmService,
                      ToolRegistry toolRegistry,
                      ReActResponseParser responseParser,
                      ReActPromptBuilder promptBuilder,
+                     PromptTemplateLoader templateLoader,
                      java.util.function.Supplier<Boolean> cancellationChecker,
                      int thinkingLevel) {
         this.llmService = llmService;
         this.toolRegistry = toolRegistry;
         this.responseParser = responseParser;
         this.promptBuilder = promptBuilder;
+        this.templateLoader = templateLoader;
         this.cancellationChecker = cancellationChecker;
         this.thinkingLevel = thinkingLevel;
     }
@@ -132,7 +145,7 @@ public class AgentLoop {
                 try {
                     llmResponse = llmService.chat(ChatRequest.builder()
                             .messages(new ArrayList<>(ctx.getMessages()))
-                            .temperature(0.0)   // 最低温度，最大程度保证格式遵守
+                            .temperature(0.4)
                             .thinkingLevel(thinkingLevel)
                             .build());
                 } catch (Exception e) {
@@ -161,7 +174,7 @@ public class AgentLoop {
                     try {
                         llmResponse = llmService.chat(ChatRequest.builder()
                                 .messages(new ArrayList<>(ctx.getMessages()))
-                                .temperature(0.1)
+                                .temperature(0.4)
                                 .thinkingLevel(0)
                                 .build());
                     } catch (Exception e2) {
@@ -182,7 +195,10 @@ public class AgentLoop {
                 AgentStep step = responseParser.parse(llmResponse, iteration);
 
                 // 格式校正：初次迭代 LLM 未使用 ReACT 格式时重试一次
-                if (iteration == 0 && !llmResponse.contains("Action:") && !llmResponse.contains("Action：")) {
+                // 仅检查行首的 Action:，避免匹配到 Thought/思考中提及的 "Action: xxx" 文本
+                boolean formatCorrected = false;
+                Pattern actionLinePattern = Pattern.compile("(?:^|\\n)\\s*Action\\s*[:：]", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+                if (iteration == 0 && !actionLinePattern.matcher(llmResponse).find()) {
                     log.warn("Agent 初次迭代 LLM 未使用 ReACT 格式，注入纠正提示后重试");
                     ctx.addMessage(ChatMessage.assistant(llmResponse));
                     ctx.addMessage(ChatMessage.system(
@@ -190,25 +206,29 @@ public class AgentLoop {
                             + "确保包含 Thought: 和 Action: 字段。"
                             + "即使你认为不需要调用工具，也必须输出：\n"
                             + "Thought: ...\nAction: FINISH\nFinal Answer: ..."));
+                    String retryResponse = null;
                     try {
-                        String retryResponse = llmService.chat(ChatRequest.builder()
+                        retryResponse = llmService.chat(ChatRequest.builder()
                                 .messages(new ArrayList<>(ctx.getMessages()))
-                                .temperature(0.0)
+                                .temperature(0.4)
                                 .thinkingLevel(0)
                                 .build());
-                        if (StrUtil.isNotBlank(retryResponse)) {
-                            llmResponse = retryResponse;
-                            step = responseParser.parse(llmResponse, iteration);
-                        }
                     } catch (Exception e2) {
                         log.warn("格式校正重试也失败: {}", e2.getMessage());
                     }
+                    if (retryResponse != null && !retryResponse.isBlank()) {
+                        llmResponse = retryResponse;
+                        step = responseParser.parse(llmResponse, iteration);
+                        ctx.addMessage(ChatMessage.assistant(llmResponse));
+                    }
+                    formatCorrected = true;
                 }
 
                 ctx.addStep(step);
 
-                // 追加 LLM 响应到消息列表
-                ctx.addMessage(ChatMessage.assistant(llmResponse));
+                if (!formatCorrected) {
+                    ctx.addMessage(ChatMessage.assistant(llmResponse));
+                }
 
                 // 2c. 如有 Plan，注入计划到上下文（后续迭代可参照执行）
                 String plan = step.getPlan();
@@ -246,6 +266,13 @@ public class AgentLoop {
 
                     // 将 Observation 追加到消息列表
                     ctx.addMessage(ChatMessage.user(result.toObservation()));
+                    // 首次 rag_search 执行后，抑制 kb_forced 持续生效，防止 Agent 重复搜索
+                    if ("rag_search".equals(step.getToolName()) && !ragSearchCalled) {
+                        ragSearchCalled = true;
+                        ctx.addMessage(ChatMessage.system(
+                                "你已成功调用 rag_search 获取了知识库检索结果。"
+                                + "请基于上述 Observation 中的检索结果直接总结回答，不要再重复调用 rag_search。"));
+                    }
                     continue;
                 }
 
@@ -286,7 +313,7 @@ public class AgentLoop {
     /**
      * 构建 Agent 循环的初始消息列表
      * <p>
-     * 顺序：System Prompt（含工具列表 + KB 上下文）→ 对话历史 → 用户问题
+     * 顺序：System Prompt → 对话目标摘要 → 对话历史 → 前置指令 → 用户问题
      */
     private List<ChatMessage> buildInitialMessages(AgentContext ctx) {
         List<ChatMessage> messages = new ArrayList<>();
@@ -296,24 +323,37 @@ public class AgentLoop {
                 toolRegistry, ctx.getKbContext(), ctx.isKbRelevant());
         messages.add(systemPrompt);
 
-        // 2. 对话历史（含摘要）
+        // 2. 对话目标摘要（多轮对话时注入，帮助 Agent 聚焦当前任务）
+        String goalSummary = buildGoalSummary(ctx);
+        if (goalSummary != null) {
+            messages.add(ChatMessage.system(goalSummary));
+        }
+
+        // 3. 对话历史（含摘要）
         if (CollUtil.isNotEmpty(ctx.getHistory())) {
             messages.addAll(ctx.getHistory());
         }
 
-        // 3. 前置指令（利用 recency bias，紧贴用户问题）
+        // 4. 前置指令（利用 recency bias，紧贴用户问题），从模板加载各节
         StringBuilder reminder = new StringBuilder();
-        reminder.append("【格式要求】请严格按照 ReACT 格式输出。每次输出必须包含 Thought 和 Action 字段。")
-                .append("即使你不需要调用工具，也必须输出 Thought + Action: FINISH + Final Answer。")
-                .append("绝对不要直接输出一段文字而不带格式标签。");
+        reminder.append(templateLoader.loadSection(AGENT_REMINDER_PATH, "format_reminder"));
+
+        if (CollUtil.isNotEmpty(ctx.getHistory()) && ctx.getHistory().size() >= 4) {
+            reminder.append("\n\n").append(templateLoader.loadSection(AGENT_REMINDER_PATH, "multi_turn"));
+        }
+
+        boolean hasHistoryImage = ctx.getHistory() != null && ctx.getHistory().stream()
+                .anyMatch(m -> m.getImageUrls() != null && !m.getImageUrls().isEmpty());
+        if (hasHistoryImage) {
+            reminder.append("\n\n").append(templateLoader.loadSection(AGENT_REMINDER_PATH, "image_history"));
+        }
+
         if (ctx.isKbRelevant() && hasRagSearchTool()) {
-            reminder.append("\n\n【强制检索】用户已选择知识库且问题与知识库相关。")
-                    .append("你的第一轮行动必须调用 rag_search 工具检索知识库，")
-                    .append("然后基于检索结果回答。不得仅凭自身知识直接回答。");
+            reminder.append("\n\n").append(templateLoader.loadSection(AGENT_REMINDER_PATH, "kb_forced"));
         }
         messages.add(ChatMessage.system(reminder.toString()));
 
-        // 4. 用户当前问题（含图片 URL）
+        // 5. 用户当前问题（含图片 URL）
         ChatMessage userMsg = ChatMessage.user(ctx.getQuestion());
         if (CollUtil.isNotEmpty(ctx.getImageUrls())) {
             userMsg.setImageUrls(new java.util.ArrayList<>(ctx.getImageUrls()));
@@ -321,6 +361,46 @@ public class AgentLoop {
         messages.add(userMsg);
 
         return messages;
+    }
+
+    /**
+     * 从对话历史中提取当前目标摘要，帮助 Agent 在后续轮次中保持上下文感知
+     */
+    private String buildGoalSummary(AgentContext ctx) {
+        if (CollUtil.isEmpty(ctx.getHistory())) {
+            return null;
+        }
+        List<String> userQuestions = new ArrayList<>();
+        List<String> imageDescriptions = new ArrayList<>();
+        for (int i = 0; i < ctx.getHistory().size(); i++) {
+            ChatMessage msg = ctx.getHistory().get(i);
+            boolean hasImage = msg.getImageUrls() != null && !msg.getImageUrls().isEmpty();
+            if (msg.getRole() == ChatMessage.Role.USER && StrUtil.isNotBlank(msg.getContent())) {
+                String content = msg.getContent().trim();
+                if (!content.startsWith("Observation:") && !content.startsWith("{\"query\"") && !content.contains("[^chunk_")) {
+                    userQuestions.add(content);
+                    // 如果这条用户消息有图片，找下一条 assistant 消息作为图片描述
+                    if (hasImage && i + 1 < ctx.getHistory().size()) {
+                        ChatMessage next = ctx.getHistory().get(i + 1);
+                        if (next.getRole() == ChatMessage.Role.ASSISTANT && StrUtil.isNotBlank(next.getContent())) {
+                            imageDescriptions.add(next.getContent().trim());
+                        }
+                    }
+                }
+            }
+        }
+        if (userQuestions.isEmpty() && imageDescriptions.isEmpty()) {
+            return null;
+        }
+        String previousQuestions = String.join(" → ", userQuestions);
+        String imageNote = "";
+        if (!imageDescriptions.isEmpty()) {
+            imageNote = "（用户之前上传了图片，分析结果：" + String.join("；", imageDescriptions) + "）。";
+        }
+        return templateLoader.renderSection(AGENT_REMINDER_PATH, "goal_summary", Map.of(
+                "previous_questions", previousQuestions,
+                "image_note", imageNote
+        ));
     }
 
     /** 检查工具注册表中是否有 rag_search */
@@ -347,7 +427,7 @@ public class AgentLoop {
             while (pos < length) {
                 int end = Math.min(pos + FINAL_ANSWER_CHUNK_SIZE, length);
                 // 确保不截断代理对（emoji 等多字节字符）
-                if (end < length && Character.isSurrogatePair(text.charAt(end - 1), text.charAt(end))) {
+                if (end < length && Character.isHighSurrogate(text.charAt(end - 1))) {
                     end++;
                 }
                 callback.onContent(text.substring(pos, end));

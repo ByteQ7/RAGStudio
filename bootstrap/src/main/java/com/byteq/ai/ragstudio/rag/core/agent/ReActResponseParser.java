@@ -39,19 +39,14 @@ public class ReActResponseParser {
             "Plan\\s*[:：]\\s*(.*?)(?=\\n\\s*(?:Thought|Action|Observation|Final|$))",
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private static final Pattern ACTION_PATTERN = Pattern.compile(
-            "Action\\s*[:：]\\s*(\\S+)",
+            "(?:^|\\n)\\s*Action\\s*[:：]\\s*(\\S+)",
+            Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+    private static final Pattern ACTION_INPUT_MARKER = Pattern.compile(
+            "Action\\s*Input\\s*[:：]\\s*",
             Pattern.CASE_INSENSITIVE);
-    private static final Pattern ACTION_INPUT_PATTERN = Pattern.compile(
-            "Action\\s*Input\\s*[:：]\\s*(\\{.*?(?:\\n.*?)*?\\})\\s*$",
-            Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private static final Pattern FINAL_ANSWER_PATTERN = Pattern.compile(
             "Final\\s*Answer\\s*[:：]\\s*(.*)",
             Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
-
-    // Level 2 fallback: loose JSON extraction
-    private static final Pattern JSON_BLOCK_PATTERN = Pattern.compile(
-            "\\{[^{}]*\\}",
-            Pattern.DOTALL);
 
     /**
      * 解析 LLM 响应为 AgentStep
@@ -156,15 +151,9 @@ public class ReActResponseParser {
         }
 
         // TOOL_CALL 分支
-        Map<String, Object> toolInput = Map.of();
-        Matcher inputMatcher = ACTION_INPUT_PATTERN.matcher(text);
-        if (inputMatcher.find()) {
-            String jsonStr = inputMatcher.group(1).trim();
-            // 清理可能的 markdown 代码块包裹
-            jsonStr = LLMResponseCleaner.stripMarkdownCodeFence(jsonStr);
-            toolInput = parseJsonParams(jsonStr, actionName);
-        } else {
-            // 尝试在 Action 行后查找 JSON
+        Map<String, Object> toolInput = extractActionInputFromText(text);
+        if (toolInput.isEmpty()) {
+            // 降级：在 Action 行后尝试直接找 JSON
             String afterAction = extractAfter(text, actionMatcher.end());
             toolInput = extractJsonFromText(afterAction, actionName);
         }
@@ -185,7 +174,7 @@ public class ReActResponseParser {
     private AgentStep tryLooseParse(String text, int iteration) {
         // 查找 Action 声明（允许前后有无关文本）
         Matcher actionMatcher = Pattern.compile(
-                "Action\\s*[:：]\\s*(\\S+)", Pattern.CASE_INSENSITIVE).matcher(text);
+                "(?:^|\\n)\\s*Action\\s*[:：]\\s*(\\S+)", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE).matcher(text);
         if (!actionMatcher.find()) {
             return null;
         }
@@ -219,18 +208,33 @@ public class ReActResponseParser {
     }
 
     /**
+     * 从文本中提取 Action Input: 后的 JSON 参数（深度优先，兼容嵌套花括号和尾部内容）
+     */
+    private Map<String, Object> extractActionInputFromText(String text) {
+        Matcher matcher = ACTION_INPUT_MARKER.matcher(text);
+        if (!matcher.find()) {
+            return Map.of();
+        }
+        String afterInput = text.substring(matcher.end()).trim();
+        afterInput = LLMResponseCleaner.stripMarkdownCodeFence(afterInput);
+        String jsonStr = LLMResponseCleaner.extractJson(afterInput);
+        if (jsonStr != null && jsonStr.startsWith("{")) {
+            return parseJsonParams(jsonStr, "");
+        }
+        return Map.of();
+    }
+
+    /**
      * 从文本中提取 JSON 参数
      */
     private Map<String, Object> extractJsonFromText(String text, String toolName) {
         if (StrUtil.isBlank(text)) {
             return Map.of();
         }
-        // 先清理 markdown 代码块
         String cleaned = LLMResponseCleaner.stripMarkdownCodeFence(text);
-        // 尝试找最外层的 JSON 对象
-        Matcher jsonMatcher = JSON_BLOCK_PATTERN.matcher(cleaned);
-        if (jsonMatcher.find()) {
-            return parseJsonParams(jsonMatcher.group(), toolName);
+        String jsonStr = LLMResponseCleaner.extractJson(cleaned);
+        if (jsonStr != null && jsonStr.startsWith("{")) {
+            return parseJsonParams(jsonStr, toolName);
         }
         return Map.of();
     }
@@ -290,8 +294,6 @@ public class ReActResponseParser {
         // 跳过 Action 行可能剩余的空白和换行
         int firstNewline = after.indexOf('\n');
         if (firstNewline > 0) {
-            String firstLine = after.substring(0, firstNewline).trim();
-            // 如果第一行只是 Action 的值（如 "weather_query"），跳过它
             after = after.substring(firstNewline).trim();
         }
         return after;

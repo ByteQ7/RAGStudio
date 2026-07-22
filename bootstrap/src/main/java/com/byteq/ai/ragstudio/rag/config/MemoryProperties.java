@@ -25,12 +25,12 @@ public class MemoryProperties {
      */
     @Min(1)
     @Max(100)
-    private Integer historyKeepTurns = 8;
+    private Integer historyKeepTurns = 6;
 
     /**
      * 是否启用对话记忆压缩
      */
-    private Boolean summaryEnabled = false;
+    private Boolean summaryEnabled = true;
 
     /**
      * 开始摘要的轮数阈值
