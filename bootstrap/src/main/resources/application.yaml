@@ -82,8 +82,8 @@ rag:
       poll-interval-ms: 200
 
   memory:
-    history-keep-turns: 4
-    compress-threshold: 8    # 超过 4 轮到 8 轮时触发压缩，压缩后保留 4 轮原文
+    history-keep-turns: 6
+    compress-threshold: 12   # 超过 6 轮到 12 轮时触发压缩，压缩后保留 6 轮原文
     summary-enabled: true
     summary-max-chars: 200
     title-max-length: 30

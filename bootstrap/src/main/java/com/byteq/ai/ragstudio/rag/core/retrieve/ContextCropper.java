@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ContextCropper {
 
-    private static final double DEFAULT_THRESHOLD = 0.2;
+    private static final double DEFAULT_THRESHOLD = 0.3;
 
     private final SemanticHighlightClient semanticHighlightClient;
 
