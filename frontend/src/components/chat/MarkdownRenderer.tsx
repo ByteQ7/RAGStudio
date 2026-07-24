@@ -652,6 +652,18 @@ function ErrorBoundaryFallback({
   compact,
   onError,
 }: HighlighterProps & { onError: () => void }) {
+  const [crashed, setCrashed] = React.useState(false);
+
+  React.useEffect(() => {
+    if (crashed) {
+      onError();
+    }
+  }, [crashed, onError]);
+
+  if (crashed) {
+    return <FallbackCode value={value} compact={compact} />;
+  }
+
   try {
     return (
       <SyntaxHighlighter
@@ -674,10 +686,7 @@ function ErrorBoundaryFallback({
       </SyntaxHighlighter>
     );
   } catch {
-    // Trigger error boundary on next render
-    React.useEffect(() => {
-      onError();
-    }, []);
+    setCrashed(true);
     return <FallbackCode value={value} compact={compact} />;
   }
 }

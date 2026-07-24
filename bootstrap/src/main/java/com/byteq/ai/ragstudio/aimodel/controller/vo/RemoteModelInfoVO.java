@@ -23,6 +23,6 @@ public class RemoteModelInfoVO {
     private boolean supportsThinking;
     /** 是否支持多模态 */
     private boolean supportsMultimodal;
-    /** 向量维度（仅 embedding） */
-    private Integer dimension;
+    /** 向量维度列表（如 [1024, 1536, 4096]），仅 embedding */
+    private List<Integer> dimensions;
 }

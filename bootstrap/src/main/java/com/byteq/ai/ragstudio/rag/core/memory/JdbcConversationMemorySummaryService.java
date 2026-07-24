@@ -196,7 +196,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
 
         ChatRequest request = ChatRequest.builder()
                 .messages(summaryMessages)
-                .temperature(0.3D)
+                .temperature(0.4D)
                 .topP(0.9D)
                 .thinkingLevel(0)
                 .build();
@@ -212,20 +212,28 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
     }
 
     // 将数据库消息实体列表转换为 ChatMessage 列表，仅保留 user 和 assistant 角色的有效消息
+    // 检测含有 imageUrls 的 user 消息，追加图片标记以便压缩摘要保留图片上下文
     private List<ChatMessage> toHistoryMessages(List<ConversationMessageDO> messages) {
         if (CollUtil.isEmpty(messages)) {
             return List.of();
         }
         return messages.stream()
                 .filter(item -> item != null
-                        && StrUtil.isNotBlank(item.getContent())
+                        && (StrUtil.isNotBlank(item.getContent()) || StrUtil.isNotBlank(item.getImageUrls()))
                         && StrUtil.isNotBlank(item.getRole()))
                 .map(item -> {
                     String role = item.getRole().toLowerCase();
+                    String content = item.getContent();
                     if ("user".equals(role)) {
-                        return ChatMessage.user(item.getContent());
+                        if (StrUtil.isNotBlank(item.getImageUrls())) {
+                            String note = content != null
+                                    ? content + "\n[用户上传了图片，图片分析结果见下一条助手消息]"
+                                    : "[用户上传了图片，图片分析结果见下一条助手消息]";
+                            return ChatMessage.user(note);
+                        }
+                        return ChatMessage.user(content != null ? content : "");
                     } else if ("assistant".equals(role)) {
-                        return ChatMessage.assistant(item.getContent());
+                        return ChatMessage.assistant(content != null ? content : "");
                     }
                     return null;
                 })

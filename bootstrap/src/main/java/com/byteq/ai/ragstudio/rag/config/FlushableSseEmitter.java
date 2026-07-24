@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.rag.config;
 
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.io.IOException;
  * <p>
  * 使用方式：在 Controller 中用此类代替 {@link SseEmitter}，</p>
  */
+@Slf4j
 public class FlushableSseEmitter extends SseEmitter {
 
     private final HttpServletResponse response;
@@ -40,8 +42,10 @@ public class FlushableSseEmitter extends SseEmitter {
         if (response != null) {
             try {
                 response.flushBuffer();
-            } catch (Exception ignored) {
-                // flush 失败不影响主流程
+            } catch (Exception e) {
+                if (log.isDebugEnabled()) {
+                    log.debug("SSE flush 失败（客户端可能已断开）: {}", e.getMessage());
+                }
             }
         }
     }

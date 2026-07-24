@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import type { AgentStep, AgentStepPayload, CompletionPayload, FeedbackValue, McpCallPayload, Message, MessageDeltaPayload, Session } from "@/types";
+import type { AgentStep, AgentStepPayload, Citation, CompletionPayload, FeedbackValue, McpCallPayload, Message, MessageDeltaPayload, Session } from "@/types";
 import {
   listMessages,
   listSessions,
@@ -84,7 +84,7 @@ function startStreamingTimer(get: () => ChatState) {
       updated[found.idx] = { ...found.msg, content: found.msg.content + chars };
       return { messages: updated };
     });
-  }, 1);
+  }, 8);
 }
 
 /** 停止定时器，可选 flush 剩余缓冲 */
@@ -299,6 +299,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 纯图片无文本时使用占位文本
     const questionText = trimmed || (imageUrls ? `[图片]` : "");
     if (get().isStreaming) return;
+    // 立即标记以防并发，由后续 set 覆盖
+    set({ isStreaming: true });
     const knowledgeBaseIds = get().knowledgeBaseIds;
     // 清除旧缓冲，防止残留字符泄漏到新消息
     streamingBuffer = "";
@@ -315,8 +317,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       content: displayContent,
       status: "done",
       createdAt: new Date().toISOString(),
-      // 优先使用预览 URL（presigned HTTP），回退到原始 s3:// URL
-      imageUrls: previewUrls && previewUrls.length > 0 ? previewUrls : (imageUrls && imageUrls.length > 0 ? imageUrls : undefined)
+      // 存储预签名 URL（previewUrls）供前端 <img> 渲染；
+      // 后端 API 通过 imageUrls 参数接收 s3:// 原始 URL
+      imageUrls: previewUrls && previewUrls.length > 0 ? previewUrls
+                : (imageUrls && imageUrls.length > 0 ? imageUrls : undefined)
     };
     const assistantId = `assistant-${Date.now()}`;
     const currentThinkingLevel = get().deepThinkingLevel;
@@ -346,8 +350,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const handlers = {
       onMeta: (payload: { conversationId: string; taskId: string }) => {
         if (get().streamingMessageId !== assistantId) return;
-        const nextId = payload.conversationId || get().currentSessionId;
-        if (!nextId) return;
+        const nextId = payload.conversationId || get().currentSessionId || `temp-${Date.now()}`;
         const lastTime = new Date().toISOString();
         const existing = get().sessions.find((session) => session.id === nextId);
         set((state) => ({
@@ -408,8 +411,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!payload || typeof payload !== "object") return;
         get().appendStreamContent(payload.delta);
       },
-      onCitation: (payload) => {
-        // citation 可能在前端标记 done 之后到达，所以不用 streamingMessageId 过滤
+      onCitation: (payload: Citation[]) => {
         const msgId = get().streamingMessageId || assistantId;
         if (!msgId) return;
         set((state) => ({
@@ -497,14 +499,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onDone: () => {
         if (get().streamingMessageId !== assistantId) return;
-        // 清 streamingMessageId 标记后端完成，但不改 isStreaming
-        // 定时器检测到 streamingMessageId=null 且缓冲空后自动设 isStreaming=false
-        set({
-          streamTaskId: null,
-          streamAbort: null,
-          streamingMessageId: null,
-          cancelRequested: false
-        });
+        // 缓冲已空且无定时器活动时直接结束流式状态
+        if (streamingBuffer.length === 0 && streamingTimer === null) {
+          set({
+            isStreaming: false,
+            streamTaskId: null,
+            streamAbort: null,
+            streamingMessageId: null,
+            cancelRequested: false
+          });
+        } else {
+          set({
+            streamTaskId: null,
+            streamAbort: null,
+            streamingMessageId: null,
+            cancelRequested: false
+          });
+        }
       },
       onTitle: (payload: { title: string }) => {
         if (get().streamingMessageId !== assistantId) return;

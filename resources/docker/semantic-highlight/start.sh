@@ -13,8 +13,7 @@ QUANTIZE="${QUANTIZE:-int8}"
 
 echo "正在启动语义高亮服务，量化模式=${QUANTIZE} ..."
 
-# 清除代理环境变量（避免 HuggingFace 下载被拦截）
-env -u https_proxy -u http_proxy -u HTTP_PROXY -u HTTPS_PROXY \
-    -u all_proxy -u ALL_PROXY \
+# 强制离线模式（模型已在构建时下载，运行时无需联网）
+env HF_HUB_OFFLINE=1 \
     QUANTIZE="${QUANTIZE}" \
   uvicorn main:app --host 0.0.0.0 --port 8001

@@ -76,9 +76,10 @@ public class AiModelDO {
     private Integer supportsMultimodal;
 
     /**
-     * 向量维度（仅 embedding 模型使用）
+     * 向量维度列表（JSON 数组，如 "[1024,1536,4096]"），仅 embedding 模型使用
+     * <p>多个值表示模型支持多种输出维度，由用户在创建知识库时选择 ≤2000 的值。</p>
      */
-    private Integer dimension;
+    private String dimension;
 
     /**
      * 自定义 URL（可选，覆盖供应商的 base_url）

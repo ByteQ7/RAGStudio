@@ -17,6 +17,11 @@ public class VectorSpaceSpec {
     private VectorSpaceId spaceId;
 
     /**
+     * 向量维度，对应 t_knowledge_vector_{dimension} 表（如 1024、1536，≤ 2000）
+     */
+    private int dimension;
+
+    /**
      * 备注
      */
     private String remark;

@@ -98,12 +98,23 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
     dataLines = [];
   };
 
+  let aborted = false;
+  signal?.addEventListener('abort', () => {
+    aborted = true;
+    reader.cancel().catch(() => {});
+  }, { once: true });
+
   while (true) {
-    if (signal?.aborted) {
-      reader.cancel();
+    let chunk;
+    try {
+      chunk = await reader.read();
+    } catch {
       break;
     }
-    const { value, done } = await reader.read();
+    if (aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+    const { value, done } = chunk;
     if (done) {
       dispatchEvent();
       break;
@@ -153,7 +164,7 @@ async function streamWithRetry(
       });
 
       if (!response.ok) {
-        throw new Error(`SSE 请求失败（${response.status}）`);
+        throw new Error(`SSE 请求失败（${response.status}）`, { cause: { status: response.status } });
       }
 
       await readSseStream(response, handlers, signal);
@@ -161,6 +172,10 @@ async function streamWithRetry(
     } catch (error) {
       const err = error as Error;
       if (signal?.aborted) {
+        throw err;
+      }
+      const cause = (err as any).cause;
+      if (cause?.status && cause.status >= 400 && cause.status < 500) {
         throw err;
       }
       if (attempt >= retryCount) {

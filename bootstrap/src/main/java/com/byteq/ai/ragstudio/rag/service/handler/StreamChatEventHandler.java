@@ -34,8 +34,8 @@ public class StreamChatEventHandler implements StreamCallback {
     private final String userId;
     private final StreamTaskManager taskManager;
     private final boolean sendTitleOnComplete;
-    private final StringBuilder answer = new StringBuilder();
-    private final StringBuilder thinking = new StringBuilder();
+    private final StringBuffer answer = new StringBuffer();
+    private final StringBuffer thinking = new StringBuffer();
     private long thinkingStartMs;
     private int thinkingDurationSeconds;
     private String agentStepsJson;
@@ -98,7 +98,7 @@ public class StreamChatEventHandler implements StreamCallback {
             } else {
                 displayContent = "> **对话被用户关闭** ❗";
             }
-            String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
+            String thinkingContent = thinking.length() == 0 ? null : thinking.toString();
             ChatMessage message = ChatMessage.assistant(displayContent, thinkingContent,
                     resolveThinkingDuration(), agentStepsJson, citationsJson);
             message.setThinkingLevel(thinkingLevel);
@@ -241,13 +241,12 @@ public class StreamChatEventHandler implements StreamCallback {
     public void onComplete() {
         log.warn("onComplete called, thinkingLevel={}", thinkingLevel);
         if (taskManager.isCancelled(taskId)) {
-            // content 已在 buildCompletionPayloadOnCancel 中持久化，不再重复保存
-            sender.sendEvent(SSEEventType.DONE.value(), "");
+            sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
             return;
         }
         String messageId = null;
         try {
-            String thinkingContent = thinking.isEmpty() ? null : thinking.toString();
+            String thinkingContent = thinking.length() == 0 ? null : thinking.toString();
             ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent,
                     resolveThinkingDuration(), agentStepsJson, citationsJson);
             message.setThinkingLevel(thinkingLevel);

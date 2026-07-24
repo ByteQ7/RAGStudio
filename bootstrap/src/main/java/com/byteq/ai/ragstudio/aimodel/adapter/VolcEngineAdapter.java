@@ -61,13 +61,18 @@ public class VolcEngineAdapter extends OpenaiCompatibleAdapter {
                         || lowerId.contains("vl")
                         || lowerId.contains("visual");
 
+                List<Integer> dimensions = null;
+                if (capabilities.contains("EMBEDDING")) {
+                    dimensions = List.of(1536);
+                }
+
                 result.add(new RemoteModelInfo(
                         modelId,
                         modelId,
                         capabilities,
                         supportsThinking,
                         supportsMultimodal,
-                        null
+                        dimensions
                 ));
             }
         } catch (Exception e) {

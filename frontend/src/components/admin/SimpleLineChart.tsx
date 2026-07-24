@@ -283,7 +283,7 @@ export function SimpleLineChart({
   theme = "light",
   yAxisTickCount = 4
 }: SimpleLineChartProps) {
-  const gradientIdPrefix = useId().replace(/:/g, "");
+  const gradientIdPrefix = useId();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);

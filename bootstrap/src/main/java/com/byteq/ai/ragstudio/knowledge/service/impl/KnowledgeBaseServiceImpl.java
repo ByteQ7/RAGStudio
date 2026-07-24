@@ -6,6 +6,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.byteq.ai.ragstudio.aimodel.dao.entity.AiModelDO;
+import com.byteq.ai.ragstudio.aimodel.dao.entity.AiProviderDO;
+import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiModelMapper;
+import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiProviderMapper;
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeBaseCreateRequest;
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeBasePageRequest;
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeBaseUpdateRequest;
@@ -20,7 +24,9 @@ import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorSpaceId;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorSpaceSpec;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorStoreAdmin;
+import com.byteq.ai.ragstudio.infra.embedding.EmbeddingService;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeBaseService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -50,6 +56,10 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final VectorStoreAdmin vectorStoreAdmin;
     private final S3Client s3Client;
+    private final AiModelMapper aiModelMapper;
+    private final AiProviderMapper aiProviderMapper;
+    private final ObjectMapper objectMapper;
+    private final EmbeddingService embeddingService;
 
     /**
      * 创建知识库
@@ -69,21 +79,42 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         Long count = knowledgeBaseMapper.selectCount(
                 new LambdaQueryWrapper<KnowledgeBaseDO>()
                         .eq(KnowledgeBaseDO::getName, name)
-                        .eq(KnowledgeBaseDO::getDeleted, 0)
         );
         if (count > 0) {
             throw new ServiceException("知识库名称已存在：" + requestParam.getName());
+        }
+
+        // 校验并解析向量维度
+        int dimension = validateAndResolveDimension(requestParam.getDimension(), requestParam.getEmbeddingModel());
+
+        // 若未传入 embeddingProvider，从模型配置自动推导
+        String provider = requestParam.getEmbeddingProvider();
+        if (!StringUtils.hasText(provider) && StringUtils.hasText(requestParam.getEmbeddingModel())) {
+            provider = resolveEmbeddingProvider(requestParam.getEmbeddingModel());
+        }
+
+        // 发送真实向量化探测，校验 Embedding 模型可用
+        if (StringUtils.hasText(requestParam.getEmbeddingModel())) {
+            try {
+                embeddingService.embed("你好", requestParam.getEmbeddingModel());
+            } catch (Exception e) {
+                log.warn("Embedding 模型探测失败，拒绝创建知识库: modelId={}", requestParam.getEmbeddingModel(), e);
+                String rootCause = e.getMessage() != null ? e.getMessage() : "未知错误";
+                throw new ServiceException("Embedding 模型 \"" + requestParam.getEmbeddingModel()
+                        + "\" 不可用: " + rootCause);
+            }
         }
 
         // 使用统一 S3 桶 ragstudio，不再为每个知识库创建独立桶
         KnowledgeBaseDO kbDO = KnowledgeBaseDO.builder()
                 .name(requestParam.getName())
                 .description(requestParam.getDescription())
+                .embeddingProvider(provider)
                 .embeddingModel(requestParam.getEmbeddingModel())
+                .dimension(dimension)
                 .collectionName(requestParam.getCollectionName())
                 .createdBy(UserContext.getUsername())
                 .updatedBy(UserContext.getUsername())
-                .deleted(0)
                 .build();
 
         knowledgeBaseMapper.insert(kbDO);
@@ -92,6 +123,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .spaceId(VectorSpaceId.builder()
                         .logicalName(requestParam.getCollectionName())
                         .build())
+                .dimension(dimension)
                 .remark(requestParam.getName())
                 .build();
         vectorStoreAdmin.ensureVectorSpace(spaceSpec);
@@ -106,24 +138,28 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Override
     public void update(KnowledgeBaseUpdateRequest requestParam) {
         KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(requestParam.getId());
-        if (kb == null || kb.getDeleted() != null && kb.getDeleted() == 1) {
+        if (kb == null) {
             throw new ClientException("知识库不存在：" + requestParam.getId());
         }
 
-        if (StringUtils.hasText(requestParam.getEmbeddingModel())
-                && !requestParam.getEmbeddingModel().equals(kb.getEmbeddingModel())) {
-
+        boolean embeddingChanged = StringUtils.hasText(requestParam.getEmbeddingModel())
+                && !requestParam.getEmbeddingModel().equals(kb.getEmbeddingModel());
+        if (embeddingChanged || StringUtils.hasText(requestParam.getEmbeddingProvider())) {
             Long docCount = knowledgeDocumentMapper.selectCount(
                     new LambdaQueryWrapper<KnowledgeDocumentDO>()
                             .eq(KnowledgeDocumentDO::getKbId, requestParam.getId())
                             .gt(KnowledgeDocumentDO::getChunkCount, 0)
-                            .eq(KnowledgeDocumentDO::getDeleted, 0)
             );
             if (docCount > 0) {
                 throw new ClientException("知识库已存在向量化文档，不允许修改嵌入模型");
             }
+        }
 
+        if (embeddingChanged) {
             kb.setEmbeddingModel(requestParam.getEmbeddingModel());
+        }
+        if (StringUtils.hasText(requestParam.getEmbeddingProvider())) {
+            kb.setEmbeddingProvider(requestParam.getEmbeddingProvider());
         }
 
         if (StringUtils.hasText(requestParam.getName())) {
@@ -145,7 +181,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Override
     public void rename(String kbId, KnowledgeBaseUpdateRequest requestParam) {
         KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(kbId);
-        if (kb == null || kb.getDeleted() != null && kb.getDeleted() == 1) {
+        if (kb == null) {
             throw new ClientException("知识库不存在");
         }
 
@@ -159,7 +195,6 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 Wrappers.lambdaQuery(KnowledgeBaseDO.class)
                         .eq(KnowledgeBaseDO::getName, name)
                         .ne(KnowledgeBaseDO::getId, kbId)
-                        .eq(KnowledgeBaseDO::getDeleted, 0)
         );
         if (count > 0) {
             throw new ServiceException("知识库名称已存在：" + requestParam.getName());
@@ -177,7 +212,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
      * <p>
      * 处理流程：
      * 1. 校验知识库存在且无文档
-     * 2. 逻辑删除数据库记录
+     * 2. 物理删除数据库记录
      * 3. 清理 S3 存储桶和向量集合
      * </p>
      */
@@ -185,22 +220,19 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(String kbId) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
-        if (kbDO == null || kbDO.getDeleted() != null && kbDO.getDeleted() == 1) {
+        if (kbDO == null) {
             throw new ClientException("知识库不存在");
         }
 
         Long docCount = knowledgeDocumentMapper.selectCount(
                 Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
                         .eq(KnowledgeDocumentDO::getKbId, kbId)
-                        .eq(KnowledgeDocumentDO::getDeleted, 0)
         );
         if (docCount != null && docCount > 0) {
             throw new ClientException("当前知识库下还有文档，请删除文档");
         }
 
-        kbDO.setDeleted(1);
-        kbDO.setUpdatedBy(UserContext.getUsername());
-        knowledgeBaseMapper.deleteById(kbDO);
+        knowledgeBaseMapper.deleteById(kbId);
 
         // 使用统一 S3 桶 ragstudio，不再按知识库独立创建桶，跳过 S3 桶清理
         // 清理向量集合
@@ -245,6 +277,78 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     }
 
     /**
+     * 校验并解析向量维度
+     * <p>用户选择的 dimension 必须在模型支持的维度列表中且 ≤ 2000。</p>
+     */
+    private int validateAndResolveDimension(Integer selectedDimension, String embeddingModel) {
+        if (embeddingModel == null) {
+            throw new ServiceException("嵌入模型不能为空");
+        }
+
+        List<Integer> supported = null;
+        try {
+            AiModelDO model = aiModelMapper.selectOne(
+                    Wrappers.lambdaQuery(AiModelDO.class)
+                            .eq(AiModelDO::getModelId, embeddingModel)
+                            .eq(AiModelDO::getDeleted, 0)
+                            .last("LIMIT 1")
+            );
+            if (model == null) {
+                throw new ServiceException("嵌入模型 \"" + embeddingModel + "\" 未在模型管理中找到，请先添加");
+            }
+            if (!"EMBEDDING".equalsIgnoreCase(model.getCapability())) {
+                throw new ServiceException("模型 \"" + embeddingModel + "\" 能力类型为 " + model.getCapability()
+                        + "，不是 EMBEDDING 类型，请选择正确的嵌入模型");
+            }
+            if (model.getDimension() != null) {
+                supported = parseDimensionList(model.getDimension());
+            }
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("查询模型维度失败: model={}", embeddingModel, e);
+        }
+
+        if (supported == null || supported.isEmpty()) {
+            log.warn("模型 {} 未配置维度列表，使用默认值 1536", embeddingModel);
+            return 1536;
+        }
+
+        if (selectedDimension == null || selectedDimension <= 0) {
+            int autoDim = supported.stream().filter(d -> d <= 2000).max(Integer::compareTo).orElse(1536);
+            log.info("未指定维度，自动选择 {} 维（模型支持: {}）", autoDim, supported);
+            return autoDim;
+        }
+
+        // 校验用户选择的维度
+        if (selectedDimension > 2000) {
+            throw new ServiceException("pgvector 最多支持 2000 维，选择的维度 " + selectedDimension + " 不可用");
+        }
+        if (!supported.contains(selectedDimension)) {
+            throw new ServiceException("模型 " + embeddingModel + " 不支持的维度: " + selectedDimension);
+        }
+        return selectedDimension;
+    }
+
+    /**
+     * 将 JSON 字符串解析为整数列表
+     */
+    private List<Integer> parseDimensionList(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            if (json.trim().startsWith("[")) {
+                return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<Integer>>() {});
+            }
+            // 兼容旧数据：纯数字字符串
+            int single = Integer.parseInt(json.trim());
+            return List.of(single);
+        } catch (Exception e) {
+            log.warn("解析 dimension 失败: {}, 使用默认 [1536]", json);
+            return List.of(1536);
+        }
+    }
+
+    /**
      * 清理向量集合。
      * 清理失败不影响主流程（DB 已软删除），仅记录告警日志。
      */
@@ -262,11 +366,30 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         }
     }
 
+    /**
+     * 根据 embedding modelId 从模型配置中推导 provider 名称
+     */
+    private String resolveEmbeddingProvider(String modelId) {
+        try {
+            AiModelDO model = aiModelMapper.selectOne(
+                    Wrappers.lambdaQuery(AiModelDO.class)
+                            .eq(AiModelDO::getModelId, modelId)
+                            .last("LIMIT 1")
+            );
+            if (model == null) return null;
+            AiProviderDO provider = aiProviderMapper.selectById(model.getProviderId());
+            return provider != null ? provider.getName() : null;
+        } catch (Exception e) {
+            log.warn("推导 Embedding Provider 失败, modelId={}", modelId, e);
+            return null;
+        }
+    }
+
     // 根据 ID 查询知识库详情，不存在或已删除时抛出异常
     @Override
     public KnowledgeBaseVO queryById(String kbId) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
-        if (kbDO == null || kbDO.getDeleted() != null && kbDO.getDeleted() == 1) {
+        if (kbDO == null) {
             throw new ClientException("知识库不存在");
         }
         return BeanUtil.toBean(kbDO, KnowledgeBaseVO.class);
@@ -285,7 +408,6 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     public IPage<KnowledgeBaseVO> pageQuery(KnowledgeBasePageRequest requestParam) {
         LambdaQueryWrapper<KnowledgeBaseDO> queryWrapper = Wrappers.lambdaQuery(KnowledgeBaseDO.class)
                 .like(StringUtils.hasText(requestParam.getName()), KnowledgeBaseDO::getName, requestParam.getName())
-                .eq(KnowledgeBaseDO::getDeleted, 0)
                 .orderByDesc(KnowledgeBaseDO::getUpdateTime);
 
         Page<KnowledgeBaseDO> page = new Page<>(requestParam.getCurrent(), requestParam.getSize());
@@ -301,7 +423,6 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                         Wrappers.query(KnowledgeDocumentDO.class)
                                 .select("kb_id", "COUNT(1) AS doc_count")
                                 .in("kb_id", kbIds)
-                                .eq("deleted", 0)
                                 .groupBy("kb_id")
                 );
                 for (Map<String, Object> row : rows) {

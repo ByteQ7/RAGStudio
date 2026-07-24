@@ -99,7 +99,7 @@ public class SkillTool implements Tool {
         String method = (String) config.getOrDefault("method", "GET");
 
         try {
-            Request.Builder reqBuilder = new Request.Builder();
+            Request.Builder reqBuilder = new Request.Builder().url(url);
 
             // 设置请求体（POST/PUT/PATCH）
             Object bodyObj = config.get("body");
@@ -108,8 +108,8 @@ public class SkillTool implements Tool {
                 String bodyStr = resolveTemplate(bodyTemplate, params);
                 String contentType = (String) config.getOrDefault("contentType", "application/json");
                 reqBuilder.method(method, RequestBody.create(bodyStr, MediaType.parse(contentType)));
-            } else {
-                reqBuilder.url(url);
+            } else if (!method.equalsIgnoreCase("GET")) {
+                reqBuilder.method(method, RequestBody.create("", MediaType.parse("application/json")));
             }
 
             // 设置请求头

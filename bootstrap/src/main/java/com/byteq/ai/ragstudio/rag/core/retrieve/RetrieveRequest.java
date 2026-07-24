@@ -38,6 +38,11 @@ public class RetrieveRequest {
     private String collectionName;
 
     /**
+     * 向量维度（如 1536、4096），对应 t_knowledge_vector_{dimension} 表
+     */
+    private Integer dimension;
+
+    /**
      * 元数据等值过滤条件（扩展项）：
      * - key 为 metadata 字段名
      * - value 为匹配值

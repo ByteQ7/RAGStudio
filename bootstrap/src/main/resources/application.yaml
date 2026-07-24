@@ -155,6 +155,8 @@ logging:
   level:
     # MCP SDK 在连接某些 SSE 端点时会打印非关键警告，降级以避免干扰
     io.modelcontextprotocol: ERROR
+    # PDFBox 解析中文字体 CFF 字形时的无害警告
+    org.apache.fontbox: ERROR
 
 app:
   demo-mode: ${DEMO_MODE:false}

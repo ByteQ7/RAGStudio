@@ -25,6 +25,11 @@ public class KnowledgeBaseUpdateRequest {
     private String description;
 
     /**
+     * 嵌入模型供应商
+     */
+    private String embeddingProvider;
+
+    /**
      * 嵌入模型（有文档分块后禁止修改）
      */
     private String embeddingModel;

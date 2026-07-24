@@ -72,10 +72,17 @@ public abstract class ForwardingStreamCallback implements StreamCallback {
     /**
      * 接收思考过程增量内容（final）
      * <p>
-     * 直接透传 delegate。
+     * 思考内容也是用户感知的首个 token，触发 TTFT 采集。
      */
     @Override
     public final void onThinking(String content) {
+        if (firstContentSeen.compareAndSet(false, true)) {
+            try {
+                onFirstContent();
+            } catch (Throwable ex) {
+                log.warn("onFirstContent hook failed (from thinking)", ex);
+            }
+        }
         delegate.onThinking(content);
     }
 

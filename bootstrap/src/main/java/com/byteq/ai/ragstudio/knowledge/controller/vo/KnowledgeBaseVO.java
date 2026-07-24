@@ -26,6 +26,11 @@ public class KnowledgeBaseVO {
     private String description;
 
     /**
+     * 嵌入模型供应商
+     */
+    private String embeddingProvider;
+
+    /**
      * 嵌入模型标识
      */
     private String embeddingModel;
@@ -34,6 +39,11 @@ public class KnowledgeBaseVO {
      * 向量集合名称
      */
     private String collectionName;
+
+    /**
+     * 向量维度
+     */
+    private Integer dimension;
 
     /**
      * 文档数量

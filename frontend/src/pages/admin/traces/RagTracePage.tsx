@@ -19,14 +19,14 @@ type DurationMetric = {
 };
 
 const formatDurationMetric = (durationMs: number): DurationMetric => {
-  const duration = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0;
-  if (duration < 1000) {
-    return { value: `${Math.round(duration)}`, unit: "ms" };
+  const d = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0;
+  if (d < 1000) {
+    return { value: `${Math.round(d)}`, unit: "ms" };
   }
-  if (duration < 60_000) {
-    return { value: (duration / 1000).toFixed(2), unit: "s" };
+  if (d < 60_000) {
+    return { value: (d / 1000).toFixed(2), unit: "s" };
   }
-  return { value: (duration / 1000).toFixed(1), unit: "s" };
+  return { value: (d / 1000).toFixed(1), unit: "s" };
 };
 
 export function RagTracePage() {

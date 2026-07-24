@@ -15,13 +15,14 @@ RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('p
 # 应用代码
 COPY main.py .
 
-# 构建时下载模型（避免运行时首次下载慢）
-RUN python -c "from transformers import AutoModel; AutoModel.from_pretrained('zilliz/semantic-highlight-bilingual-v1', trust_remote_code=True)"
+# 构建时下载模型和 tokenizer（避免运行时首次下载慢）
+RUN python -c "from transformers import AutoModel, AutoTokenizer; AutoModel.from_pretrained('zilliz/semantic-highlight-bilingual-v1', trust_remote_code=True); AutoTokenizer.from_pretrained('zilliz/semantic-highlight-bilingual-v1')"
 
 EXPOSE 8001
 
-# CPU + INT8 量化
+# CPU + INT8 量化 + 离线模式（模型已缓存，启动时无需联网）
 ENV QUANTIZE=int8
+ENV HF_HUB_OFFLINE=1
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" || exit 1

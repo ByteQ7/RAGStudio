@@ -214,6 +214,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
         String embeddingModel = kbDO.getEmbeddingModel();
         String collectionName = kbDO.getCollectionName();
+        int dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : 1536;
         List<KnowledgeChunkDO> chunkDOList = new ArrayList<>(requestParams.size());
 
         for (KnowledgeChunkCreateRequest request : requestParams) {
@@ -265,7 +266,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                     .toList();
             if (CollUtil.isNotEmpty(vectorChunks)) {
                 attachEmbeddings(vectorChunks, embeddingModel);
-                vectorStoreService.indexDocumentChunks(collectionName, docId, vectorChunks);
+                vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, vectorChunks);
             }
         }
     }
@@ -340,6 +341,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         Assert.notNull(kbDO, () -> new ServiceException("知识库不存在"));
         String collectionName = kbDO.getCollectionName();
+        int dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : 1536;
 
         chunkMapper.deleteById(chunkId);
 
@@ -349,7 +351,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
         log.info("删除 Chunk 成功, kbId={}, docId={}, chunkId={}", documentDO.getKbId(), docId, chunkId);
 
-        deleteChunkFromVector(collectionName, chunkId);
+        deleteChunkFromVector(collectionName, dimension, chunkId);
     }
 
     /**
@@ -382,13 +384,14 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         String collectionName = kbDO.getCollectionName();
+        int dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : 1536;
         log.info("{}Chunk 成功, kbId={}, docId={}, chunkId={}", enabled ? "启用" : "禁用", documentDO.getKbId(), docId, chunkId);
 
         if (enabled) {
             String embeddingModel = kbDO.getEmbeddingModel();
             syncChunkToVector(collectionName, docId, chunkDO, embeddingModel);
         } else {
-            deleteChunkFromVector(collectionName, chunkId);
+            deleteChunkFromVector(collectionName, dimension, chunkId);
         }
     }
 
@@ -446,6 +449,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         String collectionName = kbDO.getCollectionName();
+        int dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : 1536;
 
         if (enabled) {
             List<VectorChunk> vectorChunks = needUpdateChunks.stream()
@@ -464,7 +468,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                                 .set(KnowledgeChunkDO::getEnabled, 1)
                                 .set(KnowledgeChunkDO::getUpdatedBy, UserContext.getUsername())
                 );
-                vectorStoreService.indexDocumentChunks(collectionName, docId, vectorChunks);
+                vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, vectorChunks);
             });
         } else {
             transactionOperations.executeWithoutResult(status -> {
@@ -474,7 +478,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                                 .set(KnowledgeChunkDO::getEnabled, 0)
                                 .set(KnowledgeChunkDO::getUpdatedBy, UserContext.getUsername())
                 );
-                vectorStoreService.deleteChunksByIds(collectionName, needUpdateIds);
+                vectorStoreService.deleteChunksByIds(dimension, needUpdateIds);
             });
         }
 
@@ -543,6 +547,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     private void syncChunkToVector(String collectionName, String docId, KnowledgeChunkDO chunkDO, String embeddingModel) {
         List<Float> embedding = embedContent(chunkDO.getContent(), embeddingModel);
         float[] vector = toArray(embedding);
+        int dimension = vector.length;
 
         VectorChunk chunk = VectorChunk.builder()
                 .index(chunkDO.getChunkIndex())
@@ -550,7 +555,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 .chunkId(String.valueOf(chunkDO.getId()))
                 .embedding(vector)
                 .build();
-        vectorStoreService.indexDocumentChunks(collectionName, docId, List.of(chunk));
+        vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, List.of(chunk));
 
         log.debug("同步 Chunk 到向量库成功, collectionName={}, docId={}, chunkId={}", collectionName, docId, chunkDO.getId());
     }
@@ -558,8 +563,8 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     /**
      * 从向量库删除单个 chunk
      */
-    private void deleteChunkFromVector(String collectionName, String chunkId) {
-        vectorStoreService.deleteChunkById(collectionName, chunkId);
+    private void deleteChunkFromVector(String collectionName, int dimension, String chunkId) {
+        vectorStoreService.deleteChunkById(dimension, chunkId);
         log.debug("从向量库删除 Chunk, collectionName={}, chunkId={}", collectionName, chunkId);
     }
 

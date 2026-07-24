@@ -25,9 +25,14 @@ import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiProviderMapper;
 import com.byteq.ai.ragstudio.aimodel.service.AiModelConfigService;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
+import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jModelFactory;
+import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -73,12 +78,15 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             throw new ClientException("API 基础地址不能为空");
         }
 
+        Map<String, String> mergedEndpoints = fillDefaultEndpoints(
+                request.getName(), request.getEndpoints());
+
         AiProviderDO provider = AiProviderDO.builder()
                 .name(request.getName().trim())
                 .displayName(request.getDisplayName())
                 .baseUrl(request.getBaseUrl().trim())
                 .apiKey(request.getApiKey())
-                .endpoints(serializeEndpoints(request.getEndpoints()))
+                .endpoints(serializeEndpoints(mergedEndpoints))
                 .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                 .build();
 
@@ -117,7 +125,9 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             existing.setApiKey(request.getApiKey());
         }
         if (request.getEndpoints() != null) {
-            existing.setEndpoints(serializeEndpoints(request.getEndpoints()));
+            Map<String, String> mergedEndpoints = fillDefaultEndpoints(
+                    existing.getName(), request.getEndpoints());
+            existing.setEndpoints(serializeEndpoints(mergedEndpoints));
         }
         if (request.getEnabled() != null) {
             if (request.getEnabled() == 0) {
@@ -218,7 +228,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                 .supportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0)
                 .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
-                .dimension(request.getDimension())
+                .dimension(serializeDimension(request.getDimension()))
                 .customUrl(request.getCustomUrl())
                 .build();
 
@@ -281,7 +291,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             existing.setSupportsMultimodal(request.getSupportsMultimodal());
         }
         if (request.getDimension() != null) {
-            existing.setDimension(request.getDimension());
+            existing.setDimension(serializeDimension(request.getDimension()));
         }
         if (request.getCustomUrl() != null) {
             existing.setCustomUrl(request.getCustomUrl());
@@ -456,6 +466,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     private AiModelVO toModelVO(AiModelDO model, Map<String, String> providerNames) {
         AiModelVO vo = BeanUtil.copyProperties(model, AiModelVO.class);
         vo.setProviderName(providerNames.getOrDefault(model.getProviderId(), ""));
+        vo.setDimension(parseDimensionList(model.getDimension()));
         return vo;
     }
 
@@ -471,6 +482,31 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
 
     // 将 endpoints Map 序列化为 JSON 字符串，用于数据库存储
+    /**
+     * 为已知供应商补充默认 endpoint（仅在用户未设置时填充）
+     */
+    private Map<String, String> fillDefaultEndpoints(String providerName, Map<String, String> endpoints) {
+        Map<String, String> result = endpoints != null ? new HashMap<>(endpoints) : new HashMap<>();
+        String name = providerName.toLowerCase();
+        if (name.contains("bailian") || name.contains("百炼")) {
+            result.putIfAbsent("chat", "/compatible-mode/v1/chat/completions");
+            result.putIfAbsent("embedding", "/compatible-mode/v1/embeddings");
+            result.putIfAbsent("models", "/compatible-mode/v1/models");
+        } else if (name.contains("siliconflow")) {
+            result.putIfAbsent("chat", "/v1/chat/completions");
+            result.putIfAbsent("embedding", "/v1/embeddings");
+            result.putIfAbsent("models", "/v1/models");
+        } else if (name.contains("deepseek")) {
+            result.putIfAbsent("chat", "/v1/chat/completions");
+            result.putIfAbsent("models", "/v1/models");
+        } else if (name.contains("bigmodel") || name.contains("zhipu") || name.contains("智谱")) {
+            result.putIfAbsent("chat", "/api/paas/v4/chat/completions");
+            result.putIfAbsent("embedding", "/api/paas/v4/embeddings");
+            result.putIfAbsent("models", "/api/paas/v4/models");
+        }
+        return result;
+    }
+
     private String serializeEndpoints(Map<String, String> endpoints) {
         if (endpoints == null || endpoints.isEmpty()) {
             return null;
@@ -509,10 +545,13 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             throw new ServiceException("不支持的供应商类型：" + provider.getName());
         }
 
+        Map<String, String> endpoints = parseEndpoints(provider.getEndpoints());
+
         log.info("检查供应商连通性: name={}, adapter={}", provider.getName(), adapter.getClass().getSimpleName());
         ProviderAdapter.ConnectivityResult result = adapter.checkConnectivity(
                 provider.getBaseUrl(),
-                provider.getApiKey()
+                provider.getApiKey(),
+                endpoints
         );
 
         ConnectivityResultVO vo = new ConnectivityResultVO();
@@ -530,6 +569,14 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     @Override
     public ConnectivityResultVO checkModelConnectivity(String id) {
         AiModelDO model = modelMapper.selectById(id);
+        // Fallback: 按 modelId 字符串查找（如 "BAAI/bge-m3"）
+        if (model == null) {
+            model = modelMapper.selectOne(
+                    new LambdaQueryWrapper<AiModelDO>()
+                            .eq(AiModelDO::getModelId, id)
+                            .last("LIMIT 1")
+            );
+        }
         if (model == null) {
             throw new ClientException("模型不存在：" + id);
         }
@@ -558,16 +605,18 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             capability = "CHAT";
         }
 
+        Map<String, String> endpoints = parseEndpoints(provider.getEndpoints());
+
         log.info("检查模型连通性: modelId={}, capability={}, baseUrl={}",
                 model.getModelId(), capability, baseUrl);
 
         return switch (capability.toUpperCase()) {
-            case "CHAT" -> checkChatModelConnectivity(baseUrl, apiKey, model.getModelId());
-            case "EMBEDDING" -> checkEmbeddingModelConnectivity(baseUrl, apiKey, model.getModelId());
-            case "RERANK" -> checkRerankModelConnectivity(baseUrl, apiKey, model.getModelId());
+            case "CHAT" -> checkChatModelConnectivity(baseUrl, apiKey, model.getModelId(), endpoints);
+            case "EMBEDDING" -> checkEmbeddingModelConnectivity(model, provider, baseUrl, apiKey, endpoints);
+            case "RERANK" -> checkRerankModelConnectivity(baseUrl, apiKey, model.getModelId(), endpoints);
             default -> {
                 log.warn("未知的模型能力类型: {}，使用 CHAT 方式兜底", model.getCapability());
-                yield checkChatModelConnectivity(baseUrl, apiKey, model.getModelId());
+                yield checkChatModelConnectivity(baseUrl, apiKey, model.getModelId(), endpoints);
             }
         };
     }
@@ -575,10 +624,11 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     /**
      * 检查 CHAT 模型的连通性：发送一个轻量级的 chat completion 请求
      */
-    private ConnectivityResultVO checkChatModelConnectivity(String baseUrl, String apiKey, String modelId) {
+    private ConnectivityResultVO checkChatModelConnectivity(String baseUrl, String apiKey, String modelId,
+                                                            Map<String, String> endpoints) {
         Instant start = Instant.now();
         try {
-            String url = normalizeUrl(baseUrl) + "/chat/completions";
+            String url = resolveEndpointUrl(baseUrl, endpoints, "chat", "/v1/chat/completions");
             String body = String.format(
                     "{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"test\"}],\"max_tokens\":1,\"stream\":false}",
                     modelId);
@@ -607,46 +657,55 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     /**
-     * 检查 EMBEDDING 模型的连通性：发送一个轻量级的 embedding 请求
+     * 检查 EMBEDDING 模型的连通性：通过 LangChain4j 发送真实向量化探测请求
+     * <p>使用 "你好" 作为探测文本，走 EmbeddingModel.embed() 完整链路，
+     * 验证模型 API 正常、响应包含有效向量数据。探测完成后立即从缓存中清除，
+     * 避免影响后续真实 Embedding 调用。</p>
      */
-    private ConnectivityResultVO checkEmbeddingModelConnectivity(String baseUrl, String apiKey, String modelId) {
+    private ConnectivityResultVO checkEmbeddingModelConnectivity(AiModelDO model, AiProviderDO provider,
+                                                                  String baseUrl, String apiKey,
+                                                                  Map<String, String> endpoints) {
         Instant start = Instant.now();
         try {
-            String url = normalizeUrl(baseUrl) + "/embeddings";
-            String body = String.format(
-                    "{\"model\":\"%s\",\"input\":\"test\"}", modelId);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Authorization", "Bearer " + apiKey)
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .timeout(Duration.ofSeconds(30))
+            DynamicModelConfig.ModelEntry entry = DynamicModelConfig.ModelEntry.builder()
+                    .id(model.getModelId())
+                    .provider(provider.getName())
+                    .model(model.getModelId())
                     .build();
+            DynamicModelConfig.ProviderEntry providerEntry = DynamicModelConfig.ProviderEntry.builder()
+                    .name(provider.getName())
+                    .url(baseUrl)
+                    .apiKey(apiKey)
+                    .endpoints(endpoints != null ? endpoints : new HashMap<>())
+                    .build();
+            ModelTarget target = new ModelTarget(model.getModelId(), entry, providerEntry);
 
-            HttpResponse<String> response = modelCheckHttpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            EmbeddingModel embeddingModel = chatModelFactory.getOrCreateEmbeddingModel(target);
+            Response<Embedding> response = embeddingModel.embed("你好");
             long latencyMs = Duration.between(start, Instant.now()).toMillis();
 
-            if (response.statusCode() == 200) {
+            if (response != null && response.content() != null) {
                 return new ConnectivityResultVO(true, latencyMs, null);
-            } else {
-                String errorMsg = extractError(response.body());
-                return new ConnectivityResultVO(false, latencyMs, "HTTP " + response.statusCode() + ": " + errorMsg);
             }
+            return new ConnectivityResultVO(false, latencyMs, "Embedding 返回空结果");
         } catch (Exception e) {
             long latencyMs = Duration.between(start, Instant.now()).toMillis();
             return new ConnectivityResultVO(false, latencyMs, e.getMessage());
+        } finally {
+            // 清除缓存，防止本次探测创建的 EmbeddingModel（可能缺失端点配置）被后续真实请求复用
+            chatModelFactory.evict(model.getModelId());
         }
     }
 
     /**
      * 检查 RERANK 模型的连通性：发送一个轻量级的 rerank 请求
      */
-    private ConnectivityResultVO checkRerankModelConnectivity(String baseUrl, String apiKey, String modelId) {
+    private ConnectivityResultVO checkRerankModelConnectivity(String baseUrl, String apiKey, String modelId,
+                                                              Map<String, String> endpoints) {
         Instant start = Instant.now();
         try {
-            // Cohere 兼容的 rerank API 格式
-            String url = normalizeUrl(baseUrl) + "/rerank";
+            String path = endpoints != null ? endpoints.getOrDefault("rerank", "/v1/rerank") : "/v1/rerank";
+            String url = resolveEndpointUrl(baseUrl, endpoints, "rerank", "/v1/rerank");
             String body = String.format(
                     "{\"model\":\"%s\",\"query\":\"test\",\"documents\":[\"test document\"]}", modelId);
 
@@ -673,6 +732,35 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
     }
 
+    // 将向量维度列表序列化为 JSON 字符串，如 [1024, 1536, 4096]
+    private String serializeDimension(List<Integer> dimensions) {
+        if (dimensions == null || dimensions.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(dimensions);
+        } catch (JsonProcessingException e) {
+            throw new ServiceException("序列化 dimension 失败");
+        }
+    }
+
+    // 将 JSON 字符串解析为向量维度列表，解析失败时返回 null
+    private List<Integer> parseDimensionList(String json) {
+        if (StrUtil.isBlank(json)) {
+            return null;
+        }
+        try {
+            if (json.trim().startsWith("[")) {
+                return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<Integer>>() {});
+            }
+            int single = Integer.parseInt(json.trim());
+            return List.of(single);
+        } catch (Exception e) {
+            log.warn("解析 dimension 失败: {}", json, e);
+            return null;
+        }
+    }
+
     /**
      * 从错误响应中提取错误信息
      */
@@ -695,18 +783,32 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     /**
-     * 规范化 URL：移除尾部 / → 确保以 /v1 结尾 → 拼接端点路径时得到正确 URL
-     * 例如 "https://api.siliconflow.cn" → "https://api.siliconflow.cn/v1"
+     * 根据供应商端点配置解析完整 URL
+     * <p>
+     * 优先使用 endpoints 中的自定义路径，未配置时使用默认路径 + normalizeUrl。
+     * 例如：endpoints 中配置 "chat":"/compatible-mode/v1/chat/completions"，
+     * 则直接拼接 baseUrl + /compatible-mode/v1/chat/completions。
+     * 未配置时使用默认路径 /v1/chat/completions。
+     * </p>
      */
-    private String normalizeUrl(String baseUrl) {
-        String url = baseUrl;
-        if (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
+    private String resolveEndpointUrl(String baseUrl, Map<String, String> endpoints, String key, String defaultPath) {
+        if (endpoints != null && endpoints.containsKey(key)) {
+            return joinUrl(baseUrl, endpoints.get(key));
         }
-        if (!url.endsWith("/v1")) {
-            url = url + "/v1";
+        return joinUrl(baseUrl, defaultPath);
+    }
+
+    /**
+     * 拼接基础 URL 和路径，自动处理斜杠分隔
+     */
+    private static String joinUrl(String baseUrl, String path) {
+        if (baseUrl.endsWith("/") && path.startsWith("/")) {
+            return baseUrl + path.substring(1);
         }
-        return url;
+        if (!baseUrl.endsWith("/") && !path.startsWith("/")) {
+            return baseUrl + "/" + path;
+        }
+        return baseUrl + path;
     }
 
     @Override
@@ -721,10 +823,13 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             throw new ServiceException("不支持的供应商类型：" + provider.getName());
         }
 
+        Map<String, String> endpoints = parseEndpoints(provider.getEndpoints());
+
         log.info("拉取远程模型列表: name={}, adapter={}", provider.getName(), adapter.getClass().getSimpleName());
         List<ProviderAdapter.RemoteModelInfo> remoteModels = adapter.fetchModels(
                 provider.getBaseUrl(),
-                provider.getApiKey()
+                provider.getApiKey(),
+                endpoints
         );
 
         List<RemoteModelInfoVO> voList = remoteModels.stream()
@@ -734,7 +839,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                         m.capabilities(),
                         m.supportsThinking(),
                         m.supportsMultimodal(),
-                        m.dimension()
+                        m.dimensions()
                 ))
                 .collect(Collectors.toList());
 
@@ -757,13 +862,32 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             }
 
             // 校验是否已存在
-            Long count = modelMapper.selectCount(
+            AiModelDO existing = modelMapper.selectOne(
                     new LambdaQueryWrapper<AiModelDO>()
                             .eq(AiModelDO::getModelId, request.getModelId())
                             .eq(AiModelDO::getProviderId, request.getProviderId())
+                            .last("LIMIT 1")
             );
-            if (count > 0) {
-                log.info("模型已存在，跳过: providerId={}, modelId={}", request.getProviderId(), request.getModelId());
+            if (existing != null) {
+                if (existing.getEnabled() == 1) {
+                    log.info("模型已存在且已启用，跳过: providerId={}, modelId={}", request.getProviderId(), request.getModelId());
+                    continue;
+                }
+                // 已禁用 → 重新启用并更新信息
+                AiModelDO update = new AiModelDO();
+                update.setId(existing.getId());
+                update.setEnabled(1);
+                update.setModelName(request.getModelName().trim());
+                update.setCapability(request.getCapability().toUpperCase());
+                update.setIsDefault(request.getIsDefault() != null ? request.getIsDefault() : 0);
+                update.setPriority(request.getPriority() != null ? request.getPriority() : 100);
+                update.setSupportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0);
+                update.setSupportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0);
+                update.setDimension(serializeDimension(request.getDimension()));
+                update.setCustomUrl(request.getCustomUrl());
+                modelMapper.updateById(update);
+                ids.add(existing.getId());
+                log.info("模型已重新启用: id={}, modelId={}", existing.getId(), request.getModelId());
                 continue;
             }
 
@@ -785,7 +909,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                         .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                         .supportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0)
                         .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
-                        .dimension(request.getDimension())
+                        .dimension(serializeDimension(request.getDimension()))
                         .customUrl(request.getCustomUrl())
                         .build();
 

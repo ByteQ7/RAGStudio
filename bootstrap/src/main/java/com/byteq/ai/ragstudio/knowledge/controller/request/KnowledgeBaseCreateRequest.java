@@ -20,9 +20,19 @@ public class KnowledgeBaseCreateRequest {
     private String description;
 
     /**
-     * 嵌入模型，如 qwen3-embedding:8b-fp16
+     * 嵌入模型供应商，如 siliconflow
+     */
+    private String embeddingProvider;
+
+    /**
+     * 嵌入模型，如 qwen-emb-8b
      */
     private String embeddingModel;
+
+    /**
+     * 向量维度，不传时由系统根据嵌入模型自动解析
+     */
+    private Integer dimension;
 
     /**
      * 向量集合名称

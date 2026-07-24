@@ -11,6 +11,12 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
@@ -101,12 +107,13 @@ public class DocumentVisionExtractor {
 
     /**
      * 判断文件类型是否可能包含嵌入图片
+     * PDF 不在无条件触发之列——文本型 PDF 通过 Tika 解析即可。
+     * 扫描型 PDF 会在 needsVisionExtraction(extractedText) 中触发。
      */
     public boolean mayContainEmbeddedImages(String fileType) {
         if (fileType == null) return false;
         String ft = fileType.toLowerCase();
         return DOC_TYPES_WITH_IMAGES.contains(ft)
-                || ft.equals("pdf")
                 || ft.startsWith("image/");
     }
 
@@ -170,6 +177,199 @@ public class DocumentVisionExtractor {
         } catch (Exception e) {
             log.error("视觉提取失败: fileUrl={}", fileUrl, e);
             return "";
+        }
+    }
+
+    // ==================== 页面级图片检测与提取 ====================
+
+    /**
+     * 查找 PDF 中包含图片的页面（图表、图片、流程图等）
+     */
+    public List<Integer> findPagesWithImages(byte[] pdfBytes) {
+        List<Integer> imagePages = new ArrayList<>();
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            for (int i = 0; i < document.getNumberOfPages(); i++) {
+                if (pageHasImages(document, i)) {
+                    imagePages.add(i);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("查找PDF图片页面失败", e);
+        }
+        return imagePages;
+    }
+
+    /**
+     * 检查 PDF 指定页面是否包含图片资源
+     */
+    private boolean pageHasImages(PDDocument document, int pageIndex) {
+        try {
+            PDPage page = document.getPage(pageIndex);
+            PDResources resources = page.getResources();
+            if (resources == null) return false;
+            for (COSName name : resources.getXObjectNames()) {
+                PDXObject xObject = resources.getXObject(name);
+                if (xObject instanceof PDImageXObject) return true;
+            }
+        } catch (Exception e) {
+            log.debug("检测页面图片失败: page={}", pageIndex);
+        }
+        return false;
+    }
+
+    // ==================== 页面级文本提取 ====================
+
+    /**
+     * 使用多模态模型提取指定页面的文字内容
+     */
+    public String extractPageTextWithVision(byte[] pdfBytes, int pageIndex) {
+        String docImageModelId = defaultModelConfigService.getModelId("doc_image");
+        if (docImageModelId == null) {
+            log.warn("未配置 doc_image 默认模型，跳过页面视觉提取: page={}", pageIndex);
+            return "";
+        }
+
+        try {
+            String dataUri = renderPageToDataUri(pdfBytes, pageIndex);
+            if (dataUri == null) return "";
+
+            ChatMessage userMsg = ChatMessage.user(
+                    "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法（| 列名 | 列名 |\\n|--- |--- |\\n| 内容 |），标题用 # 号标记，列表保持层级。如果是图表、流程图或示意图，请用文字详细描述其内容和结构。"
+            );
+            userMsg.setImageUrls(List.of(dataUri));
+
+            ChatRequest request = ChatRequest.builder()
+                    .messages(List.of(userMsg))
+                    .build();
+
+            return llmService.chat(request, docImageModelId);
+        } catch (Exception e) {
+            log.warn("页面视觉提取失败: page={}", pageIndex, e);
+            return "";
+        }
+    }
+
+    /**
+     * 使用 PDFBox 提取指定页面的纯文本
+     */
+    public String extractPageText(byte[] pdfBytes, int pageIndex) {
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setStartPage(pageIndex + 1);
+            stripper.setEndPage(pageIndex + 1);
+            String text = stripper.getText(document);
+            return com.byteq.ai.ragstudio.core.parser.TextCleanupUtil.cleanup(text);
+        } catch (Exception e) {
+            log.warn("PDF页面文本提取失败: page={}", pageIndex, e);
+            return "";
+        }
+    }
+
+    /**
+     * 提取 ZIP 文档中的嵌入图片并使用多模态模型识别
+     */
+    public String extractImagesFromZipWithVision(byte[] fileBytes, String fileType) {
+        if (!isZipBasedFormat(fileType)) return "";
+
+        String docImageModelId = defaultModelConfigService.getModelId("doc_image");
+        if (docImageModelId == null) return "";
+
+        List<String> dataUris = extractImagesFromZip(fileBytes);
+        if (dataUris.isEmpty()) return "";
+
+        ChatMessage userMsg = ChatMessage.user(
+                "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法，标题用 # 号标记，列表保持层级。如果是图表、流程图或示意图，请用文字详细描述其内容和结构。"
+        );
+        userMsg.setImageUrls(dataUris);
+
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(userMsg))
+                .build();
+
+        return llmService.chat(request, docImageModelId);
+    }
+
+    /**
+     * 使用多模态模型提取图片文件中的文字内容
+     */
+    public String extractImageWithVision(byte[] imageBytes, String mimeType) {
+        String docImageModelId = defaultModelConfigService.getModelId("doc_image");
+        if (docImageModelId == null) return "";
+
+        String dataUri = toBase64DataUri(imageBytes, mimeType);
+
+        ChatMessage userMsg = ChatMessage.user(
+                "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法，标题用 # 号标记，列表保持层级。如果是图表、流程图或示意图，请用文字详细描述其内容和结构。"
+        );
+        userMsg.setImageUrls(List.of(dataUri));
+
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(userMsg))
+                .build();
+
+        return llmService.chat(request, docImageModelId);
+    }
+
+    /**
+     * 获取视觉提取的最大页数限制
+     */
+    public int getMaxVisionPages() {
+        return MAX_PDF_PAGES;
+    }
+
+    /**
+     * 使用多模态模型提取整个 PDF 的内容（渲染所有页面为图片）
+     * <p>
+     * 用于包含表格或图片的 PDF，这些情况下纯文本提取效果不佳。
+     * </p>
+     *
+     * @param pdfBytes PDF 文件的完整字节数组
+     * @return 提取的 Markdown 格式文本，失败时返回空字符串
+     */
+    public String extractPdfWithVision(byte[] pdfBytes) {
+        String docImageModelId = defaultModelConfigService.getModelId("doc_image");
+        if (docImageModelId == null) {
+            log.warn("未配置 doc_image 默认模型，跳过 PDF 视觉提取");
+            return "";
+        }
+
+        try {
+            List<String> dataUris = renderPdfToDataUris(pdfBytes);
+            if (dataUris.isEmpty()) {
+                log.warn("PDF 视觉提取未产生可处理的页面图片");
+                return "";
+            }
+
+            ChatMessage userMsg = ChatMessage.user(
+                    "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法（| 列名 | 列名 |\\n|--- |--- |\\n| 内容 |），标题用 # 号标记，列表保持层级。"
+            );
+            userMsg.setImageUrls(dataUris);
+
+            ChatRequest request = ChatRequest.builder()
+                    .messages(List.of(userMsg))
+                    .build();
+
+            return llmService.chat(request, docImageModelId);
+        } catch (Exception e) {
+            log.error("PDF 视觉提取失败", e);
+            return "";
+        }
+    }
+
+    // ==================== 单页渲染 ====================
+
+    /**
+     * 将 PDF 的指定页面渲染为 JPEG 图片并转 Base64 data URI
+     */
+    private String renderPageToDataUri(byte[] pdfBytes, int pageIndex) throws Exception {
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            PDFRenderer renderer = new PDFRenderer(document);
+            BufferedImage image = renderer.renderImageWithDPI(pageIndex, 150, ImageType.RGB);
+            image = scaleImageIfNeeded(image);
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(image, "jpg", baos);
+            return toBase64DataUri(baos.toByteArray(), "image/jpeg");
         }
     }
 

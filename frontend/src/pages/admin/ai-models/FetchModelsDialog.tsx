@@ -173,7 +173,7 @@ export function FetchModelsDialog({
           priority: 100,
           supportsThinking: model.supportsThinking ? 1 : 0,
           supportsMultimodal: model.supportsMultimodal ? 1 : 0,
-          dimension: model.dimension
+          dimension: model.dimensions
         });
       }
     }

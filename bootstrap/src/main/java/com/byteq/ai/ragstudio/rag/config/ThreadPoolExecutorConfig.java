@@ -148,11 +148,11 @@ public class ThreadPoolExecutorConfig {
                 size,
                 60,
                 TimeUnit.SECONDS,
-                new SynchronousQueue<>(),
+                new LinkedBlockingQueue<>(size * 2),
                 ThreadFactoryBuilder.create()
                         .setNamePrefix("chat_entry_executor_")
                         .build(),
-                new ThreadPoolExecutor.AbortPolicy()
+                new ThreadPoolExecutor.CallerRunsPolicy()
         );
         executor.allowCoreThreadTimeOut(true);
         return TtlExecutors.getTtlExecutor(executor);

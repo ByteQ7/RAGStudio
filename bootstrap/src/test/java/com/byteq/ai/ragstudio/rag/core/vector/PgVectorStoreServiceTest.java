@@ -18,21 +18,18 @@ public class PgVectorStoreServiceTest {
 
     @Test
     public void testChineseCharacterInsertion() {
-        // 准备测试数据
         String chunkId = "test_chunk_001";
-        Long kbId = 1L;
         String docId = "test_doc_001";
         Integer chunkIndex = 0;
         String content = "这是一段中文测试内容，包含各种字符：你好世界！";
+        String metadata = "{\"collection_name\":\"test\",\"doc_id\":\"" + docId + "\",\"chunk_index\":" + chunkIndex + "}";
 
         try {
-            // 创建一个简单的向量（维度需与数据库 vector(1536) 列一致）
             float[] embedding = new float[1536];
             for (int i = 0; i < 1536; i++) {
                 embedding[i] = 0.1f;
             }
 
-            // 构建向量字符串
             StringBuilder sb = new StringBuilder("[");
             for (int i = 0; i < embedding.length; i++) {
                 if (i > 0) sb.append(",");
@@ -40,38 +37,29 @@ public class PgVectorStoreServiceTest {
             }
             String vectorLiteral = sb.append("]").toString();
 
-            // 插入数据
-            String sql = "INSERT INTO t_knowledge_vector (chunk_id, kb_id, doc_id, chunk_index, content, embedding) " +
-                         "VALUES (?, ?, ?, ?, ?, ?::vector)";
+            String sql = "INSERT INTO t_knowledge_vector_1536 (id, content, metadata, embedding) " +
+                         "VALUES (?, ?, ?::jsonb, ?::vector)";
+            int affectedRows = jdbcTemplate.update(sql, chunkId, content, metadata, vectorLiteral);
+            assertEquals(1, affectedRows);
 
-            int affectedRows = jdbcTemplate.update(sql, chunkId, kbId, docId, chunkIndex, content, vectorLiteral);
-            assertEquals(1, affectedRows, "应该插入一行数据");
-
-            // 查询验证
-            String querySql = "SELECT chunk_id, content FROM t_knowledge_vector WHERE chunk_id = ?";
+            String querySql = "SELECT id, content FROM t_knowledge_vector_1536 WHERE id = ?";
             List<Map<String, Object>> results = jdbcTemplate.queryForList(querySql, chunkId);
 
-            // 验证查询结果
-            assertNotNull(results, "查询结果不应为null");
-            assertEquals(1, results.size(), "应该查询到一条记录");
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            assertEquals(chunkId, results.get(0).get("id"));
 
-            Map<String, Object> row = results.get(0);
-            assertNotNull(row, "记录不应为null");
-            assertEquals(chunkId, row.get("chunk_id"), "chunk_id应该匹配");
-
-            String retrievedContent = (String) row.get("content");
-            assertNotNull(retrievedContent, "content不应为null");
-            assertEquals(content, retrievedContent, "content内容应该完全匹配");
-            assertEquals(content.length(), retrievedContent.length(), "content长度应该匹配");
+            String retrievedContent = (String) results.get(0).get("content");
+            assertNotNull(retrievedContent);
+            assertEquals(content, retrievedContent);
+            assertEquals(content.length(), retrievedContent.length());
 
         } finally {
-            // 清理测试数据
-            jdbcTemplate.update("DELETE FROM t_knowledge_vector WHERE chunk_id = ?", chunkId);
+            jdbcTemplate.update("DELETE FROM t_knowledge_vector_1536 WHERE id = ?", chunkId);
 
-            // 验证清理成功
-            String verifySql = "SELECT COUNT(*) FROM t_knowledge_vector WHERE chunk_id = ?";
+            String verifySql = "SELECT COUNT(*) FROM t_knowledge_vector_1536 WHERE id = ?";
             Long count = jdbcTemplate.queryForObject(verifySql, Long.class, chunkId);
-            assertEquals(0L, count != null ? count : 0L, "测试数据应该被完全清理");
+            assertEquals(0L, count != null ? count : 0L);
         }
     }
 }

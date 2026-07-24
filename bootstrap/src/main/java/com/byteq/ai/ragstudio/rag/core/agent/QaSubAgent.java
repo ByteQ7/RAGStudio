@@ -59,12 +59,15 @@ public class QaSubAgent implements SubAgent {
     private final SandboxExecutor sandboxExecutor;
     private final ReActResponseParser reactResponseParser;
     private final ReActPromptBuilder reactPromptBuilder;
+    private final com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader promptTemplateLoader;
     private final Supplier<Boolean> cancellationChecker;
     private final List<String> knowledgeBaseIds;
     private final String kbSummaryText;
     private final Map<String, String> collectionNameToKbId;
 
     private final com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService;
+
+    private final ToolRetriever toolRetriever;
 
     private final List<RetrievedChunk> retrievedChunks = new ArrayList<>();
 
@@ -82,11 +85,13 @@ public class QaSubAgent implements SubAgent {
             SandboxExecutor sandboxExecutor,
             ReActResponseParser reactResponseParser,
             ReActPromptBuilder reactPromptBuilder,
+            com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader promptTemplateLoader,
             Supplier<Boolean> cancellationChecker,
             List<String> knowledgeBaseIds,
             String kbSummaryText,
             Map<String, String> collectionNameToKbId,
-            com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService
+            com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService,
+            ToolRetriever toolRetriever
     ) {
         this.llmService = llmService;
         this.retrievalEngine = retrievalEngine;
@@ -97,11 +102,13 @@ public class QaSubAgent implements SubAgent {
         this.sandboxExecutor = sandboxExecutor;
         this.reactResponseParser = reactResponseParser;
         this.reactPromptBuilder = reactPromptBuilder;
+        this.promptTemplateLoader = promptTemplateLoader;
         this.cancellationChecker = cancellationChecker;
         this.knowledgeBaseIds = knowledgeBaseIds != null ? knowledgeBaseIds : List.of();
         this.kbSummaryText = kbSummaryText;
         this.collectionNameToKbId = collectionNameToKbId != null ? collectionNameToKbId : Map.of();
         this.traceRecordService = traceRecordService;
+        this.toolRetriever = toolRetriever;
     }
 
     @Override
@@ -109,13 +116,13 @@ public class QaSubAgent implements SubAgent {
 
     @Override
     public List<Artifact> run(Task task, AgentContext ctx, StreamCallback callback) {
-        // 1. 构建工具集
-        ToolRegistry toolRegistry = buildToolRegistry();
+        // 1. 构建工具集（按用户问题语义检索，仅注入相关工具）
+        ToolRegistry toolRegistry = buildToolRegistry(ctx.getQuestion());
 
         // 2. 创建并运行 AgentLoop
         AgentLoop agentLoop = new AgentLoop(
                 llmService, toolRegistry,
-                reactResponseParser, reactPromptBuilder,
+                reactResponseParser, reactPromptBuilder, promptTemplateLoader,
                 cancellationChecker, ctx.getThinkingLevel()
         );
 
@@ -158,12 +165,20 @@ public class QaSubAgent implements SubAgent {
         return artifacts;
     }
 
-    private ToolRegistry buildToolRegistry() {
+    private ToolRegistry buildToolRegistry(String question) {
         ToolRegistry registry = new ToolRegistry();
         registry.setTraceRecordService(traceRecordService);
 
+        List<String> relevantTools = toolRetriever.retrieve(question);
+        boolean hasRetrieval = CollUtil.isNotEmpty(relevantTools);
+        if (hasRetrieval) {
+            log.info("语义检索命中工具: {}", relevantTools);
+        }
+
         for (McpToolExecutor executor : mcpToolRegistry.listAllExecutors()) {
-            registry.register(new McpToolAdapter(executor));
+            if (!hasRetrieval || relevantTools.contains(executor.getToolDefinition().name())) {
+                registry.register(new McpToolAdapter(executor));
+            }
         }
         registry.register(new TimeTool());
 
@@ -180,12 +195,18 @@ public class QaSubAgent implements SubAgent {
 
         List<SkillDefinition> skills = skillLoader.getAllSkills();
         for (SkillDefinition def : skills) {
-            registry.register(new SkillTool(def, syncHttpClient, sandboxExecutor));
+            if (!hasRetrieval || relevantTools.contains(def.getName())) {
+                registry.register(new SkillTool(def, syncHttpClient, sandboxExecutor));
+            }
         }
 
-        log.info("Q&A Agent 工具: MCP={}, RAG={}, SKILL={}, 内置=1, 总计={}",
+        log.info("Q&A Agent 工具: MCP={}/{}, RAG={}, SKILL={}/{}, 内置=1, 总计={}",
+                mcpToolRegistry.listAllExecutors().stream()
+                        .filter(e -> !hasRetrieval || relevantTools.contains(e.getToolDefinition().name()))
+                        .count(),
                 mcpToolRegistry.size(),
                 CollUtil.isNotEmpty(knowledgeBaseIds) ? 1 : 0,
+                skills.stream().filter(s -> !hasRetrieval || relevantTools.contains(s.getName())).count(),
                 skills.size(), registry.size());
         return registry;
     }
@@ -199,7 +220,11 @@ public class QaSubAgent implements SubAgent {
         }
         try {
             String json = OBJECT_MAPPER.writeValueAsString(retrievedChunks.stream()
-                    .filter(c -> StrUtil.isBlank(finalAnswer) || (c.getId() != null && referencedIds.contains(c.getId())))
+                    .filter(c -> {
+                        if (StrUtil.isBlank(finalAnswer)) return true;
+                        if (referencedIds.isEmpty()) return true;
+                        return c.getId() != null && referencedIds.contains(c.getId());
+                    })
                     .map(c -> Map.of("id", c.getId() != null ? c.getId() : "",
                             "text", c.getText() != null ? c.getText() : "",
                             "score", c.getScore() != null ? c.getScore() : 0f,

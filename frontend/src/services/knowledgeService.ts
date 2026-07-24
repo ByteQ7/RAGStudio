@@ -5,6 +5,8 @@ export interface KnowledgeBase {
   name: string;
   description?: string | null;
   embeddingModel: string;
+  embeddingProvider?: string | null;
+  dimension?: number;
   collectionName: string;
   createdBy?: string | null;
   documentCount?: number;

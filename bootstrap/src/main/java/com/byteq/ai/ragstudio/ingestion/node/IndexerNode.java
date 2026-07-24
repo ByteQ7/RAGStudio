@@ -124,7 +124,7 @@ public class IndexerNode implements IngestionNode {
         }
 
         // 确保目标向量空间存在，不存在时自动创建
-        ensureVectorSpace(collectionName);
+        ensureVectorSpace(collectionName, expectedDim);
         List<JsonObject> rows = buildRows(context, chunks, vectorArray, settings.getMetadataFields());
 
         // 支持事务性写入：如果调用方要求延迟写入，则只做校验和数据准备
@@ -132,7 +132,7 @@ public class IndexerNode implements IngestionNode {
             return NodeResult.ok("已准备 " + rows.size() + " 个分块（向量写入由调用方统一完成）");
         }
 
-        insertRows(collectionName, context.getTaskId(), rows);
+        insertRows(collectionName, context.getTaskId(), expectedDim, rows);
         return NodeResult.ok("已写入 " + rows.size() + " 个分块到集合 " + collectionName);
     }
 
@@ -179,8 +179,9 @@ public class IndexerNode implements IngestionNode {
      * </p>
      *
      * @param collectionName 向量集合名称
+     * @param dimension      向量维度
      */
-    private void ensureVectorSpace(String collectionName) {
+    private void ensureVectorSpace(String collectionName, int dimension) {
         boolean vectorSpaceExists = vectorStoreAdmin.vectorSpaceExists(VectorSpaceId.builder()
                 .logicalName(collectionName)
                 .build());
@@ -192,6 +193,7 @@ public class IndexerNode implements IngestionNode {
                 .spaceId(VectorSpaceId.builder()
                         .logicalName(collectionName)
                         .build())
+                .dimension(dimension)
                 .remark("RAG向量存储空间")
                 .build();
         vectorStoreAdmin.ensureVectorSpace(spaceSpec);
@@ -202,9 +204,10 @@ public class IndexerNode implements IngestionNode {
      *
      * @param collectionName 目标向量集合名称
      * @param docId          文档 ID
+     * @param dimension      向量维度
      * @param rows           向量数据行列表
      */
-    private void insertRows(String collectionName, String docId, List<JsonObject> rows) {
+    private void insertRows(String collectionName, String docId, int dimension, List<JsonObject> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
@@ -248,7 +251,7 @@ public class IndexerNode implements IngestionNode {
                     .build();
         }).filter(chunk -> chunk != null).toList();
 
-        vectorStoreService.indexDocumentChunks(collectionName, docId, chunks);
+        vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, chunks);
 
         log.info("向量写入成功，集合={}，行数={}", collectionName, chunks.size());
     }

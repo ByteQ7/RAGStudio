@@ -219,9 +219,9 @@ public class LangChain4jModelFactory {
             contents.add(new TextContent(text));
 
             for (String url : imageUrls) {
-                String dataUri = resolveImageDataUri(url);
-                if (dataUri != null && dataUri.startsWith("data:")) {
-                    contents.add(new ImageContent(dataUri));
+                String resolved = resolveImageDataUri(url);
+                if (resolved != null) {
+                    contents.add(new ImageContent(resolved));
                 }
             }
             return new UserMessage(contents);
@@ -333,10 +333,10 @@ public class LangChain4jModelFactory {
                     contentArray.add(Map.of("type", "text", "text",
                             msg.getContent() != null ? msg.getContent() : ""));
                     for (String url : imageUrls) {
-                        String dataUri = resolveImageDataUri(url);
-                        if (dataUri != null && dataUri.startsWith("data:")) {
+                        String resolved = resolveImageDataUri(url);
+                        if (resolved != null) {
                             contentArray.add(Map.of("type", "image_url",
-                                    "image_url", Map.of("url", dataUri)));
+                                    "image_url", Map.of("url", resolved)));
                         }
                     }
                     m.put("content", contentArray);

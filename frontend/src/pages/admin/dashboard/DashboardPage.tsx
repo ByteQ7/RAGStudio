@@ -832,7 +832,6 @@ const TrafficOverviewSection = ({
       <DashCard className={cn("flex flex-col", className)}>
         <div className="mb-3">
           <p className="text-sm font-semibold text-gray-700">流量概览</p>
-          {showChange}
         </div>
 
         {loading ? (
@@ -1460,7 +1459,7 @@ export function DashboardPage() {
             timeWindow={timeWindow}
             lastUpdated={lastUpdated}
             loading={loading}
-            onRefresh={() => void refresh()}
+            onRefresh={refresh}
             onTimeWindowChange={setTimeWindow}
         />
 

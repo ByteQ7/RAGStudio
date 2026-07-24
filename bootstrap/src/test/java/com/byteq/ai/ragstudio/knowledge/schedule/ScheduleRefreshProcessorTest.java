@@ -252,7 +252,6 @@ class ScheduleRefreshProcessorTest {
                 .scheduleEnabled(1)
                 .scheduleCron("0 0/5 * * * ?")
                 .enabled(1)
-                .deleted(0)
                 .status(status)
                 .fileUrl(fileUrl)
                 .build();

@@ -170,7 +170,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
 
         return ChatRequest.builder()
                 .messages(messages)
-                .temperature(0.1D)
+                .temperature(0.4D)
                 .topP(0.3D)
                 .thinkingLevel(0)
                 .build();

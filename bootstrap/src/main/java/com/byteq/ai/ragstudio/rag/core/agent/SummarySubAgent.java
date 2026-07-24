@@ -75,7 +75,7 @@ public class SummarySubAgent implements SubAgent {
 
             ChatRequest request = ChatRequest.builder()
                     .messages(List.of(ChatMessage.user(fullPrompt)))
-                    .temperature(0.3D)
+                    .temperature(0.4D)
                     .thinkingLevel(0)
                     .build();
             String summary = llmService.chat(request);

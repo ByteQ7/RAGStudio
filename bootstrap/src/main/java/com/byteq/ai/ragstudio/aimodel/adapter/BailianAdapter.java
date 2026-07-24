@@ -7,14 +7,16 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 阿里云百炼（DashScope）API 适配器
  * <p>
- * 百炼的模型列表 API: GET {base_url}/compatible-mode/v1/models
- * 需要同时传入 Authorization 和 X-Api-Key 请求头。
+ * 百炼 API 路径由端点配置控制，默认路径为 /compatible-mode/v1/…。
+ * 文档：https://help.aliyun.com/product/303425.html
  * </p>
  */
 @Slf4j
@@ -29,10 +31,9 @@ public class BailianAdapter extends OpenaiCompatibleAdapter {
     }
 
     @Override
-    public List<RemoteModelInfo> fetchModels(String baseUrl, String apiKey) {
+    public List<RemoteModelInfo> fetchModels(String baseUrl, String apiKey, Map<String, String> endpoints) {
         try {
-            // 百炼模型列表: GET {base_url}/compatible-mode/v1/models
-            String url = normalizeUrl(baseUrl) + "/models";
+            String url = resolveEndpointUrl(baseUrl, endpoints, "models", "/compatible-mode/v1/models");
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Bearer " + apiKey)
@@ -43,7 +44,7 @@ public class BailianAdapter extends OpenaiCompatibleAdapter {
             HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                log.warn("百炼获取模型列表失败: HTTP {}, body={}", response.statusCode(),
+                log.warn("百炼获取模型列表失败: HTTP {}, url={}, body={}", response.statusCode(), url,
                         response.body() != null ? response.body().substring(0, Math.min(200, response.body().length())) : "");
                 return List.of();
             }
@@ -56,11 +57,10 @@ public class BailianAdapter extends OpenaiCompatibleAdapter {
     }
 
     @Override
-    public ConnectivityResult checkConnectivity(String baseUrl, String apiKey) {
-        // 百炼连通性检查：调用 GET /compatible-mode/v1/models 验证 Key 有效性
-        java.time.Instant start = java.time.Instant.now();
+    public ConnectivityResult checkConnectivity(String baseUrl, String apiKey, Map<String, String> endpoints) {
+        Instant start = Instant.now();
         try {
-            String url = normalizeUrl(baseUrl) + "/models";
+            String url = resolveEndpointUrl(baseUrl, endpoints, "models", "/compatible-mode/v1/models");
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Bearer " + apiKey)
@@ -70,7 +70,7 @@ public class BailianAdapter extends OpenaiCompatibleAdapter {
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            long latencyMs = java.time.Duration.between(start, java.time.Instant.now()).toMillis();
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
 
             if (response.statusCode() == 200) {
                 return new ConnectivityResult(true, latencyMs, null);
@@ -78,23 +78,9 @@ public class BailianAdapter extends OpenaiCompatibleAdapter {
                 return new ConnectivityResult(false, latencyMs, "HTTP " + response.statusCode());
             }
         } catch (Exception e) {
-            long latencyMs = java.time.Duration.between(start, java.time.Instant.now()).toMillis();
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
             return new ConnectivityResult(false, latencyMs, e.getMessage());
         }
-    }
-
-    @Override
-    protected String normalizeUrl(String baseUrl) {
-        String url = baseUrl;
-        if (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
-        }
-        if (!url.endsWith("/v1") && !url.endsWith("/compatible-mode/v1")) {
-            url = url + "/compatible-mode/v1";
-        } else if (url.endsWith("/v1") && !url.contains("/compatible-mode/")) {
-            url = url.replace("/v1", "/compatible-mode/v1");
-        }
-        return url;
     }
 
     @Override
@@ -126,13 +112,14 @@ public class BailianAdapter extends OpenaiCompatibleAdapter {
                 boolean supportsMultimodal = lowerId.contains("vl")
                         || lowerId.contains("vision");
 
+                List<Integer> dimensions = null;
+                if (capabilities.contains("EMBEDDING")) {
+                    dimensions = List.of(1536);
+                }
+
                 result.add(new RemoteModelInfo(
-                        modelId,
-                        modelId,
-                        capabilities,
-                        supportsThinking,
-                        supportsMultimodal,
-                        null
+                        modelId, modelId, capabilities,
+                        supportsThinking, supportsMultimodal, dimensions
                 ));
             }
         } catch (Exception e) {

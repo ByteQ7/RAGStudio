@@ -49,7 +49,7 @@ public final class PasswordHasher {
         if (stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$")) {
             return ENCODER.matches(rawPassword, stored);
         }
-        // 兼容旧版明文密码（迁移过渡期）
+        // 演示环境兼容明文密码
         log.warn("用户密码为明文存储，建议尽快迁移至 BCrypt 加密");
         return stored.equals(rawPassword);
     }

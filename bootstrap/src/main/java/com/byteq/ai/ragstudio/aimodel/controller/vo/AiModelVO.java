@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.aimodel.controller.vo;
 import lombok.Data;
 
 import java.util.Date;
+import java.util.List;
 
 /**
  * AI 模型配置前端返回对象
@@ -22,7 +23,8 @@ public class AiModelVO {
     private Integer enabled;
     private Integer supportsThinking;
     private Integer supportsMultimodal;
-    private Integer dimension;
+    /** 向量维度列表（如 [1024, 1536, 4096]），仅 embedding */
+    private List<Integer> dimension;
     private String customUrl;
     private Date createTime;
     private Date updateTime;

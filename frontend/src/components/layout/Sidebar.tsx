@@ -45,17 +45,15 @@ interface SidebarProps {
 }
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const {
-    sessions,
-    currentSessionId,
-    isLoading,
-    sessionsLoaded,
-    createSession,
-    deleteSession,
-    renameSession,
-    selectSession,
-    fetchSessions
-  } = useChatStore();
+  const sessions = useChatStore((s) => s.sessions);
+  const currentSessionId = useChatStore((s) => s.currentSessionId);
+  const isLoading = useChatStore((s) => s.isLoading);
+  const sessionsLoaded = useChatStore((s) => s.sessionsLoaded);
+  const createSession = useChatStore((s) => s.createSession);
+  const deleteSession = useChatStore((s) => s.deleteSession);
+  const renameSession = useChatStore((s) => s.renameSession);
+  const selectSession = useChatStore((s) => s.selectSession);
+  const fetchSessions = useChatStore((s) => s.fetchSessions);
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [query, setQuery] = React.useState("");

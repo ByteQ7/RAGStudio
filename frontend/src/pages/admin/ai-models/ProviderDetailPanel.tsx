@@ -11,6 +11,7 @@ import {
   Loader2,
   Pencil,
   Plug,
+  Plus,
   RefreshCw,
   Trash2,
   Wifi,
@@ -63,6 +64,8 @@ interface ProviderDetailPanelProps {
   // Fetch models
   onFetchModels: () => void;
   fetchingModels: boolean;
+  // Add model manually
+  onAddModel: (providerId: string) => void;
 }
 
 // ==================== Helpers ====================
@@ -89,7 +92,8 @@ export function ProviderDetailPanel({
   onModelPriorityChange,
   togglingModelEnabledId,
   onFetchModels,
-  fetchingModels
+  fetchingModels,
+  onAddModel
 }: ProviderDetailPanelProps) {
   // ---------- Local form state ----------
   const [displayName, setDisplayName] = useState("");
@@ -576,20 +580,31 @@ export function ProviderDetailPanel({
                   {models.length} 个
                 </span>
               </h3>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 gap-1.5 text-xs rounded-xl"
-                onClick={onFetchModels}
-                disabled={fetchingModels}
-              >
-                {fetchingModels ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                {fetchingModels ? "获取中..." : "从供应商获取"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 text-xs rounded-xl"
+                  onClick={() => onAddModel(provider.id)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  新增模型
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 text-xs rounded-xl"
+                  onClick={onFetchModels}
+                  disabled={fetchingModels}
+                >
+                  {fetchingModels ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  {fetchingModels ? "获取中..." : "从供应商获取"}
+                </Button>
+              </div>
             </div>
 
             {loadingModels ? (

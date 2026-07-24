@@ -70,13 +70,24 @@ public class SiliconFlowAdapter extends OpenaiCompatibleAdapter {
                 boolean supportsMultimodal = modelId.toLowerCase().contains("vision")
                         || modelId.toLowerCase().contains("vl");
 
+                List<Integer> dimensions = null;
+                if (isEmbedding) {
+                    if (modelId.toLowerCase().contains("qwen2") || modelId.toLowerCase().contains("qwen3")) {
+                        dimensions = List.of(1024, 1536, 4096);
+                    } else if (lowerId.contains("bge") || lowerId.contains("e5")) {
+                        dimensions = List.of(1024);
+                    } else {
+                        dimensions = List.of(1536);
+                    }
+                }
+
                 result.add(new RemoteModelInfo(
                         modelId,
                         modelId,
                         capabilities,
                         supportsThinking,
                         supportsMultimodal,
-                        null
+                        dimensions
                 ));
             }
         } catch (Exception e) {

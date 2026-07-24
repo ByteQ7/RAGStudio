@@ -102,11 +102,21 @@ public class ModelSelector {
         return selectCandidates(group, group.getDefaultModel(), false, config.getProviders());
     }
 
-    // 确定首选模型 ID，深度思考模式下直接返回默认模型（后续由 filterAndSortCandidates 按 supportsThinking 过滤）
     private String resolveFirstChoiceModel(DynamicModelConfig.ModelGroup group, boolean deepThinking) {
-        // 深度思考模式暂无独立的"deepThinkingModel"配置，
-        // 直接返回 defaultModel，filterAndSortCandidates 会按 supportsThinking 过滤
-        return group.getDefaultModel();
+        String defaultModel = group.getDefaultModel();
+        if (deepThinking && defaultModel != null) {
+            boolean defaultSupportsThinking = group.getCandidates().stream()
+                    .anyMatch(m -> defaultModel.equals(m.getId()) && Boolean.TRUE.equals(m.getSupportsThinking()));
+            if (defaultSupportsThinking) {
+                return defaultModel;
+            }
+            return group.getCandidates().stream()
+                    .filter(m -> Boolean.TRUE.equals(m.getSupportsThinking()))
+                    .findFirst()
+                    .map(DynamicModelConfig.ModelEntry::getId)
+                    .orElse(defaultModel);
+        }
+        return defaultModel;
     }
 
     // 从模型分组中筛选并排序候选模型，构建可用的 ModelTarget 列表

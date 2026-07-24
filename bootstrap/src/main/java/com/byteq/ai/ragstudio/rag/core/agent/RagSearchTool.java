@@ -36,7 +36,8 @@ public class RagSearchTool implements Tool {
     private static final String TOOL_NAME = "rag_search";
     private static final String TOOL_DESCRIPTION =
             "搜索知识库获取相关文档内容。当需要查找规章制度、技术文档、操作手册等存储于知识库中的信息时使用此工具。"
-            + " query 参数应使用多个关键词和同义词以充分匹配文档（如「年假」->「年假 休假 带薪年休假 请假」），不要只用 1-2 个词。";
+            + " query 参数应使用多个关键词和同义词以充分匹配文档（如「年假」->「年假 休假 带薪年休假 请假」），不要只用 1-2 个词。"
+            + " 如果用户输入的是代码、编号、ID、错误码等精确标识符，直接使用原值作为 query，不需要扩展关键词。";
 
     private final String kbSummaryText;
     private final RetrievalEngine retrievalEngine;

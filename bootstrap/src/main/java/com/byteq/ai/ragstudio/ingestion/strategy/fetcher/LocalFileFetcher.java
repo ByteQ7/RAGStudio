@@ -84,11 +84,16 @@ public class LocalFileFetcher implements DocumentFetcher {
                 // 安全检查：拒绝包含 ".." 的路径段，防止路径穿越
                 validateLocalPath(path);
 
+                // 先检查符号链接（在 toRealPath 之前），避免 TOCTOU
+                if (Files.isSymbolicLink(path)) {
+                    throw new ServiceException("不允许访问符号链接: " + location);
+                }
+
                 // 解析为规范路径，确保不逃逸允许的基目录
                 Path realPath = path.toRealPath();
 
-                // 额外安全检查：确保文件不是符号链接（如果配置要求）
-                if (Files.isSymbolicLink(path)) {
+                // 再次检查符号链接（toRealPath 已解析，用 realPath 检查）
+                if (Files.isSymbolicLink(realPath)) {
                     throw new ServiceException("不允许访问符号链接: " + location);
                 }
 

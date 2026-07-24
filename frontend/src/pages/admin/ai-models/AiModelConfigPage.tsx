@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -73,7 +74,7 @@ const emptyProviderForm = (): AiProviderPayload & { endpointsJson: string; iconF
   iconFile: null
 });
 
-const emptyModelForm = (): AiModelPayload & { modelId_display?: string } => ({
+const emptyModelForm = () => ({
   providerId: "",
   modelId: "",
   modelName: "",
@@ -82,7 +83,8 @@ const emptyModelForm = (): AiModelPayload & { modelId_display?: string } => ({
   enabled: 1,
   supportsThinking: 0,
   supportsMultimodal: 0,
-  dimension: undefined,
+  dimension: undefined as number[] | undefined,
+  dimensionText: "",
   customUrl: ""
 });
 
@@ -320,11 +322,25 @@ export function AiModelConfigPage() {
       supportsThinking: model.supportsThinking,
       supportsMultimodal: model.supportsMultimodal ?? 0,
       dimension: model.dimension ?? undefined,
+      dimensionText: dimensionArrayToText(model.dimension ?? undefined),
       customUrl: model.customUrl || ""
     });
     setModelDialogMode("edit");
     setEditingModelId(model.id);
     setModelDialogOpen(true);
+  };
+
+  // 将维度数组转为逗号分隔的字符串用于输入框显示
+  const dimensionArrayToText = (dims: number[] | undefined): string =>
+    dims && dims.length > 0 ? dims.join(", ") : "";
+
+  // 将逗号分隔的字符串解析为维度数组
+  const dimensionTextToArray = (text: string): number[] | undefined => {
+    const nums = text
+      .split(/[,，\s]+/)
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n) && n > 0);
+    return nums.length > 0 ? nums : undefined;
   };
 
   const handleModelSubmit = async () => {
@@ -333,24 +349,26 @@ export function AiModelConfigPage() {
       return;
     }
     if (!modelForm.modelId?.trim()) {
-      toast.error("请输入模型标识");
+      toast.error("请输入模型ID");
       return;
     }
-    if (!modelForm.modelName?.trim()) {
-      toast.error("请输入实际模型名");
-      return;
-    }
+
+    const finalModelName = modelForm.modelName?.trim() || modelForm.modelId.trim();
+
+    const dimension = modelForm.capability === "EMBEDDING"
+      ? dimensionTextToArray(modelForm.dimensionText)
+      : undefined;
 
     const payload: AiModelPayload = {
       providerId: modelForm.providerId,
       modelId: modelForm.modelId.trim(),
-      modelName: modelForm.modelName.trim(),
+      modelName: finalModelName,
       capability: modelForm.capability || "CHAT",
       priority: modelForm.priority ?? 0,
       enabled: modelForm.enabled ?? 1,
       supportsThinking: modelForm.supportsThinking ?? 0,
       supportsMultimodal: modelForm.supportsMultimodal ?? 0,
-      dimension: modelForm.dimension,
+      dimension,
       customUrl: modelForm.customUrl?.trim() || undefined
     };
 
@@ -504,6 +522,8 @@ export function AiModelConfigPage() {
             // Fetch models
             onFetchModels={handleFetchModels}
             fetchingModels={fetchingModels}
+            // Add model manually
+            onAddModel={(providerId) => openCreateModel(providerId)}
           />
         )}
       </div>
@@ -699,32 +719,34 @@ export function AiModelConfigPage() {
 
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-700">
-                模型标识 <span className="text-red-400">*</span>
+                模型ID <span className="text-red-400">*</span>
               </Label>
+              <p className="text-xs text-gray-400">调用 API 时传入的 model 参数，如 text-embedding-v4</p>
               <Input
                 value={modelForm.modelId}
                 onChange={(e) =>
-                  setModelForm((prev) => ({ ...prev, modelId: e.target.value }))
+                  setModelForm((prev) => ({ ...prev, modelId: e.target.value, modelName: modelDialogMode === "create" && (prev.modelName === prev.modelId || !prev.modelName) ? e.target.value : prev.modelName }))
                 }
                 disabled={modelDialogMode === "edit"}
-                placeholder="deepseek-chat"
+                placeholder="text-embedding-v4"
                 className={modelDialogMode === "edit" ? "bg-gray-50" : ""}
               />
               {modelDialogMode === "edit" && (
-                <p className="text-xs text-gray-400">模型标识创建后不可修改</p>
+                <p className="text-xs text-gray-400">创建后不可修改</p>
               )}
             </div>
 
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-700">
-                实际模型名 <span className="text-red-400">*</span>
+                显示名称
               </Label>
+              <p className="text-xs text-gray-400">页面列表中展示的名称，默认与模型ID一致</p>
               <Input
                 value={modelForm.modelName}
                 onChange={(e) =>
                   setModelForm((prev) => ({ ...prev, modelName: e.target.value }))
                 }
-                placeholder="DeepSeek Chat"
+                placeholder="默认与模型ID相同"
               />
             </div>
 
@@ -736,7 +758,7 @@ export function AiModelConfigPage() {
                   setModelForm((prev) => ({
                     ...prev,
                     capability: v,
-                    dimension: v === "EMBEDDING" ? prev.dimension : undefined
+                    dimensionText: v === "EMBEDDING" ? prev.dimensionText : ""
                   }))
                 }
               >
@@ -756,19 +778,20 @@ export function AiModelConfigPage() {
                 <Label className="text-sm font-medium text-gray-700">
                   向量维度
                 </Label>
-                <Input
-                  type="number"
-                  value={modelForm.dimension ?? ""}
+                <Textarea
+                  value={modelForm.dimensionText}
                   onChange={(e) =>
                     setModelForm((prev) => ({
                       ...prev,
-                      dimension: e.target.value
-                        ? parseInt(e.target.value, 10)
-                        : undefined
+                      dimensionText: e.target.value
                     }))
                   }
-                  placeholder="1024"
+                  placeholder="1024, 1536, 4096"
+                  className="min-h-[60px]"
                 />
+                <p className="text-xs text-gray-500">
+                  多个维度用逗号分隔，如 1024, 1536, 4096。留空表示使用默认值。
+                </p>
               </div>
             )}
 

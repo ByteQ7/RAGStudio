@@ -97,6 +97,7 @@ public class SystemSettingsVO {
             private String model;
             private String url;
             private Integer dimension;
+            private List<Integer> dimensions;
             private Integer priority;
             private Boolean enabled;
             private Boolean supportsThinking;
@@ -107,6 +108,7 @@ public class SystemSettingsVO {
         public static class Selection {
             private Integer failureThreshold;
             private Long openDurationMs;
+            private String toolRoutingModel;
         }
 
         @Data

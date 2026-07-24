@@ -111,7 +111,11 @@ public class ModelRoutingExecutor {
                 return response;
             } catch (Exception e) {
                 // 调用失败：记录异常信息，标记失败状态，继续尝试下一个候选
-                last = e;
+                if (last == null) {
+                    last = e;
+                } else {
+                    last.addSuppressed(e);
+                }
                 healthStore.markFailure(target.id());
                 log.error("{} model failed, fallback to next. modelId={}, provider={}, error={}",
                         label, target.id(), target.candidate().getProvider(), e.getMessage());

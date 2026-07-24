@@ -43,7 +43,6 @@ public class DocumentStatusHelper {
                         .set(KnowledgeDocumentDO::getStatus, DocumentStatus.RUNNING.getCode())
                         .set(KnowledgeDocumentDO::getUpdatedBy, SYSTEM_USER)
                         .eq(KnowledgeDocumentDO::getId, docId)
-                        .eq(KnowledgeDocumentDO::getDeleted, 0)
                         .eq(KnowledgeDocumentDO::getEnabled, 1)
                         .ne(KnowledgeDocumentDO::getStatus, DocumentStatus.RUNNING.getCode())
         ) > 0;

@@ -3,12 +3,10 @@ package com.byteq.ai.ragstudio.rag.service.pipeline;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.core.collection.CollUtil;
-import cn.hutool.core.util.IdUtil;
-import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
+import com.byteq.ai.ragstudio.rag.config.MemoryProperties;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentContext;
 import com.byteq.ai.ragstudio.rag.core.agent.KbRelevanceChecker;
@@ -18,6 +16,7 @@ import com.byteq.ai.ragstudio.rag.core.agent.ReActPromptBuilder;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActResponseParser;
 import com.byteq.ai.ragstudio.rag.core.agent.ToolSubAgent;
 import com.byteq.ai.ragstudio.rag.core.agent.TitleSubAgent;
+import com.byteq.ai.ragstudio.rag.core.agent.ToolRetriever;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
 import com.byteq.ai.ragstudio.rag.core.prompt.RAGPromptService;
 import com.byteq.ai.ragstudio.rag.core.rewrite.QueryRewriteService;
@@ -34,11 +33,6 @@ import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
 import com.byteq.ai.ragstudio.rag.service.handler.StreamTaskManager;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
-import io.modelcontextprotocol.spec.McpSchema.ImageContent;
-import io.modelcontextprotocol.spec.McpSchema.TextContent;
-import io.modelcontextprotocol.spec.McpSchema.Tool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,11 +42,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Supplier;
-
-import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.CHAT_SYSTEM_PROMPT_PATH;
-import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.QUERY_REWRITE_AND_SPLIT_PROMPT_PATH;
 
 /**
  * 流式对话流水线
@@ -143,6 +133,12 @@ public class StreamChatPipeline {
     /** 链路追踪配置，用于判断是否启用追踪 */
     private final RagTraceProperties traceProperties;
 
+    /** 对话记忆配置（标题长度等） */
+    private final MemoryProperties memoryProperties;
+
+    /** 工具语义检索器，按用户问题筛选相关工具注入 Prompt */
+    private final ToolRetriever toolRetriever;
+
     /** 知识库相关性判断器，Agent 模式下用于判断问题是否与所选知识库相关 */
     private final KbRelevanceChecker kbRelevanceChecker;
 
@@ -178,34 +174,11 @@ public class StreamChatPipeline {
 
         try {
             doExecute(ctx);
-
-            // 取最终回答（流式内容已拼接完整）
-            String answer = ctx.getCallback() instanceof com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler
-                    ? ((com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler) ctx.getCallback()).getAnswerString()
-                    : null;
-
-            // 记录对话上下文 + 回答（doExecute 内才加载了 history）
-            java.util.List<com.byteq.ai.ragstudio.framework.convention.ChatMessage> history = ctx.getHistory();
-            if (history != null && !history.isEmpty()) {
-                for (com.byteq.ai.ragstudio.framework.convention.ChatMessage msg : history) {
-                    String role = msg.getRole() != null ? msg.getRole().name() : "unknown";
-                    String content = msg.getContent() != null ? msg.getContent() : "";
-                    if (content.length() > 2000) {
-                        content = content.substring(0, 2000) + "\n... [已截断 " + (content.length() - 2000) + " 字符]";
-                    }
-                }
-            }
-
-            if (answer != null && !answer.isEmpty()) {
-            }
         } catch (IllegalStateException e) {
-            // 仅静默处理用户取消：其他 IllegalStateException 仍需正常传播
             if (e.getMessage() != null && e.getMessage().startsWith(CANCEL_MARKER)) {
                 log.info("流水线因任务取消而终止，任务ID：{}", taskId);
                 return;
             }
-            throw e;
-        } catch (Exception e) {
             throw e;
         }
     }
@@ -234,8 +207,7 @@ public class StreamChatPipeline {
                 if (CollUtil.isEmpty(kbIds)) return List.of();
                 List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
                         com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
-                                .in(KnowledgeBaseDO::getId, kbIds)
-                                .eq(KnowledgeBaseDO::getDeleted, 0));
+                                .in(KnowledgeBaseDO::getId, kbIds));
                 return kbList.stream()
                         .map(kb -> new KbRelevanceChecker.KbInfo(
                                 kb.getId(), kb.getName(), kb.getDescription(), kb.getCollectionName()))
@@ -253,8 +225,7 @@ public class StreamChatPipeline {
                 // 从原始 KB IDs 中过滤出 collection 匹配的
                 List<KnowledgeBaseDO> allKbs = knowledgeBaseMapper.selectList(
                         com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
-                                .in(KnowledgeBaseDO::getId, ctx.getKnowledgeBaseIds())
-                                .eq(KnowledgeBaseDO::getDeleted, 0));
+                                .in(KnowledgeBaseDO::getId, ctx.getKnowledgeBaseIds()));
                 effectiveKbIds = allKbs.stream()
                         .filter(kb -> relevantCollections.contains(kb.getCollectionName()))
                         .map(KnowledgeBaseDO::getId)
@@ -279,8 +250,7 @@ public class StreamChatPipeline {
         if (CollUtil.isNotEmpty(finalKbIds)) {
             List<KnowledgeBaseDO> selectedKbs = knowledgeBaseMapper.selectList(
                     com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
-                            .in(KnowledgeBaseDO::getId, finalKbIds)
-                            .eq(KnowledgeBaseDO::getDeleted, 0));
+                            .in(KnowledgeBaseDO::getId, finalKbIds));
             // 构建 collectionName → kbId 映射，供 AI 指定 collection 时精确检索
             collectionToKbId = new java.util.HashMap<>();
             StringBuilder sb = new StringBuilder();
@@ -311,10 +281,10 @@ public class StreamChatPipeline {
         QaSubAgent qaSubAgent = traceNode("工具注册", "TOOL_REGISTRY", () -> new QaSubAgent(
                 llmService, retrievalEngine, searchProperties,
                 mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor,
-                reactResponseParser, reactPromptBuilder,
+                reactResponseParser, reactPromptBuilder, promptTemplateLoader,
                 () -> taskManager.isCancelled(ctx.getTaskId()),
                 finalKbIds, kbSummaryText, collectionToKbId,
-                traceRecordService
+                traceRecordService, toolRetriever
         ));
         orchestrator.register(qaSubAgent);
 
@@ -330,7 +300,7 @@ public class StreamChatPipeline {
 
         // Title Agent（LLM 调用生成标题）
         try {
-            TitleSubAgent titleAgent = new TitleSubAgent(llmService, promptTemplateLoader);
+            TitleSubAgent titleAgent = new TitleSubAgent(llmService, promptTemplateLoader, memoryProperties);
             orchestrator.register(titleAgent);
         } catch (Exception e) {
             log.warn("Title Agent 注册失败，跳过", e);

@@ -14,7 +14,10 @@ import java.util.Map;
 
 /**
  * 基于 pgvector 的向量存储服务实现
- * 提供文档切片的向量写入、更新、删除等操作，使用 PostgreSQL + pgvector 扩展
+ * <p>
+ * 向量按维度分表存储，表名 t_knowledge_vector_{dimension}。
+ * 写入前校验每个 chunk 的 embedding 维度是否与指定 dimension 一致。
+ * </p>
  */
 @Slf4j
 @Service
@@ -26,14 +29,23 @@ public class PgVectorStoreService implements VectorStoreService {
     private final ObjectMapper objectMapper;
 
     @Override
-    public void indexDocumentChunks(String collectionName, String docId, List<VectorChunk> chunks) {
+    public void indexDocumentChunks(String collectionName, String docId, int dimension, List<VectorChunk> chunks) {
         if (chunks == null || chunks.isEmpty()) {
             return;
         }
 
+        String table = vectorTableName(dimension);
+        for (VectorChunk chunk : chunks) {
+            if (chunk.getEmbedding() == null || chunk.getEmbedding().length != dimension) {
+                throw new IllegalArgumentException(String.format(
+                        "Embedding 维度不匹配: 期望 %d 维，实际 %s 维",
+                        dimension, chunk.getEmbedding() == null ? "null" : chunk.getEmbedding().length));
+            }
+        }
+
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         jdbcTemplate.batchUpdate(
-                "INSERT INTO t_knowledge_vector (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector)",
+                "INSERT INTO " + table + " (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector)",
                 chunks, chunks.size(), (ps, chunk) -> {
                     ps.setString(1, chunk.getChunkId());
                     ps.setString(2, chunk.getContent());
@@ -41,40 +53,49 @@ public class PgVectorStoreService implements VectorStoreService {
                     ps.setString(4, toVectorLiteral(chunk.getEmbedding()));
                 });
 
-        log.info("批量写入向量到 PostgreSQL，collectionName={}, docId={}, count={}", collectionName, docId, chunks.size());
+        log.info("批量写入向量到 {}，collectionName={}, docId={}, count={}", table, collectionName, docId, chunks.size());
     }
 
     @Override
-    public void deleteDocumentVectors(String collectionName, String docId) {
+    public void deleteDocumentVectors(String collectionName, String docId, int dimension) {
+        String table = vectorTableName(dimension);
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         int deleted = jdbcTemplate.update(
-                "DELETE FROM t_knowledge_vector WHERE metadata->>'collection_name' = ? AND metadata->>'doc_id' = ?",
+                "DELETE FROM " + table + " WHERE metadata->>'collection_name' = ? AND metadata->>'doc_id' = ?",
                 collectionName, docId);
-        log.info("删除文档向量，collectionName={}, docId={}, deleted={}", collectionName, docId, deleted);
+        log.info("删除文档向量，table={}, collectionName={}, docId={}, deleted={}", table, collectionName, docId, deleted);
     }
 
     @Override
-    public void deleteChunkById(String collectionName, String chunkId) {
+    public void deleteChunkById(int dimension, String chunkId) {
+        String table = vectorTableName(dimension);
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        jdbcTemplate.update("DELETE FROM t_knowledge_vector WHERE id = ?", chunkId);
+        jdbcTemplate.update("DELETE FROM " + table + " WHERE id = ?", chunkId);
     }
 
     @Override
-    public void deleteChunksByIds(String collectionName, List<String> chunkIds) {
+    public void deleteChunksByIds(int dimension, List<String> chunkIds) {
         if (chunkIds == null || chunkIds.isEmpty()) {
             return;
         }
+        String table = vectorTableName(dimension);
         String placeholders = chunkIds.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(", "));
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        int deleted = jdbcTemplate.update("DELETE FROM t_knowledge_vector WHERE id IN (" + placeholders + ")", chunkIds.toArray());
-        log.info("批量删除 chunk 向量，collectionName={}, count={}, deleted={}", collectionName, chunkIds.size(), deleted);
+        int deleted = jdbcTemplate.update(
+                "DELETE FROM " + table + " WHERE id IN (" + placeholders + ")", chunkIds.toArray());
+        log.info("批量删除 chunk 向量，table={}, count={}, deleted={}", table, chunkIds.size(), deleted);
     }
 
     @Override
     public void updateChunk(String collectionName, String docId, VectorChunk chunk) {
+        if (chunk.getEmbedding() == null) {
+            throw new IllegalArgumentException("Chunk embedding 为空，无法更新");
+        }
+        int dimension = chunk.getEmbedding().length;
+        String table = vectorTableName(dimension);
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         jdbcTemplate.update(
-                "INSERT INTO t_knowledge_vector (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector) " +
+                "INSERT INTO " + table + " (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector) " +
                         "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding",
                 chunk.getChunkId(),
                 chunk.getContent(),
@@ -83,7 +104,6 @@ public class PgVectorStoreService implements VectorStoreService {
         );
     }
 
-    // 构建向量记录的 metadata JSON，合并 chunk 原始元数据并补充 collectionName、docId、chunkIndex
     private String buildMetadataJson(String collectionName, String docId, VectorChunk chunk) {
         Map<String, Object> meta = new LinkedHashMap<>();
         if (chunk.getMetadata() != null) {
@@ -100,12 +120,15 @@ public class PgVectorStoreService implements VectorStoreService {
         }
     }
 
-    // 将 float 数组转换为 pgvector 可识别的字面量格式（如 [0.1,0.2,...]）
     private String toVectorLiteral(float[] embedding) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < embedding.length; i++) {
             if (i > 0) sb.append(",");
-            sb.append(embedding[i]);
+            float v = embedding[i];
+            if (Float.isNaN(v) || Float.isInfinite(v)) {
+                v = 0.0f;
+            }
+            sb.append(v);
         }
         return sb.append("]").toString();
     }

@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -37,6 +39,13 @@ public class ToolRegistry {
 
     /** 单次工具调用的超时时间（默认 30 秒） */
     private Duration toolTimeout = Duration.ofSeconds(30);
+
+    /** 专用线程池，避免阻塞 ForkJoinPool 公共池 */
+    private static final ExecutorService TOOL_EXECUTOR = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "tool-executor-");
+        t.setDaemon(true);
+        return t;
+    });
 
     /**
      * 设置工具执行超时
@@ -169,10 +178,10 @@ public class ToolRegistry {
         }
 
         long start = System.currentTimeMillis();
+        CompletableFuture<ToolResult> future = CompletableFuture
+                .supplyAsync(() -> tool.execute(params != null ? params : Map.of()), TOOL_EXECUTOR);
         try {
-            ToolResult result = CompletableFuture
-                    .supplyAsync(() -> tool.execute(params != null ? params : Map.of()))
-                    .get(toolTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            ToolResult result = future.get(toolTimeout.toMillis(), TimeUnit.MILLISECONDS);
             result.setDurationMs(System.currentTimeMillis() - start);
             log.info("工具执行完成: {}, success={}, durationMs={}",
                     name, result.isSuccess(), result.getDurationMs());
@@ -182,6 +191,7 @@ public class ToolRegistry {
             }
             return result;
         } catch (java.util.concurrent.TimeoutException e) {
+            future.cancel(true);
             long duration = System.currentTimeMillis() - start;
             log.warn("工具执行超时: {}, timeoutMs={}", name, toolTimeout.toMillis());
             if (tracing) {
@@ -278,6 +288,6 @@ public class ToolRegistry {
      * 获取所有工具名称
      */
     public List<String> listNames() {
-        return new ArrayList<>(tools.keySet());
+        return List.copyOf(tools.keySet());
     }
 }

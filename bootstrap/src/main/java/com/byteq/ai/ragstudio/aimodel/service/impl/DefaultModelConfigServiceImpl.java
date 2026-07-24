@@ -9,6 +9,7 @@ import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiModelMapper;
 import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiProviderMapper;
 import com.byteq.ai.ragstudio.aimodel.dao.mapper.DefaultModelConfigMapper;
 import com.byteq.ai.ragstudio.aimodel.service.DefaultModelConfigService;
+import com.byteq.ai.ragstudio.framework.convention.DefaultModelService;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +25,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class DefaultModelConfigServiceImpl implements DefaultModelConfigService {
+public class DefaultModelConfigServiceImpl implements DefaultModelConfigService, DefaultModelService {
 
     private final DefaultModelConfigMapper mapper;
     private final AiModelMapper aiModelMapper;
@@ -55,6 +56,11 @@ public class DefaultModelConfigServiceImpl implements DefaultModelConfigService 
     }
 
     @Override
+    public String getDefaultModelId(String sceneKey) {
+        return getModelId(sceneKey);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateConfig(String configKey, String modelId) {
         // 校验 modelId 存在且启用
@@ -73,12 +79,28 @@ public class DefaultModelConfigServiceImpl implements DefaultModelConfigService 
                         .eq(DefaultModelConfigDO::getConfigKey, configKey)
         );
         if (config == null) {
-            throw new ClientException("配置项不存在：" + configKey);
+            config = new DefaultModelConfigDO();
+            config.setConfigKey(configKey);
+            config.setModelId(modelId);
+            mapper.insert(config);
+        } else {
+            config.setModelId(modelId);
+            mapper.updateById(config);
         }
-
-        config.setModelId(modelId);
-        mapper.updateById(config);
         log.info("更新默认模型配置: configKey={}, modelId={}", configKey, modelId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteByKey(String configKey) {
+        DefaultModelConfigDO config = mapper.selectOne(
+                new LambdaQueryWrapper<DefaultModelConfigDO>()
+                        .eq(DefaultModelConfigDO::getConfigKey, configKey)
+        );
+        if (config != null) {
+            mapper.deleteById(config);
+            log.info("删除默认模型配置: configKey={}", configKey);
+        }
     }
 
     // ==================== 内部方法 ====================

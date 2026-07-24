@@ -28,7 +28,7 @@ export interface AiModel {
   enabled: number;
   supportsThinking: number;
   supportsMultimodal?: number;
-  dimension?: number | null;
+  dimension?: number[] | null;
   customUrl?: string | null;
   createTime?: string | null;
   updateTime?: string | null;
@@ -53,7 +53,7 @@ export interface AiModelPayload {
   enabled?: number;
   supportsThinking?: number;
   supportsMultimodal?: number;
-  dimension?: number;
+  dimension?: number[];
   customUrl?: string;
 }
 
@@ -78,7 +78,7 @@ export interface RemoteModelInfo {
   capabilities: string[];
   supportsThinking?: boolean;
   supportsMultimodal?: boolean;
-  dimension?: number;
+  dimensions?: number[];
 }
 
 /** 远程模型列表响应 */
@@ -159,7 +159,7 @@ export async function checkConnectivity(providerId: string): Promise<Connectivit
  */
 export async function checkModelConnectivity(modelId: string): Promise<ConnectivityResult> {
   return api.post<ConnectivityResult, ConnectivityResult>(
-    `/ai-model-config/models/${modelId}/check-connectivity`
+    `/ai-model-config/models/check-connectivity?id=${encodeURIComponent(modelId)}`
   );
 }
 

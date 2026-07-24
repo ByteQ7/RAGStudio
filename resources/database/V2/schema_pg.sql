@@ -161,25 +161,28 @@ COMMENT ON COLUMN t_sample_question.deleted IS '是否删除 0：正常 1：删�
 -- Knowledge Base
 -- ============================================
 
--- Entity: KnowledgeBaseDO (@TableName="t_knowledge_base", @TableId=ASSIGN_ID, @TableLogic)
+-- Entity: KnowledgeBaseDO (@TableName="t_knowledge_base", @TableId=ASSIGN_ID)
 CREATE TABLE t_knowledge_base (
-    id              VARCHAR(64) NOT NULL PRIMARY KEY,
-    name            VARCHAR(128) NOT NULL,
-    description     TEXT,
-    embedding_model VARCHAR(128) NOT NULL,
-    collection_name VARCHAR(128) NOT NULL,
-    created_by      VARCHAR(64)  NOT NULL,
-    updated_by      VARCHAR(64),
-    create_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted         SMALLINT    NOT NULL DEFAULT 0,
+    id                 VARCHAR(64) NOT NULL PRIMARY KEY,
+    name               VARCHAR(128) NOT NULL,
+    description        TEXT,
+    embedding_provider VARCHAR(64),
+    embedding_model    VARCHAR(128) NOT NULL,
+    dimension          INTEGER     NOT NULL DEFAULT 1536,
+    collection_name    VARCHAR(128) NOT NULL,
+    created_by         VARCHAR(64)  NOT NULL,
+    updated_by         VARCHAR(64),
+    create_time        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_collection_name UNIQUE (collection_name)
 );
 CREATE INDEX idx_kb_name ON t_knowledge_base (name);
 COMMENT ON TABLE t_knowledge_base IS '知识库表';
 COMMENT ON COLUMN t_knowledge_base.id IS '主键 ID';
 COMMENT ON COLUMN t_knowledge_base.name IS '知识库名称';
+COMMENT ON COLUMN t_knowledge_base.embedding_provider IS '嵌入模型供应商，如 siliconflow';
 COMMENT ON COLUMN t_knowledge_base.embedding_model IS '嵌入模型标识';
+COMMENT ON COLUMN t_knowledge_base.dimension IS '向量维度';
 COMMENT ON COLUMN t_knowledge_base.collection_name IS 'Collection名称';
 COMMENT ON COLUMN t_knowledge_base.created_by IS '创建人';
 COMMENT ON COLUMN t_knowledge_base.updated_by IS '修改人';
@@ -210,8 +213,7 @@ CREATE TABLE t_knowledge_document (
     created_by       VARCHAR(64)   NOT NULL,
     updated_by       VARCHAR(64),
     create_time      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted          SMALLINT    NOT NULL DEFAULT 0
+    update_time      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_kb_id ON t_knowledge_document (kb_id);
 COMMENT ON TABLE t_knowledge_document IS '知识库文档表';
@@ -236,9 +238,8 @@ COMMENT ON COLUMN t_knowledge_document.created_by IS '创建人';
 COMMENT ON COLUMN t_knowledge_document.updated_by IS '修改人';
 COMMENT ON COLUMN t_knowledge_document.create_time IS '创建时间';
 COMMENT ON COLUMN t_knowledge_document.update_time IS '更新时间';
-COMMENT ON COLUMN t_knowledge_document.deleted IS '是否删除 0：正常 1：删除';
 
--- Entity: KnowledgeChunkDO (@TableName="t_knowledge_chunk", @TableId=ASSIGN_ID, @TableLogic)
+-- Entity: KnowledgeChunkDO (@TableName="t_knowledge_chunk", @TableId=ASSIGN_ID)
 CREATE TABLE t_knowledge_chunk (
     id           VARCHAR(64) NOT NULL PRIMARY KEY,
     kb_id        VARCHAR(64) NOT NULL,
@@ -252,8 +253,7 @@ CREATE TABLE t_knowledge_chunk (
     created_by   VARCHAR(64) NOT NULL,
     updated_by   VARCHAR(64),
     create_time  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted      SMALLINT    NOT NULL DEFAULT 0
+    update_time  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_doc_id ON t_knowledge_chunk (doc_id);
 COMMENT ON TABLE t_knowledge_chunk IS '知识库文档分块表';
@@ -270,7 +270,6 @@ COMMENT ON COLUMN t_knowledge_chunk.created_by IS '创建人';
 COMMENT ON COLUMN t_knowledge_chunk.updated_by IS '修改人';
 COMMENT ON COLUMN t_knowledge_chunk.create_time IS '创建时间';
 COMMENT ON COLUMN t_knowledge_chunk.update_time IS '更新时间';
-COMMENT ON COLUMN t_knowledge_chunk.deleted IS '是否删除 0：正常 1：删除';
 
 -- Entity: KnowledgeDocumentChunkLogDO (@TableName="t_knowledge_document_chunk_log", @TableId=ASSIGN_ID)
 -- NOTE: no @TableLogic → no deleted column
@@ -655,27 +654,39 @@ COMMENT ON COLUMN t_ingestion_task_node.update_time IS '更新时间';
 COMMENT ON COLUMN t_ingestion_task_node.deleted IS '是否删除 0：正常 1：删除';
 
 -- ============================================
--- Vector Storage (pgvector)
+-- Vector Storage (pgvector) — 按维度分表
+-- 不同维度的向量存储在不同的表中，避免 pgvector 固定 vector(N) 的限制。
+-- 知识库创建时根据所选 embedding 模型的维度确定使用哪张表。
 -- ============================================
 
-CREATE TABLE t_knowledge_vector (
+-- 向量按维度分表，入库维度均 ≤ 2000，统一使用 HNSW 索引。
+-- 预创建常用维度表，其他维度由 PgVectorStoreAdmin 在运行时动态创建。
+CREATE TABLE t_knowledge_vector_1024 (
+    id        VARCHAR(64) PRIMARY KEY,
+    content   TEXT,
+    metadata  JSONB,
+    embedding vector(1024)
+);
+CREATE INDEX idx_kv_1024_metadata ON t_knowledge_vector_1024 USING gin(metadata);
+CREATE INDEX idx_kv_1024_embedding ON t_knowledge_vector_1024 USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX idx_kv_1024_content_trgm ON t_knowledge_vector_1024 USING gin (content gin_trgm_ops);
+COMMENT ON TABLE t_knowledge_vector_1024 IS '知识库向量存储表（1024维）';
+
+CREATE TABLE t_knowledge_vector_1536 (
     id        VARCHAR(64) PRIMARY KEY,
     content   TEXT,
     metadata  JSONB,
     embedding vector(1536)
 );
-CREATE INDEX idx_kv_metadata ON t_knowledge_vector USING gin(metadata);
-CREATE INDEX idx_kv_embedding ON t_knowledge_vector USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX idx_kv_1536_metadata ON t_knowledge_vector_1536 USING gin(metadata);
+CREATE INDEX idx_kv_1536_embedding ON t_knowledge_vector_1536 USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX idx_kv_1536_content_trgm ON t_knowledge_vector_1536 USING gin (content gin_trgm_ops);
+COMMENT ON TABLE t_knowledge_vector_1536 IS '知识库向量存储表（1536维）';
+
 -- 替换说明：pg_trgm GIN 索引替代了旧的 tsvector 索引
 -- tsvector 不拆分中文词（无空格），对中文关键词检索基本失效
 -- pg_trgm 按 3 字符片段索引，配合 ILIKE 实现中文/混合文本子串匹配
 -- 建索引前需要先执行：CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX idx_kv_content_trgm ON t_knowledge_vector USING gin (content gin_trgm_ops);
-COMMENT ON TABLE t_knowledge_vector IS '知识库向量存储表';
-COMMENT ON COLUMN t_knowledge_vector.id IS '分块ID';
-COMMENT ON COLUMN t_knowledge_vector.content IS '分块文本内容';
-COMMENT ON COLUMN t_knowledge_vector.metadata IS '元数据';
-COMMENT ON COLUMN t_knowledge_vector.embedding IS '向量';
 
 -- ============================================
 -- MCP Server 动态管理
@@ -762,7 +773,7 @@ CREATE TABLE t_ai_model (
     enabled             SMALLINT     NOT NULL DEFAULT 1,
     supports_thinking   SMALLINT     NOT NULL DEFAULT 0,
     supports_multimodal SMALLINT     NOT NULL DEFAULT 0,
-    dimension           INTEGER,
+    dimension           TEXT,
     custom_url        VARCHAR(500),
     create_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,

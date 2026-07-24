@@ -71,11 +71,12 @@ public enum ChunkingMode {
 
         @Override
         public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize) {
+            int target = targetSize != null ? targetSize : 1400;
             return new TextBoundaryOptions(
-                    targetSize != null ? targetSize : 1400,
+                    target,
                     overlapSize != null ? overlapSize : 0,
-                    1800,
-                    600);
+                    (int) Math.round(target * 1.3),
+                    (int) Math.round(target * 0.4));
         }
     };
 

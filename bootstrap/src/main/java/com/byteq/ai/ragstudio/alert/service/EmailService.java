@@ -137,6 +137,33 @@ public class EmailService {
         );
     }
 
+    /**
+     * 构建工具选择嵌入模型不可用告警 HTML 邮件
+     */
+    public String buildToolRoutingFailedHtml(String now, String modelId, String error) {
+        return buildBaseHtml(
+                "工具选择嵌入模型不可用",
+                "工具语义检索所需 Embedding 模型 " + escHtml(modelId) + " 暂时不可用，已降级为全量注入",
+                now,
+                """
+                <table style="width:100%%;border-collapse:collapse;">
+                    <tr>
+                        <td style="padding:8px 14px;font-size:14px;color:#5f6368;width:120px;">模型</td>
+                        <td style="padding:8px 14px;font-size:14px;color:#202124;font-weight:500;">%s</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 14px;font-size:14px;color:#5f6368;">错误信息</td>
+                        <td style="padding:8px 14px;font-size:14px;color:#d93025;">%s</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 14px;font-size:14px;color:#5f6368;">当前状态</td>
+                        <td style="padding:8px 14px;font-size:14px;color:#202124;">已降级为全量工具注入，不影响问答功能</td>
+                    </tr>
+                </table>
+                """.formatted(escHtml(modelId), escHtml(error))
+        );
+    }
+
     // ==================== 内部方法 ====================
 
     private JavaMailSender createMailSender(com.byteq.ai.ragstudio.alert.dao.entity.AlertConfig config) {

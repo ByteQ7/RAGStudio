@@ -238,8 +238,8 @@ public class AiModelConfigController {
      * @param id 模型 ID
      * @return 连通性检查结果
      */
-    @PostMapping("/models/{id}/check-connectivity")
-    public Result<ConnectivityResultVO> checkModelConnectivity(@PathVariable("id") String id) {
+    @PostMapping("/models/check-connectivity")
+    public Result<ConnectivityResultVO> checkModelConnectivity(@RequestParam("id") String id) {
         return Results.success(aiModelConfigService.checkModelConnectivity(id));
     }
 

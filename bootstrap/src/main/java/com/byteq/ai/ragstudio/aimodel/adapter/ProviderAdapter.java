@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.aimodel.adapter;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * AI 供应商适配器接口
@@ -14,24 +15,44 @@ public interface ProviderAdapter {
     /**
      * 检查与该供应商的连接是否正常
      * <p>
-     * 通常通过发送一个轻量级的 API 请求（如空对话或模型列表查询）
-     * 来验证 API Key 和 API 地址的有效性。
+     * 默认调用带 endpoints 的重载，传入空 Map。
      * </p>
+     */
+    default ConnectivityResult checkConnectivity(String baseUrl, String apiKey) {
+        return checkConnectivity(baseUrl, apiKey, Map.of());
+    }
+
+    /**
+     * 检查与该供应商的连接是否正常
      *
-     * @param baseUrl API 基础地址
-     * @param apiKey  API 密钥
+     * @param baseUrl   API 基础地址
+     * @param apiKey    API 密钥
+     * @param endpoints 端点配置映射（如 {"models":"/v1/models"}），
+     *                  用于自定义 API 路径，为空时使用适配器默认路径
      * @return 连通性检查结果
      */
-    ConnectivityResult checkConnectivity(String baseUrl, String apiKey);
+    ConnectivityResult checkConnectivity(String baseUrl, String apiKey, Map<String, String> endpoints);
+
+    /**
+     * 从供应商拉取可用模型列表
+     * <p>
+     * 默认调用带 endpoints 的重载，传入空 Map。
+     * </p>
+     */
+    default List<RemoteModelInfo> fetchModels(String baseUrl, String apiKey) {
+        return fetchModels(baseUrl, apiKey, Map.of());
+    }
 
     /**
      * 从供应商拉取可用模型列表
      *
-     * @param baseUrl API 基础地址
-     * @param apiKey  API 密钥
+     * @param baseUrl   API 基础地址
+     * @param apiKey    API 密钥
+     * @param endpoints 端点配置映射（如 {"models":"/v1/models"}），
+     *                  用于自定义 API 路径，为空时使用适配器默认路径
      * @return 远程模型信息列表
      */
-    List<RemoteModelInfo> fetchModels(String baseUrl, String apiKey);
+    List<RemoteModelInfo> fetchModels(String baseUrl, String apiKey, Map<String, String> endpoints);
 
     /**
      * 判断此适配器是否支持指定的供应商名称
@@ -55,6 +76,6 @@ public interface ProviderAdapter {
             List<String> capabilities,
             boolean supportsThinking,
             boolean supportsMultimodal,
-            Integer dimension
+            List<Integer> dimensions
     ) {}
 }

@@ -102,6 +102,7 @@ public class DynamicModelConfig {
         private String model;
         private String url;
         private Integer dimension;
+        private List<Integer> dimensions;
         @Builder.Default
         private Integer priority = 100;
         @Builder.Default

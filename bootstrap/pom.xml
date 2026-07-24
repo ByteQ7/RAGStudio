@@ -46,6 +46,19 @@
             <version>3.0.3</version>
         </dependency>
 
+        <!-- PDF 表格提取（Tabula 引擎） -->
+        <dependency>
+            <groupId>technology.tabula</groupId>
+            <artifactId>tabula</artifactId>
+            <version>1.0.5</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- HTML 解析（Tika XHTML→Markdown 转换） -->
         <dependency>
             <groupId>org.jsoup</groupId>

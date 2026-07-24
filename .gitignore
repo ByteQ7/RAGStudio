@@ -88,3 +88,6 @@ AILog/
 # Quick test DB init
 resources/database/quick-test.sql
 /resources/docker/semantic-highlight/ragstudio-highlight.tar
+/复杂排版文档示例.pdf
+/SEMANTIC_HIGHLIGHT_TROUBLESHOOTING.md
+/简历.json

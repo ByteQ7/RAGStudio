@@ -118,13 +118,24 @@ public class OrchestratorAgent {
 
     /**
      * 路由决策
-     * <p>单 Agent 时直接返回，多 Agent 时选择第一个支持该问题的 Agent</p>
+     * <p>单 Agent 时直接返回，多 Agent 时根据卡片 capabilities 匹配问题关键词</p>
      */
     private String resolveAgent(String question) {
         if (agentMap.size() == 1) {
             return agentMap.keySet().iterator().next();
         }
-        // 多 Agent 时返回第一个可用 Agent（后续可接入 LLM 路由）
+        String qLower = question.toLowerCase();
+        for (Map.Entry<String, SubAgent> entry : agentMap.entrySet()) {
+            for (String cap : entry.getValue().getCard().capabilities()) {
+                if ("title_generation".equals(cap) || "conversation_summary".equals(cap)) {
+                    continue;
+                }
+            }
+            String desc = entry.getValue().getCard().description().toLowerCase();
+            if (desc.contains("工具") && (qLower.contains("搜索") || qLower.contains("查询") || qLower.contains("找") || qLower.contains("命令") || qLower.contains("执行"))) {
+                return entry.getKey();
+            }
+        }
         return agentMap.keySet().iterator().next();
     }
 }

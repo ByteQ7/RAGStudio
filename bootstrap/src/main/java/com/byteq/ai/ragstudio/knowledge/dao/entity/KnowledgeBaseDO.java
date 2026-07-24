@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -42,9 +41,19 @@ public class KnowledgeBaseDO {
     private String description;
 
     /**
-     * 嵌入模型标识，如：qwen3-embedding:8b-fp16
+     * 嵌入模型标识，如：qwen-emb-8b
      */
     private String embeddingModel;
+
+    /**
+     * 嵌入模型供应商，如：siliconflow
+     */
+    private String embeddingProvider;
+
+    /**
+     * 向量维度（如 1536、4096），创建时从嵌入模型配置中自动解析
+     */
+    private Integer dimension;
 
     /**
      * 向量集合名称（创建后禁止修改）
@@ -72,11 +81,5 @@ public class KnowledgeBaseDO {
      */
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private Date updateTime;
-
-    /**
-     * 是否删除：0-正常，1-删除（逻辑删除标识）
-     */
-    @TableLogic
-    private Integer deleted;
 }
 

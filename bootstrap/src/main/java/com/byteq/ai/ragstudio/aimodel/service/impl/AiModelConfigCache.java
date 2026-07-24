@@ -118,12 +118,15 @@ public class AiModelConfigCache implements ModelConfigProvider {
                 .filter(m -> idToName.containsKey(m.getProviderId()))
                 .map(m -> {
                     String providerName = idToName.get(m.getProviderId());
+                    List<Integer> allDims = parseDimensionList(m.getDimension());
+                    Integer effectiveDim = resolveEffectiveDimension(m.getDimension());
                     return DynamicModelConfig.ModelEntry.builder()
                             .id(m.getModelId())
                             .provider(providerName)
-                            .model(m.getModelName())
+                            .model(m.getModelId())
                             .url(StrUtil.isNotBlank(m.getCustomUrl()) ? m.getCustomUrl() : null)
-                            .dimension(m.getDimension())
+                            .dimension(effectiveDim)
+                            .dimensions(allDims)
                             .priority(m.getPriority() != null ? m.getPriority() : 100)
                             .enabled(true)
                             .supportsThinking(m.getSupportsThinking() != null && m.getSupportsThinking() == 1)
@@ -138,6 +141,45 @@ public class AiModelConfigCache implements ModelConfigProvider {
                 .providers(providerMap)
                 .models(modelEntries)
                 .build();
+    }
+
+    // 解析 dimension JSON 字符串为维度列表
+    private List<Integer> parseDimensionList(String dimensionJson) {
+        if (StrUtil.isBlank(dimensionJson)) return null;
+        try {
+            if (dimensionJson.trim().startsWith("[")) {
+                return objectMapper.readValue(dimensionJson, new TypeReference<List<Integer>>() {});
+            }
+            int single = Integer.parseInt(dimensionJson.trim());
+            return List.of(single);
+        } catch (Exception e) {
+            log.warn("解析 dimension 失败: {}", dimensionJson, e);
+            return null;
+        }
+    }
+
+    // 解析 dimension JSON 数组，取 ≤2000 的最大值作为有效维度
+    // 如 "[1024, 1536, 4096]" 返回 1536；兼容旧数据 "1536" 纯数字字符串
+    private Integer resolveEffectiveDimension(String dimensionJson) {
+        if (StrUtil.isBlank(dimensionJson)) {
+            return null;
+        }
+        try {
+            // 尝试解析为 JSON 数组
+            if (dimensionJson.trim().startsWith("[")) {
+                List<Integer> dims = objectMapper.readValue(dimensionJson, new TypeReference<List<Integer>>() {});
+                return dims.stream()
+                        .filter(d -> d <= 2000)
+                        .max(Integer::compareTo)
+                        .orElse(null);
+            }
+            // 兼容旧数据：纯数字字符串如 "1536" 或 1536
+            int single = Integer.parseInt(dimensionJson.trim());
+            return single <= 2000 ? single : null;
+        } catch (Exception e) {
+            log.warn("解析 dimension 失败: {}, 使用默认值 1536", dimensionJson);
+            return 1536;
+        }
     }
 
     // 将供应商 endpoints JSON 字符串解析为 Map，解析失败时返回空 Map

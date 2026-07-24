@@ -86,13 +86,17 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
             return List.of(chunk); // 极端兜底：整体作为一个块
         }
 
-        // 2) 依据 min/target/max 打包成 chunk（只在块边界切分）
+        // 2) 拆分超大块：任何超过 max 的块（PARA 类型）按 max 拆成多个子块，以确保打包时不会出现单块超限
+        //    这是 packBlocksToChunks 仅在块边界切分特性导致单一大块永远无法拆分的必要补偿
+        List<Block> splitted = splitOversizedBlocks(blocks, text, effectiveMax);
+
+        // 3) 依据 min/target/max 打包成 chunk（只在块边界切分）
         // 当 overlap > 0 时，为 overlap 预留容量，避免拼接后超出 maxChars
         int packMax = effectiveOverlap > 0 ? effectiveMax - effectiveOverlap : effectiveMax;
         int packTarget = effectiveOverlap > 0 ? effectiveTarget - effectiveOverlap : effectiveTarget;
-        List<int[]> ranges = packBlocksToChunks(blocks, text.length(), effectiveMin, packTarget, packMax);
+        List<int[]> ranges = packBlocksToChunks(splitted, text.length(), effectiveMin, packTarget, packMax);
 
-        // 3)（可选）加入重叠：为保持“只在块边界切分”，这里不在中间加重叠，若开启 overlap，仅复制“上一 chunk 的尾部全文子串”到下一 chunk 的开头
+        // 4)（可选）加入重叠：为保持“只在块边界切分”，这里不在中间加重叠，若开启 overlap，仅复制“上一 chunk 的尾部全文子串”到下一 chunk 的开头
         List<VectorChunk> out = materialize(text, ranges, effectiveOverlap);
 
         // 编号从 0 递增
@@ -317,6 +321,27 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
             }
         }
         return out;
+    }
+
+    // ----------- 超大块拆分 -----------
+    // 将超过 max 的块拆分为多个 max 大小的子块，确保任何块都可以被后续打包处理
+    private List<Block> splitOversizedBlocks(List<Block> blocks, String text, int max) {
+        if (max <= 0) return blocks;
+        List<Block> result = new ArrayList<>();
+        for (Block block : blocks) {
+            int blockLen = block.end - block.start;
+            if (blockLen <= max) {
+                result.add(block);
+                continue;
+            }
+            int pos = block.start;
+            while (pos < block.end) {
+                int end = Math.min(pos + max, block.end);
+                result.add(new Block(block.kind, pos, end));
+                pos = end;
+            }
+        }
+        return result;
     }
 
     // ----------- 小工具 -----------

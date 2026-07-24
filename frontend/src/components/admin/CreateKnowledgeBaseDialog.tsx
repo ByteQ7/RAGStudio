@@ -34,12 +34,15 @@ import { Button } from "@/components/ui/button";
 
 import { createKnowledgeBase } from "@/services/knowledgeService";
 import { getSystemSettings, type ModelCandidate } from "@/services/settingsService";
+import { checkModelConnectivity, type ConnectivityResult } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
+import { Loader2, Wifi, WifiOff } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(1, "请输入知识库名称").max(50, "名称不能超过50个字符"),
   description: z.string().max(500, "描述不能超过500个字符").optional(),
   embeddingModel: z.string().min(1, "请选择Embedding模型"),
+  dimension: z.number().positive("请选择向量维度"),
   collectionName: z
     .string()
     .min(1, "请输入Collection名称")
@@ -63,6 +66,8 @@ export function CreateKnowledgeBaseDialog({
   const [loading, setLoading] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
   const [embeddingModels, setEmbeddingModels] = useState<ModelCandidate[]>([]);
+  const [probeResult, setProbeResult] = useState<ConnectivityResult | null>(null);
+  const [probing, setProbing] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -70,9 +75,24 @@ export function CreateKnowledgeBaseDialog({
       name: "",
       description: "",
       embeddingModel: "",
+      dimension: undefined as unknown as number,
       collectionName: "",
     },
   });
+
+  const selectedModelId = form.watch("embeddingModel");
+  const selectedModel = useMemo(
+    () => embeddingModels.find((m) => m.id === selectedModelId),
+    [embeddingModels, selectedModelId]
+  );
+
+  const availableDimensions = useMemo(() => {
+    const dims = selectedModel?.dimensions;
+    if (dims && dims.length > 0) return dims;
+    const single = selectedModel?.dimension;
+    if (single && single > 0) return [single];
+    return [1536];
+  }, [selectedModel]);
 
   useEffect(() => {
     if (!open) return;
@@ -111,10 +131,45 @@ export function CreateKnowledgeBaseDialog({
     return Array.from(uniqueMap.values());
   }, [embeddingModels]);
 
+  useEffect(() => {
+    if (selectedModel && availableDimensions.length > 0) {
+      const current = form.getValues("dimension");
+      const validDims = availableDimensions.filter((d) => d <= 2000);
+      if (!current || !availableDimensions.includes(current)) {
+        form.setValue("dimension", validDims.length > 0 ? validDims[validDims.length - 1] : availableDimensions[0]);
+      }
+    }
+  }, [selectedModel, availableDimensions, form]);
+
+  // 选择 Embedding 模型后自动发送探测请求
+  useEffect(() => {
+    if (!selectedModelId) {
+      setProbeResult(null);
+      return;
+    }
+    let active = true;
+    setProbing(true);
+    setProbeResult(null);
+    checkModelConnectivity(selectedModelId)
+      .then((result) => {
+        if (active) setProbeResult(result);
+      })
+      .catch((error) => {
+        if (active) setProbeResult({ success: false, error: getErrorMessage(error, "探测失败") });
+      })
+      .finally(() => {
+        if (active) setProbing(false);
+      });
+    return () => { active = false; };
+  }, [selectedModelId]);
+
   const onSubmit = async (values: FormValues) => {
     try {
       setLoading(true);
-      await createKnowledgeBase(values);
+      await createKnowledgeBase({
+        ...values,
+        embeddingProvider: selectedModel?.provider,
+      });
       toast.success("创建成功");
       form.reset();
       onOpenChange(false);
@@ -133,6 +188,7 @@ export function CreateKnowledgeBaseDialog({
         name: "",
         description: "",
         embeddingModel: "",
+        dimension: undefined as unknown as number,
         collectionName: "",
       });
     }
@@ -163,9 +219,7 @@ export function CreateKnowledgeBaseDialog({
                   <FormControl>
                     <Input placeholder="例如：产品文档库" {...field} />
                   </FormControl>
-                  <FormDescription>
-                    为知识库起一个易于识别的名称
-                  </FormDescription>
+                  <FormDescription>为知识库起一个易于识别的名称</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -199,7 +253,13 @@ export function CreateKnowledgeBaseDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Embedding模型</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
+                  <Select
+                    value={field.value}
+                    onValueChange={(v) => {
+                      field.onChange(v);
+                      form.setValue("dimension", undefined as unknown as number);
+                    }}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="选择Embedding模型" />
@@ -216,9 +276,10 @@ export function CreateKnowledgeBaseDialog({
                         </SelectItem>
                       ) : (
                         selectOptions.map((item) => {
-                          const label = item.provider && item.model
-                            ? `${item.provider} · ${item.model}`
-                            : item.model || item.id;
+                          const label =
+                            item.provider && item.model
+                              ? `${item.provider} · ${item.model}`
+                              : item.model || item.id;
                           return (
                             <SelectItem key={item.id} value={item.id}>
                               {label}
@@ -228,13 +289,67 @@ export function CreateKnowledgeBaseDialog({
                       )}
                     </SelectContent>
                   </Select>
-                  <FormDescription>
-                    选择用于向量化文档的模型
-                  </FormDescription>
+                  <FormDescription>选择用于向量化文档的模型</FormDescription>
+                  {selectedModelId && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      {probing ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+                          <span className="text-[11px] text-gray-400">正在探测模型可用性...</span>
+                        </>
+                      ) : probeResult ? (
+                        probeResult.success ? (
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                            <Wifi className="h-3 w-3" />
+                            {probeResult.latencyMs ?? "?"}ms
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600">
+                            <WifiOff className="h-3 w-3" />
+                            {probeResult.error || "不可用"}
+                          </span>
+                        )
+                      ) : null}
+                    </div>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
             />
+
+            {selectedModel && availableDimensions.length > 0 && (
+              <FormField
+                control={form.control}
+                name="dimension"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>向量维度</FormLabel>
+                    <Select
+                      value={String(field.value ?? "")}
+                      onValueChange={(v) => field.onChange(Number(v))}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择向量维度" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {availableDimensions.map((dim) => {
+                          const disabled = dim > 2000;
+                          return (
+                            <SelectItem key={dim} value={String(dim)} disabled={disabled}>
+                              {dim}维 {disabled ? "(超出2000限制)" : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>pgvector 最高支持 2000 维，超过的选项不可用</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}

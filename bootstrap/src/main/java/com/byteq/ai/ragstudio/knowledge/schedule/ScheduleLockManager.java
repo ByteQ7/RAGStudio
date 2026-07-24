@@ -42,6 +42,7 @@ public class ScheduleLockManager {
     private final KnowledgeScheduleProperties scheduleProperties;
 
     private final String instancePrefix = resolveInstancePrefix();
+    private final java.util.concurrent.ConcurrentHashMap<String, ScheduleLockLease> activeLeases = new java.util.concurrent.ConcurrentHashMap<>();
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(
             ThreadFactoryBuilder.create()
                     .setNamePrefix("kb_schedule_lock_heartbeat_")
@@ -68,7 +69,11 @@ public class ScheduleLockManager {
                                 .or()
                                 .lt(KnowledgeDocumentScheduleDO::getLockUntil, now))
         );
-        return updated > 0 ? lease : null;
+        if (updated > 0) {
+            activeLeases.put(scheduleId, lease);
+            return lease;
+        }
+        return null;
     }
 
     /**
@@ -202,11 +207,16 @@ public class ScheduleLockManager {
     }
 
     /**
-     * 关闭心跳线程池
+     * 关闭心跳线程池，释放所有持有的锁
      */
     @PreDestroy
     public void shutdown() {
+        log.info("ScheduleLockManager shutting down, releasing all held locks...");
         heartbeatExecutor.shutdownNow();
+        for (ScheduleLockLease lease : activeLeases.values()) {
+            release(lease);
+        }
+        activeLeases.clear();
     }
 
     /**

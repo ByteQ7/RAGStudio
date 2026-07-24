@@ -198,6 +198,7 @@ public class IngestionEngine {
 
                 NodeConfig config = nodeConfigMap.get(current);
                 if (config == null) {
+                    log.warn("流水线验证：节点 {} 在配置中不存在，终止当前路径", current);
                     break;
                 }
 

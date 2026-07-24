@@ -144,7 +144,7 @@ export function ModelGroupList({
         <div className="text-center">
           <p className="text-sm font-medium text-gray-500">暂无模型</p>
           <p className="mt-1 text-xs text-gray-400">
-            点击"从供应商获取"按钮拉取模型列表
+            点击"新增模型"手动添加，或从"从供应商获取"拉取模型列表
           </p>
         </div>
       </div>

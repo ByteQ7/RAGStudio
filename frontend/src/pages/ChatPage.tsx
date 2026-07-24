@@ -10,19 +10,17 @@ import { useChatStore } from "@/stores/chatStore";
 export function ChatPage() {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
-  const {
-    messages,
-    isLoading,
-    isStreaming,
-    currentSessionId,
-    sessions,
-    isCreatingNew,
-    knowledgeBaseIds,
-    setKnowledgeBaseIds,
-    fetchSessions,
-    selectSession,
-    createSession
-  } = useChatStore();
+  const messages = useChatStore((s) => s.messages);
+  const isLoading = useChatStore((s) => s.isLoading);
+  const isStreaming = useChatStore((s) => s.isStreaming);
+  const currentSessionId = useChatStore((s) => s.currentSessionId);
+  const sessions = useChatStore((s) => s.sessions);
+  const isCreatingNew = useChatStore((s) => s.isCreatingNew);
+  const knowledgeBaseIds = useChatStore((s) => s.knowledgeBaseIds);
+  const setKnowledgeBaseIds = useChatStore((s) => s.setKnowledgeBaseIds);
+  const fetchSessions = useChatStore((s) => s.fetchSessions);
+  const selectSession = useChatStore((s) => s.selectSession);
+  const createSession = useChatStore((s) => s.createSession);
   const [sessionsReady, setSessionsReady] = React.useState(false);
   const sessionExists = React.useMemo(() => {
     if (!sessionId) return false;

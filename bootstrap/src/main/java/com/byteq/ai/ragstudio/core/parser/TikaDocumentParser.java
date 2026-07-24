@@ -1,6 +1,8 @@
 package com.byteq.ai.ragstudio.core.parser;
 
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
+import com.byteq.ai.ragstudio.knowledge.service.DocumentVisionExtractor;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.config.TikaConfig;
@@ -15,10 +17,20 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Component;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Apache Tika 通用文档解析器
@@ -48,9 +60,22 @@ import java.util.Map;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class TikaDocumentParser implements DocumentParser {
 
     private static final Tika TIKA = new Tika();
+
+    private static final int MAX_VISION_PAGES = 10;
+
+    /**
+     * PDF 表格提取器（Tabula 引擎），用于补充 Tika 在 PDF 表格检测上的不足。
+     */
+    private final PdfTableExtractor pdfTableExtractor;
+
+    /**
+     * 文档视觉提取器，用于提取包含图片/图表的页面内容
+     */
+    private final DocumentVisionExtractor documentVisionExtractor;
 
     /**
      * PDF 解析配置：禁用内联图片提取，减少不必要的内存开销
@@ -59,6 +84,8 @@ public class TikaDocumentParser implements DocumentParser {
     static {
         PDF_CONFIG.setExtractInlineImages(false);
         PDF_CONFIG.setExtractUniqueInlineImagesOnly(true);
+        // 开启文本位置排序，帮助 Tika 更好地从文字坐标推断表格结构
+        PDF_CONFIG.setSortByPosition(true);
     }
 
     @Override
@@ -83,15 +110,34 @@ public class TikaDocumentParser implements DocumentParser {
         }
 
         try (ByteArrayInputStream is = new ByteArrayInputStream(content)) {
-            // 使用 AutoDetectParser + ParseContext 使 PDFParserConfig 真正生效
             AutoDetectParser parser = new AutoDetectParser(TikaConfig.getDefaultConfig());
             BodyContentHandler handler = new BodyContentHandler(-1);
             ParseContext parseContext = new ParseContext();
             parseContext.set(PDFParserConfig.class, PDF_CONFIG);
-            parser.parse(is, handler, new Metadata(), parseContext);
+
+            // 使用 Future 包裹解析，设置 60 秒超时，防止损坏/复杂文档卡死线程
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                Future<Void> future = executor.submit(() -> {
+                    parser.parse(is, handler, new Metadata(), parseContext);
+                    return null;
+                });
+                future.get(60, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                log.warn("Tika 解析超时（60s），MIME 类型: {}，文件大小: {} bytes", mimeType, content.length);
+                throw new ServiceException("文档解析超时（超过 60 秒），请确认文件未损坏或尝试更小的文件");
+            } catch (Exception e) {
+                log.error("Tika 解析失败，MIME 类型: {}", mimeType, e);
+                throw new ServiceException("文档解析失败: " + e.getMessage());
+            } finally {
+                executor.shutdownNow();
+            }
+
             String text = handler.toString();
             String cleaned = TextCleanupUtil.cleanup(text);
             return ParseResult.ofText(cleaned);
+        } catch (ServiceException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Tika 解析失败，MIME 类型: {}", mimeType, e);
             throw new ServiceException("文档解析失败: " + e.getMessage());
@@ -120,29 +166,244 @@ public class TikaDocumentParser implements DocumentParser {
     @Override
     public String extractAsMarkdown(InputStream stream, String fileName) {
         try {
-            // 预读字节到内存，支持 reset() 以便降级时重用
             byte[] bytes = stream.readAllBytes();
 
-            // 首次尝试：Markdown 提取
-            try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes)) {
-                AutoDetectParser parser = new AutoDetectParser(TikaConfig.getDefaultConfig());
-                ToXMLContentHandler handler = new ToXMLContentHandler();
-                ParseContext parseContext = new ParseContext();
-                parseContext.set(PDFParserConfig.class, PDF_CONFIG);
-                parser.parse(bis, handler, new Metadata(), parseContext);
-                String xhtml = handler.toString();
-                return convertXhtmlToMarkdown(xhtml);
-            } catch (Exception e) {
-                log.warn("Tika Markdown 提取失败，降级为纯文本: {}", fileName, e);
-                // 降级：纯文本提取
-                try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes)) {
-                    return TIKA.parseToString(bis);
-                }
+            if (isPdfFile(fileName, bytes)) {
+                return extractPdfWithVision(bytes, fileName);
             }
+
+            if (isImageFile(fileName)) {
+                String mimeType = detectImageMime(bytes, fileName);
+                String visionText = documentVisionExtractor.extractImageWithVision(bytes, mimeType);
+                if (!visionText.isBlank()) {
+                    return visionText;
+                }
+                log.warn("图片视觉提取失败，降级为 Tika 解析: {}", fileName);
+            }
+
+            String markdown = tikaExtractMarkdown(bytes, fileName);
+
+            if (isZipDocument(fileName)) {
+                markdown = visionEnhanceZipDocument(markdown, bytes, fileName);
+            }
+
+            return markdown;
         } catch (Exception e) {
             log.error("读取文件流失败: {}", fileName, e);
             throw new ServiceException("解析文件失败: " + fileName);
         }
+    }
+
+    /**
+     * 纯 Tika Markdown 提取（仅用于非 PDF 文档）
+     */
+    private String tikaExtractMarkdown(byte[] bytes, String fileName) {
+        String markdown;
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes)) {
+            AutoDetectParser parser = new AutoDetectParser(TikaConfig.getDefaultConfig());
+            ToXMLContentHandler handler = new ToXMLContentHandler();
+            ParseContext parseContext = new ParseContext();
+            parseContext.set(PDFParserConfig.class, PDF_CONFIG);
+            parser.parse(bis, handler, new Metadata(), parseContext);
+            String xhtml = handler.toString();
+            markdown = convertXhtmlToMarkdown(xhtml);
+        } catch (Throwable e) {
+            log.warn("Tika Markdown 提取失败，降级为纯文本: {}", fileName, e);
+            try {
+                markdown = TIKA.parseToString(new ByteArrayInputStream(bytes));
+            } catch (Throwable innerEx) {
+                log.warn("Tika 纯文本提取也失败: {}", fileName, innerEx);
+                markdown = "";
+            }
+        }
+        return markdown;
+    }
+
+    /**
+     * PDF 提取策略：
+     * <ol>
+     *   <li>检测 PDF 是否包含表格或图片</li>
+     *   <li>如果有表格或图片 → 使用多模态大模型（Qwen3.5-9B）提取</li>
+     *   <li>如果纯文本型（无表格/图片） → 使用 Tika + Tabula 提取</li>
+     *   <li>Tika 提取为空时降级为 PDFBox 逐页提取</li>
+     * </ol>
+     */
+    private String extractPdfWithVision(byte[] bytes, String fileName) {
+        List<Integer> imagePages = documentVisionExtractor.findPagesWithImages(bytes);
+        boolean hasImages = !imagePages.isEmpty();
+        boolean hasTables = pdfTableExtractor.hasTables(bytes);
+
+        if (hasImages || hasTables) {
+            log.info("PDF 包含表格或图片，使用多模态大模型提取: hasTables={}, hasImages={}", hasTables, hasImages);
+            String visionText = documentVisionExtractor.extractPdfWithVision(bytes);
+            if (!visionText.isBlank()) {
+                return visionText;
+            }
+            log.warn("多模态提取失败，降级为 Tika + Tabula 提取");
+        }
+
+        // 纯文本型 PDF：使用 Tika + Tabula
+        String tikaText = tikaExtractMarkdown(bytes, fileName);
+        if (!tikaText.isBlank()) {
+            return appendTabulaTables(tikaText, bytes);
+        }
+
+        log.info("Tika 提取为空，切换为 PDFBox 逐页提取");
+
+        try (PDDocument document = Loader.loadPDF(bytes)) {
+            int totalPages = document.getNumberOfPages();
+            int pagesToProcess = Math.min(totalPages, MAX_VISION_PAGES);
+            StringBuilder md = new StringBuilder();
+
+            for (int i = 0; i < pagesToProcess; i++) {
+                if (i > 0) {
+                    md.append("---\n\n");
+                }
+                md.append("## 第 ").append(i + 1).append(" 页\n\n");
+                String pageContent;
+                if (imagePages.contains(i)) {
+                    pageContent = documentVisionExtractor.extractPageTextWithVision(bytes, i);
+                    if (pageContent.isBlank()) {
+                        pageContent = extractPdfPageText(document, i);
+                    }
+                } else {
+                    pageContent = extractPdfPageText(document, i);
+                }
+                if (!pageContent.isBlank()) {
+                    md.append(pageContent.strip()).append("\n\n");
+                }
+            }
+
+            if (totalPages > pagesToProcess) {
+                log.warn("PDF 页数超过限制，仅处理前 {} 页（共 {} 页）", pagesToProcess, totalPages);
+            }
+
+            return appendTabulaTables(md.toString().strip(), bytes);
+        } catch (Exception e) {
+            log.error("PDF 逐页提取失败", e);
+            return tikaText;
+        }
+    }
+
+    /**
+     * 用 Tabula 提取 PDF 表格，追加到文本末尾
+     */
+    private String appendTabulaTables(String text, byte[] bytes) {
+        List<PdfTableExtractor.ExtractedTable> tables = pdfTableExtractor.extractTables(bytes);
+        if (tables.isEmpty()) {
+            return text;
+        }
+        log.info("Tabula 提取到 {} 张表格", tables.size());
+        StringBuilder result = new StringBuilder(text);
+        result.append("\n\n---\n\n## 表格提取\n\n");
+        for (PdfTableExtractor.ExtractedTable table : tables) {
+            result.append(table.markdown()).append("\n\n");
+        }
+        return result.toString().strip();
+    }
+
+    /**
+     * 使用 PDFBox 提取指定页面的纯文本（复用已打开的 PDDocument）
+     */
+    private static String extractPdfPageText(PDDocument document, int pageIndex) {
+        try {
+            PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setStartPage(pageIndex + 1);
+            stripper.setEndPage(pageIndex + 1);
+            return TextCleanupUtil.cleanup(stripper.getText(document));
+        } catch (Exception e) {
+            log.warn("PDFBox 页面文本提取失败: page={}", pageIndex, e);
+            return "";
+        }
+    }
+
+    /**
+     * 对 ZIP 文档（DOCX/PPTX/ODT）补充视觉提取嵌入图片中的文字
+     */
+    private String visionEnhanceZipDocument(String markdown, byte[] bytes, String fileName) {
+        String fileType = resolveFileType(fileName);
+        String visionText = documentVisionExtractor.extractImagesFromZipWithVision(bytes, fileType);
+        if (!visionText.isBlank()) {
+            return markdown + "\n\n---\n\n## 文档图片提取\n\n" + visionText;
+        }
+        return markdown;
+    }
+
+    /**
+     * 判断是否为 ZIP-based 文档格式（DOCX/PPTX/ODT 等）
+     */
+    private static boolean isZipDocument(String fileName) {
+        if (fileName == null) return false;
+        String lower = fileName.toLowerCase();
+        return lower.endsWith(".docx") || lower.endsWith(".xlsx") || lower.endsWith(".pptx")
+                || lower.endsWith(".odt") || lower.endsWith(".ods") || lower.endsWith(".odp");
+    }
+
+    /**
+     * 判断是否为图片文件
+     */
+    private static boolean isImageFile(String fileName) {
+        if (fileName == null) return false;
+        String lower = fileName.toLowerCase();
+        return lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".gif") || lower.endsWith(".bmp") || lower.endsWith(".webp");
+    }
+
+    /**
+     * 根据字节魔数和扩展名检测图片 MIME 类型
+     */
+    private static String detectImageMime(byte[] bytes, String fileName) {
+        if (bytes != null && bytes.length >= 4) {
+            if (bytes[0] == (byte) 0xFF && bytes[1] == (byte) 0xD8) return "image/jpeg";
+            if (bytes[0] == (byte) 0x89 && bytes[1] == (byte) 0x50) return "image/png";
+            if (bytes[0] == (byte) 0x47 && bytes[1] == (byte) 0x49) return "image/gif";
+            if (bytes[0] == (byte) 0x42 && bytes[1] == (byte) 0x4D) return "image/bmp";
+            if (bytes[0] == (byte) 0x52 && bytes[1] == (byte) 0x49) return "image/webp";
+        }
+        if (fileName != null) {
+            String lower = fileName.toLowerCase();
+            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+            if (lower.endsWith(".png")) return "image/png";
+            if (lower.endsWith(".gif")) return "image/gif";
+            if (lower.endsWith(".webp")) return "image/webp";
+            if (lower.endsWith(".bmp")) return "image/bmp";
+        }
+        return "image/png";
+    }
+
+    /**
+     * 根据文件名解析文件类型标识
+     */
+    private static String resolveFileType(String fileName) {
+        if (fileName == null) return "";
+        String lower = fileName.toLowerCase();
+        if (lower.endsWith(".docx")) return "docx";
+        if (lower.endsWith(".xlsx")) return "xlsx";
+        if (lower.endsWith(".pptx")) return "pptx";
+        if (lower.endsWith(".odt")) return "odt";
+        if (lower.endsWith(".ods")) return "ods";
+        if (lower.endsWith(".odp")) return "odp";
+        if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".gif") || lower.endsWith(".webp") || lower.endsWith(".bmp"))
+            return lower.substring(lower.lastIndexOf('.') + 1);
+        return "";
+    }
+
+    /**
+     * 判断字节流是否为 PDF 文件
+     * <p>
+     * 优先通过文件名后缀判断；文件名不可用时通过 PDF 魔数（%PDF）检测。
+     * </p>
+     */
+    private static boolean isPdfFile(String fileName, byte[] bytes) {
+        if (fileName != null && fileName.toLowerCase().endsWith(".pdf")) {
+            return true;
+        }
+        // PDF 魔数：%PDF（0x25 0x50 0x44 0x46）
+        if (bytes != null && bytes.length >= 4) {
+            return bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46;
+        }
+        return false;
     }
 
     /**
@@ -319,7 +580,7 @@ public class TikaDocumentParser implements DocumentParser {
         md.append("|");
         for (int c = 0; c < colCount; c++) {
             if (c < cells.size()) {
-                String text = cells.get(c).text().replace("|", "\\|");
+                String text = convertInline(cells.get(c)).replace("|", "\\|");
                 md.append(" ").append(text).append(" |");
             } else {
                 md.append(" |");

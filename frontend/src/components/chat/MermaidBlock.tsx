@@ -12,7 +12,7 @@ function ensureMermaidInit() {
     mermaid.initialize({
       startOnLoad: false,
       theme: document.documentElement.classList.contains("dark") ? "dark" : "default",
-      securityLevel: "loose",
+      securityLevel: "sandbox",
       fontFamily: "inherit",
     });
     initialized = true;

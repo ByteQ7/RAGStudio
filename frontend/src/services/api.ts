@@ -1,5 +1,4 @@
 import axios from "axios";
-import { toast } from "sonner";
 
 import { storage } from "@/utils/storage";
 
@@ -32,7 +31,7 @@ api.interceptors.response.use(
   (response) => {
     const payload = response.data;
     if (payload && typeof payload === "object" && "code" in payload) {
-      if (payload.code !== "0") {
+      if (String(payload.code) !== "0") {
         const message = payload.message || "请求失败";
         const isAuthExpired = typeof message === "string" && message.includes("未登录");
         if (isAuthExpired) {
@@ -43,7 +42,7 @@ api.interceptors.response.use(
         }
         return Promise.reject(new Error(message));
       }
-      return payload.data;
+      return payload.data ?? payload;
     }
     return payload;
   },
@@ -53,14 +52,6 @@ api.interceptors.response.use(
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
       }
-    }
-    const responseData = error?.response?.data;
-    if (responseData && typeof responseData === "object" && "message" in responseData && responseData.message) {
-      toast.error(responseData.message);
-    } else if (error?.code === "ERR_NETWORK") {
-      toast.error("网络错误，请检查网络连接");
-    } else {
-      toast.error(error?.message || "网络错误");
     }
     return Promise.reject(error);
   }

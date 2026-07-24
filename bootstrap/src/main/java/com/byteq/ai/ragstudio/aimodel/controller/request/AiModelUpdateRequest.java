@@ -2,6 +2,8 @@ package com.byteq.ai.ragstudio.aimodel.controller.request;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 更新 AI 模型请求参数
  */
@@ -29,8 +31,8 @@ public class AiModelUpdateRequest {
     /** 是否支持多模态（图片识别） */
     private Integer supportsMultimodal;
 
-    /** 向量维度（仅 embedding） */
-    private Integer dimension;
+    /** 向量维度列表（如 [1024, 1536, 4096]），仅 embedding */
+    private List<Integer> dimension;
 
     /** 自定义 URL */
     private String customUrl;

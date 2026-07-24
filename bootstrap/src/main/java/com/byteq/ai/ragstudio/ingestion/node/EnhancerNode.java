@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.ingestion.domain.context.IngestionContext;
+import lombok.extern.slf4j.Slf4j;
 import com.byteq.ai.ragstudio.ingestion.domain.enums.EnhanceType;
 import com.byteq.ai.ragstudio.ingestion.domain.enums.IngestionNodeType;
 import com.byteq.ai.ragstudio.ingestion.domain.pipeline.NodeConfig;
@@ -47,6 +48,7 @@ import java.util.Map;
  * </p>
  */
 @Component
+@Slf4j
 public class EnhancerNode implements IngestionNode {
 
     /**
@@ -88,6 +90,14 @@ public class EnhancerNode implements IngestionNode {
             if (!StringUtils.hasText(input)) {
                 continue;
             }
+
+            // 超长文本跳过 CONTEXT_ENHANCE 的 LLM 调用，直接以原文作为增强结果
+            if (type == EnhanceType.CONTEXT_ENHANCE && input.length() > 10000) {
+                log.warn("文本过长（{} 字符），跳过 CONTEXT_ENHANCE LLM 调用，直接使用原始文本", input.length());
+                context.setEnhancedText(input);
+                continue;
+            }
+
             String systemPrompt = StringUtils.hasText(task.getSystemPrompt())
                     ? task.getSystemPrompt()
                     : EnhancerPromptManager.systemPrompt(type);

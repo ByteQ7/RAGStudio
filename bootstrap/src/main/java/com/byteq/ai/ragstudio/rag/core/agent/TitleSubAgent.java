@@ -4,6 +4,7 @@ import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
+import com.byteq.ai.ragstudio.rag.config.MemoryProperties;
 import com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader;
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,10 +40,13 @@ public class TitleSubAgent implements SubAgent {
 
     private final LLMService llmService;
     private final PromptTemplateLoader promptTemplateLoader;
+    private final MemoryProperties memoryProperties;
 
-    public TitleSubAgent(LLMService llmService, PromptTemplateLoader promptTemplateLoader) {
+    public TitleSubAgent(LLMService llmService, PromptTemplateLoader promptTemplateLoader,
+                         MemoryProperties memoryProperties) {
         this.llmService = llmService;
         this.promptTemplateLoader = promptTemplateLoader;
+        this.memoryProperties = memoryProperties;
     }
 
     @Override
@@ -55,10 +59,14 @@ public class TitleSubAgent implements SubAgent {
             return List.of(new Artifact(task.getId(), CARD.name(), "title", "新对话"));
         }
 
+        int maxLen = memoryProperties.getTitleMaxLength();
+        if (maxLen <= 0) {
+            maxLen = 30;
+        }
         String prompt = promptTemplateLoader.render(
                 CONVERSATION_TITLE_PROMPT_PATH,
                 Map.of(
-                        "title_max_chars", "30",
+                        "title_max_chars", String.valueOf(maxLen),
                         "question", question
                 )
         );

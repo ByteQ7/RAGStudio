@@ -18,6 +18,7 @@ import {
   updateDefault
 } from "@/services/defaultModelConfigService";
 import { listProviders } from "@/services/aiModelConfigService";
+import { getSystemSettings, setToolRoutingModel } from "@/services/settingsService";
 import { getErrorMessage } from "@/utils/error";
 
 // 配置键 → 中文描述
@@ -44,20 +45,27 @@ export function DefaultModelConfigPage() {
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [dirty, setDirty] = useState<Record<string, string>>({});
+  const [embeddingModels, setEmbeddingModels] = useState<AiModel[]>([]);
+  const [toolRoutingModel, setToolRoutingModelState] = useState<string>("");
+  const [toolRoutingBusy, setToolRoutingBusy] = useState(false);
 
   // ==================== 加载数据 ====================
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [defaults, models, providers] = await Promise.all([
+      const [defaults, models, providers, settings] = await Promise.all([
         listDefaults(),
         listModels("CHAT"),
-        listProviders()
+        listProviders(),
+        getSystemSettings()
       ]);
       setConfigs(defaults);
       setChatModels(models);
       setAllProviders(providers.map((p) => ({ name: p.name, apiKey: p.apiKey ?? null })));
+      const embModels = await listModels("EMBEDDING");
+      setEmbeddingModels(embModels);
+      setToolRoutingModelState(settings.ai.selection.toolRoutingModel || "");
     } catch (err) {
       toast.error(getErrorMessage(err, "加载默认模型配置失败"));
     } finally {
@@ -194,7 +202,9 @@ export function DefaultModelConfigPage() {
 
       {/* 配置列表 */}
       <div className="space-y-4">
-        {configs.map((config) => {
+        {configs
+          .filter((c) => c.configKey !== "tool_selector")
+          .map((config) => {
           const selectedModelId = getSelectedModelId(config);
           const selectedModel = chatModels.find((m) => m.modelId === selectedModelId);
           const isDirty = config.configKey in dirty;
@@ -299,6 +309,94 @@ export function DefaultModelConfigPage() {
             </div>
           );
         })}
+
+        {/* 工具选择嵌入模型 */}
+        <div className="ui-card">
+          <div className="ui-card-content">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <h3 className="ui-card-title">工具选择嵌入模型</h3>
+                <p className="mt-0.5 text-sm text-gray-500">
+                  用户提问时用该模型对工具做语义筛选，仅 TopK 相关工具注入 Prompt。
+                  不设置则使用系统默认 Embedding 模型。
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-64">
+                  <Select
+                    value={toolRoutingModel}
+                    onValueChange={(val) => {
+                      const effective = val === "__none__" ? "" : val;
+                      if (effective === toolRoutingModel) return;
+                      const name = effective
+                        ? embeddingModels.find((m) => m.modelId === effective)?.modelName || effective
+                        : "不使用";
+                      if (!window.confirm(`切换工具选择嵌入模型为「${name}」，将重建工具检索索引，是否确认？`)) {
+                        // force re-render to keep Select showing previous value
+                        return;
+                      }
+                      setToolRoutingBusy(true);
+                      setToolRoutingModelState(effective);
+                      setToolRoutingModel(effective || null)
+                        .then(() => toast.success(`工具选择嵌入模型已切换为「${name}」，索引已重建`))
+                        .catch((error) => {
+                          toast.error(getErrorMessage(error, "切换失败"));
+                          setToolRoutingModelState(toolRoutingModel); // revert
+                        })
+                        .finally(() => setToolRoutingBusy(false));
+                    }}
+                    disabled={toolRoutingBusy}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择嵌入模型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">不使用（使用系统默认）</SelectItem>
+                      {embeddingModels
+                        .filter((m) => m.enabled === 1)
+                        .sort((a, b) => a.priority - b.priority)
+                        .map((model) => (
+                          <SelectItem key={model.modelId} value={model.modelId}>
+                            <span className="font-mono text-sm">{model.modelName}</span>
+                            <span className="ml-2 text-xs text-gray-400">{model.providerName}</span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* API Key 状态 */}
+                <div className="flex items-center gap-1.5 whitespace-nowrap text-xs">
+                  {(() => {
+                    const selected = embeddingModels.find((m) => m.modelId === toolRoutingModel);
+                    const providerName = selected?.providerName;
+                    const ok = providerName ? providerApiKeyMap.get(providerName) : null;
+                    return ok ? (
+                      <span className="inline-flex items-center gap-1 text-green-600">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        API Key 已配置
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-amber-500">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        未配置 API Key
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                {/* 状态/按钮 */}
+                {toolRoutingBusy ? (
+                  <Button size="sm" disabled className="shrink-0">
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    重建索引中...
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

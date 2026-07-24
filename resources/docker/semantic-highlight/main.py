@@ -85,6 +85,7 @@ def load_model() -> None:
                     trust_remote_code=True,
                     load_in_8bit=True,
                     device_map="auto",
+                    local_files_only=True,
                 )
                 _model.eval()
                 logger.info("INT8 量化 (bitsandbytes) 加载完成")
@@ -94,6 +95,7 @@ def load_model() -> None:
                     model_name,
                     trust_remote_code=True,
                     torch_dtype=torch.float16,
+                    local_files_only=True,
                 ).to(_device)
                 _model.eval()
         else:
@@ -101,6 +103,7 @@ def load_model() -> None:
                 model_name,
                 trust_remote_code=True,
                 torch_dtype=torch.float32,
+                local_files_only=True,
             )
             _model.eval()
             _model = torch.quantization.quantize_dynamic(
@@ -115,6 +118,7 @@ def load_model() -> None:
             model_name,
             trust_remote_code=True,
             torch_dtype=dtype,
+            local_files_only=True,
         ).to(_device)
         _model.eval()
 

@@ -99,6 +99,7 @@ public class DeepSeekChatClient implements ChatClient {
     }
 
     @Override
+    @com.byteq.ai.ragstudio.framework.trace.RagTraceNode(name = "deepseek-stream-chat", type = "LLM_PROVIDER")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
         // 判断是否需要通过原始 OkHttp 处理流式（当需要注入非标准 thinking 参数时）
         Map<String, Object> reasoningParams = modelFactory.resolveReasoningParams(request, target);
@@ -130,6 +131,9 @@ public class DeepSeekChatClient implements ChatClient {
         AtomicBoolean terminated = new AtomicBoolean(false);
 
         Map<String, Object> reqBody = modelFactory.buildRequestBody(request, target, true);
+        if (reasoningParams != null && !reasoningParams.isEmpty()) {
+            reqBody.putAll(reasoningParams);
+        }
 
         try {
             String jsonBody = objectMapper.writeValueAsString(reqBody);

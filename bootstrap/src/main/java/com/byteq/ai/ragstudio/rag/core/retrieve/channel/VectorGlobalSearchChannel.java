@@ -137,7 +137,6 @@ public class VectorGlobalSearchChannel implements SearchChannel {
         List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
                 Wrappers.lambdaQuery(KnowledgeBaseDO.class)
                         .select(KnowledgeBaseDO::getCollectionName)
-                        .eq(KnowledgeBaseDO::getDeleted, 0)
         );
         for (KnowledgeBaseDO kb : kbList) {
             String collectionName = kb.getCollectionName();

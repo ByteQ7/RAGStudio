@@ -34,6 +34,9 @@ public class ConversationTitleGenerator {
     // 根据用户问题调用 LLM 生成会话标题: 渲染 Prompt 模板 -> 调用 LLM -> 失败时降级为 "新对话"
     @RagTraceNode(name = "conversation-title-gen", type = "TITLE_GEN")
     public String generate(String question) {
+        if (question == null) {
+            return "新对话";
+        }
         int maxLen = memoryProperties.getTitleMaxLength();
         if (maxLen <= 0) {
             maxLen = 30;

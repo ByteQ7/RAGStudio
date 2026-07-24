@@ -32,10 +32,17 @@ public interface DefaultModelConfigService {
     String getModelId(String configKey);
 
     /**
-     * 更新指定场景的默认模型
+     * 更新指定场景的默认模型。不存在则自动创建。
      *
      * @param configKey 配置键
      * @param modelId   新的 modelId
      */
     void updateConfig(String configKey, String modelId);
+
+    /**
+     * 删除指定场景的默认模型配置
+     *
+     * @param configKey 配置键
+     */
+    void deleteByKey(String configKey);
 }

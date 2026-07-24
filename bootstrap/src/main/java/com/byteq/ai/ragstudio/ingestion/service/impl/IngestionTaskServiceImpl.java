@@ -272,7 +272,6 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
         KnowledgeBaseDO kb = knowledgeBaseMapper.selectOne(
                 com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
                         .eq(KnowledgeBaseDO::getCollectionName, collectionName)
-                        .eq(KnowledgeBaseDO::getDeleted, 0)
         );
         if (kb == null) {
             log.warn("未找到 collectionName 为 {} 的知识库，跳过创建知识库文档", collectionName);
@@ -287,7 +286,12 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 ? source.getType().getValue() : task.getSourceType();
 
         // 从 mimeType 推断文件类型
-        String fileType = context.getMimeType() != null ? context.getMimeType() : (fileName != null ? MimeTypeDetector.detect(context.getRawBytes(), fileName) : null); // 使用 rawBytes 需要确保不为 null
+        String fileType = null;
+        if (context.getMimeType() != null) {
+            fileType = context.getMimeType();
+        } else if (fileName != null && context.getRawBytes() != null) {
+            fileType = MimeTypeDetector.detect(context.getRawBytes(), fileName);
+        }
         // 简化处理：根据文件后缀推断
         String simpleFileType = "other";
         if (fileType != null) {

@@ -196,38 +196,34 @@ public class ModelHealthStore {
             return;
         }
         long now = System.currentTimeMillis();
+        java.util.concurrent.atomic.AtomicBoolean changedToOpen = new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicInteger failureCount = new java.util.concurrent.atomic.AtomicInteger(0);
         healthById.compute(id, (k, v) -> {
             if (v == null) {
                 v = new ModelHealth();
             }
-            boolean changedToOpen = false;
-            int failureCount = 0;
-
-            // HALF_OPEN 状态下失败：探测失败，立即回到 OPEN 状态并重置冷却
             if (v.state == State.HALF_OPEN) {
                 v.state = State.OPEN;
                 v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
                 v.consecutiveFailures = 0;
                 v.halfOpenInFlight = false;
-                changedToOpen = true;
-                failureCount = routingProperties.getSelection().getFailureThreshold();
+                changedToOpen.set(true);
+                failureCount.set(routingProperties.getSelection().getFailureThreshold());
                 return v;
             }
-            // CLOSED 状态下失败：累加失败次数，达到阈值时切换到 OPEN 状态
             v.consecutiveFailures++;
             if (v.consecutiveFailures >= routingProperties.getSelection().getFailureThreshold()) {
+                failureCount.set(v.consecutiveFailures);
                 v.state = State.OPEN;
                 v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
                 v.consecutiveFailures = 0;
                 v.halfOpenInFlight = false;
-                changedToOpen = true;
-                failureCount = v.consecutiveFailures;
+                changedToOpen.set(true);
             }
             return v;
         });
-        // 在 compute 外部调用回调（避免在锁内部发送通知）
-        if (onOpenCallback != null) {
-            onOpenCallback.accept(id, 1);
+        if (changedToOpen.get() && onOpenCallback != null) {
+            onOpenCallback.accept(id, failureCount.get());
         }
     }
 

@@ -53,8 +53,10 @@ public class UserContextInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        String loginId = StpUtil.getLoginIdAsString();
-        if (loginId == null) {
+        String loginId;
+        try {
+            loginId = StpUtil.getLoginIdAsString();
+        } catch (Exception e) {
             return true;
         }
         UserDO user = userMapper.selectById(loginId);

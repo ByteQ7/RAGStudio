@@ -108,7 +108,7 @@ public class ScheduleRefreshProcessor {
             }
 
             state.document = documentMapper.selectById(schedule.getDocId());
-            if (state.document == null || (state.document.getDeleted() != null && state.document.getDeleted() == 1)) {
+            if (state.document == null) {
                 disableIfOwnedOrMarkLeaseLost(lease, state, "文档不存在或已删除", "禁用调度: 文档不存在或已删除");
                 return;
             }

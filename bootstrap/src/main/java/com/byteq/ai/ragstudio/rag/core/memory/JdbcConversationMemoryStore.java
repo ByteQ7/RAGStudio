@@ -2,10 +2,11 @@ package com.byteq.ai.ragstudio.rag.core.memory;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.byteq.ai.ragstudio.rag.config.MemoryProperties;
-import com.byteq.ai.ragstudio.rag.controller.vo.ConversationMessageVO;
+import com.byteq.ai.ragstudio.rag.dao.entity.ConversationMessageDO;
+import com.byteq.ai.ragstudio.rag.dao.mapper.ConversationMessageMapper;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
-import com.byteq.ai.ragstudio.rag.enums.ConversationMessageOrder;
 import com.byteq.ai.ragstudio.rag.service.ConversationMessageService;
 import com.byteq.ai.ragstudio.rag.service.ConversationService;
 import com.byteq.ai.ragstudio.rag.service.bo.ConversationCreateBO;
@@ -13,6 +14,7 @@ import com.byteq.ai.ragstudio.rag.service.bo.ConversationMessageBO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -29,31 +31,44 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
 
     private final ConversationService conversationService;
     private final ConversationMessageService conversationMessageService;
+    private final ConversationMessageMapper conversationMessageMapper;
     private final MemoryProperties memoryProperties;
 
     public JdbcConversationMemoryStore(ConversationService conversationService,
                                        ConversationMessageService conversationMessageService,
+                                       ConversationMessageMapper conversationMessageMapper,
                                        MemoryProperties memoryProperties) {
         this.conversationService = conversationService;
         this.conversationMessageService = conversationMessageService;
+        this.conversationMessageMapper = conversationMessageMapper;
         this.memoryProperties = memoryProperties;
     }
 
     /**
      * 从数据库加载指定轮数的对话历史，按时间倒序查询后规范化（移除开头孤立的 assistant 消息）
+     * <p>
+     * 注意：直接查 Mapper 而非 {@link ConversationMessageService#listMessages}，
+     * 以避免 imageUrls 中的 s3:// 协议被替换为预签名 HTTP URL。
+     * 保留原始 s3:// URL，让 {@code LangChain4jModelFactory.resolveImageDataUri}
+     * 能识别并下载为 base64 发送给 LLM。
+     * </p>
      */
     @Override
     public List<ChatMessage> loadHistory(String conversationId, String userId) {
         int maxMessages = resolveMaxHistoryMessages();
-        List<ConversationMessageVO> dbMessages = conversationMessageService.listMessages(
-                conversationId,
-                userId,
-                maxMessages,
-                ConversationMessageOrder.DESC
+        List<ConversationMessageDO> dbMessages = conversationMessageMapper.selectList(
+                Wrappers.lambdaQuery(ConversationMessageDO.class)
+                        .eq(ConversationMessageDO::getConversationId, conversationId)
+                        .eq(ConversationMessageDO::getUserId, userId)
+                        .eq(ConversationMessageDO::getDeleted, 0)
+                        .orderByDesc(ConversationMessageDO::getCreateTime)
+                        .last("limit " + maxMessages)
         );
         if (CollUtil.isEmpty(dbMessages)) {
             return List.of();
         }
+
+        Collections.reverse(dbMessages);
 
         List<ChatMessage> result = dbMessages.stream()
                 .map(this::toChatMessage)
@@ -111,9 +126,10 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         // JDBC 直读模式，无需刷新缓存
     }
 
-    // 将数据库消息记录转换为 ChatMessage 对象，内容为空时返回 null
-    private ChatMessage toChatMessage(ConversationMessageVO record) {
-        if (record == null || StrUtil.isBlank(record.getContent())) {
+    // 将数据库消息实体转换为 ChatMessage 对象，内容为空且无图片时返回 null
+    private ChatMessage toChatMessage(ConversationMessageDO record) {
+        if (record == null) return null;
+        if (StrUtil.isBlank(record.getContent()) && StrUtil.isBlank(record.getImageUrls())) {
             return null;
         }
         ChatMessage msg = new ChatMessage();
@@ -123,7 +139,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         msg.setThinkingDuration(record.getThinkingDuration());
         msg.setAgentSteps(record.getAgentSteps());
         msg.setCitations(record.getCitations());
-        // 反序列化 imageUrls JSON
+        // 反序列化 imageUrls JSON（保留原始 s3:// URL，供 LLM 调用层转 base64）
         if (StrUtil.isNotBlank(record.getImageUrls())) {
             try {
                 java.util.List<String> urls = new com.fasterxml.jackson.databind.ObjectMapper()
@@ -152,11 +168,12 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         return messages.subList(start, messages.size());
     }
 
-    // 判断消息是否为有效的历史记录消息（角色为 USER 或 ASSISTANT 且内容非空）
+    // 判断消息是否为有效的历史记录消息（有内容或图片即为有效）
     private boolean isHistoryMessage(ChatMessage message) {
-        return message != null
-                && (message.getRole() == ChatMessage.Role.USER || message.getRole() == ChatMessage.Role.ASSISTANT)
-                && StrUtil.isNotBlank(message.getContent());
+        if (message == null) return false;
+        if (message.getRole() != ChatMessage.Role.USER && message.getRole() != ChatMessage.Role.ASSISTANT) return false;
+        return StrUtil.isNotBlank(message.getContent())
+                || (message.getImageUrls() != null && !message.getImageUrls().isEmpty());
     }
 
     // 根据配置的保留轮数计算最大历史消息条数（一轮 = user + assistant 共2条）

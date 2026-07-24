@@ -34,8 +34,6 @@
 | **Full-Chain Tracing** | Lightweight distributed tracing for every pipeline stage |
 | **Ingestion Pipeline** | Visual document processing pipeline: fetch → parse → chunk → enhance → index |
 | **Dashboard & Monitoring** | Admin dashboard with real-time KPI, request trends, model usage stats |
-| **Ingestion Pipeline** | Visual document processing pipeline: fetch → parse → chunk → enhance → index |
-| **Dashboard & Monitoring** | Admin dashboard with real-time KPI, request trends, model usage stats |
 
 ---
 

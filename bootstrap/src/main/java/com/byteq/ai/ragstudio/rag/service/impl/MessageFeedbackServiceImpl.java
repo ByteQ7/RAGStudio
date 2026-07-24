@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -116,38 +117,42 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
         return message;
     }
 
-    // 执行反馈的 upsert 操作: 不存在则插入，已存在则按时间戳条件更新，避免多节点乱序覆盖
+    private static final ConcurrentHashMap<String, Object> FEEDBACK_LOCKS = new ConcurrentHashMap<>();
+
     private void doUpsertFeedback(String messageId, String userId, String conversationId,
                                   Integer vote, String reason, String comment, long submitTime) {
-        MessageFeedbackDO existing = feedbackMapper.selectOne(
-                Wrappers.lambdaQuery(MessageFeedbackDO.class)
-                        .eq(MessageFeedbackDO::getMessageId, messageId)
-                        .eq(MessageFeedbackDO::getUserId, userId)
-                        .eq(MessageFeedbackDO::getDeleted, 0)
-        );
-
-        if (existing == null) {
-            MessageFeedbackDO feedback = MessageFeedbackDO.builder()
-                    .messageId(messageId)
-                    .conversationId(conversationId)
-                    .userId(userId)
-                    .vote(vote)
-                    .reason(reason)
-                    .comment(comment)
-                    .build();
-            feedbackMapper.insert(feedback);
-        } else {
-            // 仅当本次提交时间晚于记录最后更新时间时才覆盖，避免多节点并行消费乱序
-            feedbackMapper.update(
-                    MessageFeedbackDO.builder()
-                            .vote(vote)
-                            .reason(reason)
-                            .comment(comment)
-                            .build(),
-                    Wrappers.lambdaUpdate(MessageFeedbackDO.class)
-                            .eq(MessageFeedbackDO::getId, existing.getId())
-                            .lt(MessageFeedbackDO::getUpdateTime, new Date(submitTime))
+        String lockKey = messageId + "::" + userId;
+        Object lock = FEEDBACK_LOCKS.computeIfAbsent(lockKey, k -> new Object());
+        synchronized (lock) {
+            MessageFeedbackDO existing = feedbackMapper.selectOne(
+                    Wrappers.lambdaQuery(MessageFeedbackDO.class)
+                            .eq(MessageFeedbackDO::getMessageId, messageId)
+                            .eq(MessageFeedbackDO::getUserId, userId)
+                            .eq(MessageFeedbackDO::getDeleted, 0)
             );
+
+            if (existing == null) {
+                MessageFeedbackDO feedback = MessageFeedbackDO.builder()
+                        .messageId(messageId)
+                        .conversationId(conversationId)
+                        .userId(userId)
+                        .vote(vote)
+                        .reason(reason)
+                        .comment(comment)
+                        .build();
+                feedbackMapper.insert(feedback);
+            } else {
+                feedbackMapper.update(
+                        MessageFeedbackDO.builder()
+                                .vote(vote)
+                                .reason(reason)
+                                .comment(comment)
+                                .build(),
+                        Wrappers.lambdaUpdate(MessageFeedbackDO.class)
+                                .eq(MessageFeedbackDO::getId, existing.getId())
+                                .lt(MessageFeedbackDO::getUpdateTime, new Date(submitTime))
+                );
+            }
         }
     }
 

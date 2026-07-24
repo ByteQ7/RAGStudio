@@ -75,7 +75,7 @@ public class KbRelevanceChecker {
             // 轻量 LLM 调用
             ChatRequest request = ChatRequest.builder()
                     .messages(List.of(ChatMessage.user(prompt)))
-                    .temperature(0.0)
+                    .temperature(0.4)
                     .maxTokens(200)
                     .thinkingLevel(0)
                     .build();

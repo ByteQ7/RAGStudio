@@ -85,7 +85,6 @@ public class RetrievalEngine {
         List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
                 Wrappers.lambdaQuery(KnowledgeBaseDO.class)
                         .in(KnowledgeBaseDO::getId, knowledgeBaseIds)
-                        .eq(KnowledgeBaseDO::getDeleted, 0)
         );
         List<String> collectionNames = kbList.stream()
                 .map(KnowledgeBaseDO::getCollectionName)

@@ -52,6 +52,8 @@ public class KnowledgeDocumentChunkConsumer implements RocketMQListener<MessageW
         UserContext.set(LoginUser.builder().username(event.getOperator()).build());
         try {
             documentService.executeChunk(event.getDocId());
+        } catch (Exception e) {
+            log.error("[消费者] 文档分块处理异常，消息将不会重试，docId={}", event.getDocId(), e);
         } finally {
             UserContext.clear();
         }

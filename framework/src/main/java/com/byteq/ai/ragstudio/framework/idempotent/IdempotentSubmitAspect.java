@@ -2,9 +2,11 @@ package com.byteq.ai.ragstudio.framework.idempotent;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
-import com.google.gson.Gson;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -45,9 +47,10 @@ public final class IdempotentSubmitAspect {
     private final RedissonClient redissonClient;
 
     /**
-     * JSON 序列化工具，用于将方法参数序列化为字符串以计算 MD5
+     * JSON 序列化工具（Jackson），确保相同语义的参数产生相同的 MD5
      */
-    private final Gson gson = new Gson();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
 
     /**
      * 增强方法标记 {@link IdempotentSubmit} 注解逻辑
@@ -87,7 +90,7 @@ public final class IdempotentSubmitAspect {
      */
     public static IdempotentSubmit getIdempotentSubmitAnnotation(ProceedingJoinPoint joinPoint) throws NoSuchMethodException {
         MethodSignature methodSignature = (MethodSignature) joinPoint.getSignature();
-        Method targetMethod = joinPoint.getTarget().getClass().getDeclaredMethod(methodSignature.getName(), methodSignature.getMethod().getParameterTypes());
+        Method targetMethod = joinPoint.getTarget().getClass().getMethod(methodSignature.getName(), methodSignature.getMethod().getParameterTypes());
         return targetMethod.getAnnotation(IdempotentSubmit.class);
     }
 
@@ -119,7 +122,12 @@ public final class IdempotentSubmitAspect {
      * @return 参数列表的 MD5 十六进制字符串
      */
     private String calcArgsMD5(ProceedingJoinPoint joinPoint) {
-        return DigestUtil.md5Hex(gson.toJson(joinPoint.getArgs()).getBytes(StandardCharsets.UTF_8));
+        try {
+            String json = objectMapper.writeValueAsString(joinPoint.getArgs());
+            return DigestUtil.md5Hex(json.getBytes(StandardCharsets.UTF_8));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize args for idempotency key", e);
+        }
     }
 
     /**

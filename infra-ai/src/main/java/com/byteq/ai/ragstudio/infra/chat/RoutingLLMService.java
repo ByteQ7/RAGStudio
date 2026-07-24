@@ -2,6 +2,7 @@ package com.byteq.ai.ragstudio.infra.chat;
 
 import cn.hutool.core.collection.CollUtil;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
+import com.byteq.ai.ragstudio.framework.convention.DefaultModelService;
 import com.byteq.ai.ragstudio.framework.errorcode.BaseErrorCode;
 import com.byteq.ai.ragstudio.framework.exception.RemoteException;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
@@ -55,12 +56,14 @@ public class RoutingLLMService implements LLMService {
     private final ModelHealthStore healthStore;
     private final ModelRoutingExecutor executor;
     private final Map<String, ChatClient> clientsByProvider;
+    private final DefaultModelService defaultModelService;
 
     public RoutingLLMService(
             ModelSelector selector,
             ModelHealthStore healthStore,
             ModelRoutingExecutor executor,
-            List<ChatClient> clients) {
+            List<ChatClient> clients,
+            DefaultModelService defaultModelService) {
         this.selector = selector;
         this.healthStore = healthStore;
         this.executor = executor;
@@ -72,6 +75,7 @@ public class RoutingLLMService implements LLMService {
                             log.warn("重复的 ChatClient provider '{}', 使用 {}", existing.provider(), replacement.getClass().getSimpleName());
                             return replacement;
                         }));
+        this.defaultModelService = defaultModelService;
     }
 
     /**
@@ -88,11 +92,8 @@ public class RoutingLLMService implements LLMService {
     public String chat(ChatRequest request) {
         boolean hasImages = hasImageContent(request);
         int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
-        List<ModelTarget> targets = selector.selectChatCandidates(thinkingLevel > 0, hasImages);
-        if (targets.isEmpty() && hasImages) {
-            log.warn("没有配置支持多模态的模型，降级为普通模型处理（图片将不会被 AI 分析）");
-            targets = selector.selectChatCandidates(thinkingLevel > 0, false);
-        }
+        boolean deepThinking = thinkingLevel > 0;
+        List<ModelTarget> targets = selectTargets(hasImages, deepThinking);
         validateTargets(targets);
 
         // 记录请求日志
@@ -161,6 +162,61 @@ public class RoutingLLMService implements LLMService {
         );
     }
 
+    // 检查请求是否包含图片
+    private boolean hasImageContent(ChatRequest request) {
+        return request.getMessages() != null && request.getMessages().stream()
+                .anyMatch(m -> m.getImageUrls() != null && !m.getImageUrls().isEmpty());
+    }
+
+    /**
+     * 选择模型候选列表，按多模态和深度思考能力做分级降级：
+     * 1. 多模态默认模型支持深度思考 → 选它
+     * 2. 过滤出同时支持多模态和深度思考的模型 → 按默认模型、优先级排序
+     * 3. 回退到仅支持多模态的模型（放弃深度思考）
+     */
+    private List<ModelTarget> selectTargets(boolean hasImages, boolean deepThinking) {
+        if (!hasImages) {
+            return selector.selectChatCandidates(deepThinking, false);
+        }
+
+        String multimodalModelId = defaultModelService.getDefaultModelId("multimodal");
+
+        // 1. 多模态默认模型本身是否支持深度思考？如果支持，优先选它
+        if (multimodalModelId != null && deepThinking) {
+            List<ModelTarget> defaultWithThinking = selector.selectChatCandidates(multimodalModelId, true, true);
+            if (!defaultWithThinking.isEmpty()) {
+                log.info("多模态默认模型支持深度思考，优先使用: {}", multimodalModelId);
+                return defaultWithThinking;
+            }
+        }
+
+        // 2. 过滤出同时支持多模态和深度思考的模型，按默认模型、优先级排序
+        List<ModelTarget> targets;
+        String preferredId = multimodalModelId;
+        if (deepThinking) {
+            if (preferredId != null) {
+                targets = selector.selectChatCandidates(preferredId, true, true);
+            } else {
+                targets = selector.selectChatCandidates(true, true);
+            }
+            if (!targets.isEmpty()) {
+                return targets;
+            }
+            log.warn("没有同时支持多模态和深度思考的模型，降级为仅多模态模式");
+        }
+
+        // 3. 回退到仅支持多模态的模型
+        if (preferredId != null) {
+            targets = selector.selectChatCandidates(preferredId, false, true);
+            if (targets.isEmpty()) {
+                targets = selector.selectChatCandidates(false, true);
+            }
+        } else {
+            targets = selector.selectChatCandidates(false, true);
+        }
+        return targets;
+    }
+
     /**
      * 流式聊天（带路由 + 自动 fallback）
      * <p>
@@ -177,23 +233,13 @@ public class RoutingLLMService implements LLMService {
      * @return 流式取消句柄
      * @throws RemoteException 所有候选模型均启动失败时抛出
      */
-    // 检查请求是否包含图片
-    private boolean hasImageContent(ChatRequest request) {
-        return request.getMessages() != null && request.getMessages().stream()
-                .anyMatch(m -> m.getImageUrls() != null && !m.getImageUrls().isEmpty());
-    }
-
     @Override
     @RagTraceNode(name = "llm-stream-routing", type = "LLM_ROUTING")
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback) {
         boolean hasImages = hasImageContent(request);
-        List<ModelTarget> targets = selector.selectChatCandidates(
-                (request.getThinkingLevel() != null ? request.getThinkingLevel() : 0) > 0, hasImages);
-        if (targets.isEmpty() && hasImages) {
-            log.warn("没有配置支持多模态的模型，降级为普通模型处理（图片将不会被 AI 分析）");
-            targets = selector.selectChatCandidates(
-                    (request.getThinkingLevel() != null ? request.getThinkingLevel() : 0) > 0, false);
-        }
+        int thinkingLevel = request.getThinkingLevel() != null ? request.getThinkingLevel() : 0;
+        boolean deepThinking = thinkingLevel > 0;
+        List<ModelTarget> targets = selectTargets(hasImages, deepThinking);
         validateTargets(targets);
 
         String label = ModelCapability.CHAT.getDisplayName();

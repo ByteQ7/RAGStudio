@@ -1,6 +1,8 @@
 package com.byteq.ai.ragstudio.rag.controller;
 
+import com.byteq.ai.ragstudio.aimodel.service.DefaultModelConfigService;
 import com.byteq.ai.ragstudio.framework.convention.Result;
+import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.config.ModelConfigProvider;
@@ -9,14 +11,19 @@ import com.byteq.ai.ragstudio.rag.config.MemoryProperties;
 import com.byteq.ai.ragstudio.rag.config.RAGConfigProperties;
 import com.byteq.ai.ragstudio.rag.config.RAGDefaultProperties;
 import com.byteq.ai.ragstudio.rag.config.RAGRateLimitProperties;
+import com.byteq.ai.ragstudio.rag.controller.request.SelectionUpdateRequest;
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.AISettings;
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.DefaultSettings;
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.MemorySettings;
+import com.byteq.ai.ragstudio.rag.core.agent.ToolRetriever;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
@@ -32,6 +39,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 public class RAGSettingsController {
 
     /**
@@ -63,6 +71,10 @@ public class RAGSettingsController {
      * 动态模型配置提供者（从数据库读取供应商和模型配置）
      */
     private final ModelConfigProvider modelConfigProvider;
+
+    private final ToolRetriever toolRetriever;
+
+    private final DefaultModelConfigService defaultModelConfigService;
 
     @Value("${spring.servlet.multipart.max-file-size:50MB}")
     private DataSize maxFileSize;
@@ -166,6 +178,7 @@ public class RAGSettingsController {
                 .selection(AISettings.Selection.builder()
                           .failureThreshold(routingProperties.getSelection().getFailureThreshold())
                           .openDurationMs(routingProperties.getSelection().getOpenDurationMs())
+                          .toolRoutingModel(toolRetriever.getEnabledModel())
                           .build())
                 .stream(AISettings.Stream.builder()
                           .messageChunkSize(routingProperties.getStream().getMessageChunkSize())
@@ -195,6 +208,7 @@ public class RAGSettingsController {
                                     .model(c.getModel())
                                     .url(c.getUrl())
                                     .dimension(c.getDimension())
+                                    .dimensions(c.getDimensions())
                                     .priority(c.getPriority())
                                     .enabled(c.getEnabled())
                                     .supportsThinking(c.getSupportsThinking())
@@ -203,4 +217,29 @@ public class RAGSettingsController {
                 .build();
     }
 
+    /**
+     * 设置工具选择嵌入模型
+     * <p>切换前探测模型可用性，成功后自动重建工具检索索引。</p>
+     *
+     * @param request 包含 toolRoutingModel 字段（null 或 "" 表示使用系统默认）
+     * @return 操作结果
+     */
+    @PostMapping("/rag/settings/tool-routing-model")
+    public Result<Void> setToolRoutingModel(@RequestBody SelectionUpdateRequest request) {
+        String modelId = request.getToolRoutingModel();
+        if (modelId != null && !modelId.isBlank()) {
+            try {
+                toolRetriever.probeModel(modelId);
+            } catch (Exception e) {
+                throw new ServiceException("工具选择嵌入模型 \"" + modelId + "\" 不可用: " + e.getMessage());
+            }
+            defaultModelConfigService.updateConfig("tool_selector", modelId);
+        } else {
+            defaultModelConfigService.deleteByKey("tool_selector");
+        }
+        String effective = modelId != null && !modelId.isBlank() ? modelId : null;
+        toolRetriever.setModelAndRebuild(effective);
+        log.info("工具选择嵌入模型已切换: {}", effective != null ? effective : "不使用（使用系统默认）");
+        return Results.success(null);
+    }
 }

@@ -55,8 +55,11 @@ public class McpToolAdapter implements Tool {
     public ToolResult execute(Map<String, Object> params) {
         try {
             CallToolResult result = executor.execute(params != null ? params : Map.of());
+            if (result == null) {
+                return ToolResult.success(name(), "（工具返回空）");
+            }
             String content = formatCallToolResult(result);
-            if (result != null && result.isError() != null && result.isError()) {
+            if (result.isError() != null && result.isError()) {
                 return ToolResult.failure(name(), content);
             }
             return ToolResult.success(name(), content);

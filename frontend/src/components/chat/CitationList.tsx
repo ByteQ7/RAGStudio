@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import type { Message } from "@/types";
-
 interface CitationListProps {
   message: Message;
 }
@@ -55,8 +54,9 @@ export function CitationList({ message }: CitationListProps) {
     const MIN_MATCH_LEN = 10;
     const matched = citations.filter((chunk) => {
       if (!chunk.text) return false;
-      for (let i = 0; i <= chunk.text.length - MIN_MATCH_LEN; i++) {
-        const snippet = chunk.text.substring(i, i + MIN_MATCH_LEN);
+      const text = chunk.text;
+      for (let i = 0; i <= text.length - MIN_MATCH_LEN; i++) {
+        const snippet = text.substring(i, i + MIN_MATCH_LEN);
         if (answer.includes(snippet)) return true;
       }
       return false;
@@ -160,7 +160,7 @@ export function CitationList({ message }: CitationListProps) {
               </div>
 
               {isExpanded && (
-                <div className="mt-1 ml-6 rounded-lg border border-gray-100 bg-white px-3 py-2">
+                <div className="mt-1 ml-6 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                   <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">
                     {citation.text}
                   </p>

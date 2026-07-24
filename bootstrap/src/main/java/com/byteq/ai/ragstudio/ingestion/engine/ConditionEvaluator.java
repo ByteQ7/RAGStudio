@@ -102,7 +102,8 @@ public class ConditionEvaluator {
     private boolean evalRule(IngestionContext context, JsonNode node) {
         String field = node.path("field").asText(null);
         if (!StringUtils.hasText(field)) {
-            return true;
+            log.warn("条件规则缺少 field 字段，默认拒绝: node={}", node);
+            return false;
         }
         String operator = node.path("operator").asText("eq");
         JsonNode valueNode = node.get("value");

@@ -43,6 +43,7 @@ export interface SystemSettings {
     selection: {
       failureThreshold: number;
       openDurationMs: number;
+      toolRoutingModel?: string | null;
     };
     stream: {
       messageChunkSize: number;
@@ -65,6 +66,7 @@ export interface ModelCandidate {
   model: string;
   url?: string | null;
   dimension?: number | null;
+  dimensions?: number[] | null;
   priority?: number | null;
   enabled?: boolean | null;
   supportsThinking?: boolean | null;
@@ -72,4 +74,12 @@ export interface ModelCandidate {
 
 export async function getSystemSettings(): Promise<SystemSettings> {
   return api.get<SystemSettings, SystemSettings>("/rag/settings");
+}
+
+export async function setToolRoutingModel(
+  toolRoutingModel: string | null
+): Promise<void> {
+  return api.post<void, void>("/rag/settings/tool-routing-model", {
+    toolRoutingModel
+  });
 }

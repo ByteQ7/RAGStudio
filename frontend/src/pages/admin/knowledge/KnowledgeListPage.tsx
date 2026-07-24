@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
 const STATS_PAGE_SIZE = 200;
+const STATS_MAX_PAGES = 5; // 防止遍历过多页面
 
 export function KnowledgeListPage() {
   const navigate = useNavigate();
@@ -105,8 +106,10 @@ export function KnowledgeListPage() {
       addRecords(firstPage.records || []);
 
       const totalCount = firstPage.total ?? (firstPage.records?.length || 0);
-      const totalPages =
-        firstPage.pages || Math.max(1, Math.ceil(totalCount / STATS_PAGE_SIZE));
+      const totalPages = Math.min(
+        firstPage.pages || Math.max(1, Math.ceil(totalCount / STATS_PAGE_SIZE)),
+        STATS_MAX_PAGES
+      );
 
       for (let page = 2; page <= totalPages; page += 1) {
         const nextPage = await getKnowledgeBasesPage(page, STATS_PAGE_SIZE, normalized || undefined);
@@ -216,9 +219,8 @@ export function KnowledgeListPage() {
     );
   };
 
-  const getCollectionBadgeClass = () => {
-    return "border-blue-200 bg-blue-50 text-blue-700";
-  };
+  const getCollectionBadgeClass = () =>
+    "border-blue-200 bg-blue-50 text-blue-700";
 
   const handleEditSave = async () => {
     if (!renameDialog.kb) return;
@@ -316,7 +318,7 @@ export function KnowledgeListPage() {
                       {kb.collectionName ? (
                         <Badge
                           variant="outline"
-                          className={cn("px-3 py-1 whitespace-nowrap", getCollectionBadgeClass(kb.collectionName))}
+                           className={cn("px-3 py-1 whitespace-nowrap", getCollectionBadgeClass())}
                         >
                           {kb.collectionName}
                         </Badge>

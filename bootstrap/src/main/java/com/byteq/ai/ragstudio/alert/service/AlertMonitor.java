@@ -45,6 +45,9 @@ public class AlertMonitor {
      */
     private final ConcurrentHashMap<String, ConcurrentLinkedDeque<Long>> circuitBreakerEvents = new ConcurrentHashMap<>();
 
+    /** 单个模型最大熔断事件记录数，防止内存泄漏 */
+    private static final int MAX_EVENTS_PER_MODEL = 1000;
+
     @PostConstruct
     public void init() {
         // 注册熔断器 OPEN 回调
@@ -67,7 +70,11 @@ public class AlertMonitor {
     private void recordCircuitBreakerEvent(String modelId) {
         if (modelId == null) return;
         long now = System.currentTimeMillis();
-        circuitBreakerEvents.computeIfAbsent(modelId, k -> new ConcurrentLinkedDeque<>()).addLast(now);
+        ConcurrentLinkedDeque<Long> events = circuitBreakerEvents.computeIfAbsent(modelId, k -> new ConcurrentLinkedDeque<>());
+        events.addLast(now);
+        if (events.size() > MAX_EVENTS_PER_MODEL) {
+            events.pollFirst();
+        }
     }
 
     /**

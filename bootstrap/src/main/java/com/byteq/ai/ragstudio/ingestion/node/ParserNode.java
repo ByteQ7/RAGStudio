@@ -12,12 +12,11 @@ import com.byteq.ai.ragstudio.ingestion.domain.settings.ParserSettings;
 import com.byteq.ai.ragstudio.ingestion.util.MimeTypeDetector;
 import com.byteq.ai.ragstudio.core.parser.DocumentParser;
 import com.byteq.ai.ragstudio.core.parser.DocumentParserSelector;
-import com.byteq.ai.ragstudio.core.parser.ParseResult;
 import com.byteq.ai.ragstudio.core.parser.ParserType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.Collections;
+import java.io.ByteArrayInputStream;
 import java.util.List;
 import java.util.Map;
 
@@ -80,24 +79,25 @@ public class ParserNode implements IngestionNode {
         // 根据配置的规则验证文件类型是否允许被解析
         validateMimeType(settings, mimeType, fileName);
 
-        ParserSettings.ParserRule rule = matchRule(settings, mimeType, fileName);
         DocumentParser parser = parserSelector.select(ParserType.TIKA.getType());
         if (parser == null) {
             return NodeResult.fail(new ClientException("未配置 Tika 解析器"));
         }
 
-        Map<String, Object> options = rule == null ? Collections.emptyMap() : rule.getOptions();
-        ParseResult result = parser.parse(context.getRawBytes(), mimeType, options);
-        context.setRawText(result.text());
+        // 使用 extractAsMarkdown 保留文档结构（表格、标题、列表等），
+        // 比纯文本的 parse() 更适合下游的结构感知分块
+        String markdownText = parser.extractAsMarkdown(
+                new ByteArrayInputStream(context.getRawBytes()), fileName);
+        context.setRawText(markdownText);
 
-        // 将解析结果转换为结构化文档对象，包括文本内容和元数据
+        // 将解析结果转换为结构化文档对象
         StructuredDocument document = StructuredDocument.builder()
-                .text(result.text())
-                .metadata(result.metadata())
+                .text(markdownText)
+                .metadata(Map.of())
                 .build();
         context.setDocument(document);
 
-        return NodeResult.ok("解析文本长度=" + (result.text() == null ? 0 : result.text().length()));
+        return NodeResult.ok("解析文本长度=" + (markdownText == null ? 0 : markdownText.length()));
     }
 
     /**
