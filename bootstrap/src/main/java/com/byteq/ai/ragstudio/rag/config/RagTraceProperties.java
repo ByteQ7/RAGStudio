@@ -21,4 +21,10 @@ public class RagTraceProperties {
      * 错误信息最大长度，防止落库过大
      */
     private int maxErrorLength = 1000;
+
+    /**
+     * RUNNING 状态最大持续时长（分钟），超过该时长将被自动标记为 ERROR
+     * 设置为 0 表示不禁用定时清理
+     */
+    private int staleRunTimeoutMinutes = 10;
 }

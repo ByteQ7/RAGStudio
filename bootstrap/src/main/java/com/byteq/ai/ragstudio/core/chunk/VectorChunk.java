@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.core.chunk;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.byteq.ai.ragstudio.framework.convention.ChunkType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -46,4 +47,21 @@ public class VectorChunk {
      */
     @JsonIgnore
     private float[] embedding;
+
+    /**
+     * 内容类型: TEXT / IMAGE
+     * TEXT 为普通文本块，IMAGE 为图像块（content 可为空或占位描述，实际图片通过 metadata.image_url 获取）
+     */
+    @Builder.Default
+    private String contentType = "TEXT";
+
+    public ChunkType getType() {
+        return ChunkType.from(contentType);
+    }
+
+    public boolean isType(ChunkType type) {
+        return getType() == type;
+    }
+
+    public boolean isImage() { return getType() == ChunkType.IMAGE; }
 }

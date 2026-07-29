@@ -47,12 +47,18 @@ public class ContextCropper {
             return;
         }
 
+        // IMAGE chunks 的 content 是占位文本，跳过语义裁剪
         List<SemanticHighlightRequest.ChunkItem> chunkItems = chunks.stream()
+                .filter(c -> !c.isImage())
                 .map(c -> SemanticHighlightRequest.ChunkItem.builder()
                         .id(c.getId())
                         .text(c.getText())
                         .build())
                 .toList();
+
+        if (chunkItems.isEmpty()) {
+            return;
+        }
 
         SemanticHighlightResponse response;
         try {

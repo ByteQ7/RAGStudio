@@ -56,7 +56,11 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
             wrapper.eq(RagTraceRunDO::getTaskId, request.getTaskId());
         }
         if (StrUtil.isNotBlank(request.getStatus())) {
-            wrapper.eq(RagTraceRunDO::getStatus, request.getStatus());
+            String status = request.getStatus().trim();
+            if ("FAILED".equalsIgnoreCase(status)) {
+                status = "ERROR";
+            }
+            wrapper.eq(RagTraceRunDO::getStatus, status);
         }
 
         IPage<RagTraceRunDO> pageResult = runMapper.selectPage(request, wrapper);
@@ -180,11 +184,15 @@ public class RagTraceQueryServiceImpl implements RagTraceQueryService {
             wrapper.eq(RagTraceRunDO::getTaskId, request.getTaskId());
         }
         if (StrUtil.isNotBlank(request.getStatus())) {
-            wrapper.eq(RagTraceRunDO::getStatus, request.getStatus());
+            String status = request.getStatus().trim();
+            if ("FAILED".equalsIgnoreCase(status)) {
+                status = "ERROR";
+            }
+            wrapper.eq(RagTraceRunDO::getStatus, status);
         }
 
         // 查询所有符合条件的记录（只取状态和耗时字段）
-        wrapper.select(RagTraceRunDO::getStatus, RagTraceRunDO::getDurationMs);
+        wrapper.select(RagTraceRunDO::getStatus, RagTraceRunDO::getDurationMs, RagTraceRunDO::getStartTime);
         List<RagTraceRunDO> allRuns = runMapper.selectList(wrapper);
 
         long totalCount = allRuns.size();

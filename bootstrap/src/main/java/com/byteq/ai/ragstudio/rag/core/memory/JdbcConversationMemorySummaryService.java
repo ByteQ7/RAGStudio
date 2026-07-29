@@ -234,6 +234,8 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                         return ChatMessage.user(content != null ? content : "");
                     } else if ("assistant".equals(role)) {
                         return ChatMessage.assistant(content != null ? content : "");
+                    } else if ("observation".equals(role) || "tool".equals(role)) {
+                        return ChatMessage.observation(content != null ? content : "");
                     }
                     return null;
                 })

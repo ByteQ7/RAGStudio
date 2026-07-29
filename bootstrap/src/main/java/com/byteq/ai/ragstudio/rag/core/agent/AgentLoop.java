@@ -13,7 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
+import java.util.function.Consumer;
+import java.util.function.Consumer;
 
 /**
  * ReACT Agent 循环引擎
@@ -52,7 +53,7 @@ public class AgentLoop {
     private static final Gson GSON = new Gson();
 
     /** 在 onComplete 之前触发的回调（用于引用溯源等） */
-    private Runnable beforeCompleteCallback;
+    private Consumer<String> beforeCompleteCallback;
 
     /** 取消检查回调 */
     private final java.util.function.Supplier<Boolean> cancellationChecker;
@@ -97,7 +98,7 @@ public class AgentLoop {
     }
 
     /** 设置在 onComplete 之前触发的回调 */
-    public void setBeforeCompleteCallback(Runnable callback) {
+    public void setBeforeCompleteCallback(Consumer<String> callback) {
         this.beforeCompleteCallback = callback;
     }
 
@@ -194,18 +195,15 @@ public class AgentLoop {
                 // 2b. 解析响应
                 AgentStep step = responseParser.parse(llmResponse, iteration);
 
-                // 格式校正：初次迭代 LLM 未使用 ReACT 格式时重试一次
-                // 仅检查行首的 Action:，避免匹配到 Thought/思考中提及的 "Action: xxx" 文本
+                // 格式校正：初次迭代 LLM 未使用 JSON 时重试一次
                 boolean formatCorrected = false;
-                Pattern actionLinePattern = Pattern.compile("(?:^|\\n)\\s*Action\\s*[:：]", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
-                if (iteration == 0 && !actionLinePattern.matcher(llmResponse).find()) {
+                if (iteration == 0 && !llmResponse.trim().startsWith("{")) {
                     log.warn("Agent 初次迭代 LLM 未使用 ReACT 格式，注入纠正提示后重试");
                     ctx.addMessage(ChatMessage.assistant(llmResponse));
                     ctx.addMessage(ChatMessage.system(
-                            "你刚才的输出没有遵循 ReACT 格式。请重新输出，"
-                            + "确保包含 Thought: 和 Action: 字段。"
-                            + "即使你认为不需要调用工具，也必须输出：\n"
-                            + "Thought: ...\nAction: FINISH\nFinal Answer: ..."));
+                            "你刚才没有遵循 JSON 格式。请以 JSON 对象输出，"
+                            + "工具调用: {\"thought\":\"...\",\"action\":\"工具名\",\"action_input\":{...}}，"
+                            + "回答: {\"thought\":\"...\",\"action\":\"finish\",\"final_answer\":\"回答内容\"}"));
                     String retryResponse = null;
                     try {
                         retryResponse = llmService.chat(ChatRequest.builder()
@@ -242,12 +240,29 @@ public class AgentLoop {
 
                 // 2e. 根据动作分支
                 if (step.getAction() == AgentAction.FINISH) {
+                    // LLM 输出 FINISH 但没有 final_answer 内容时重试一次
+                    if (StrUtil.isBlank(step.getFinalAnswer())) {
+                        log.warn("Agent FINISH 但 finalAnswer 为空，注入纠正重试");
+                        ctx.addMessage(ChatMessage.assistant(llmResponse));
+                        ctx.addMessage(ChatMessage.system(
+                                "你输出了 action: finish 但 missing final_answer。"
+                                + "请输出: {\"action\":\"finish\",\"final_answer\":\"回答内容\"}"));
+                        try {
+                            llmResponse = llmService.chat(ChatRequest.builder()
+                                    .messages(new ArrayList<>(ctx.getMessages()))
+                                    .temperature(0.4).thinkingLevel(0).build());
+                            step = responseParser.parse(llmResponse, iteration);
+                        } catch (Exception e) { log.warn("FINISH 空回答重试失败: {}", e.getMessage()); }
+                    }
                     log.info("Agent 完成 - iteration={}, finalAnswerLength={}",
                             iteration,
                             step.getFinalAnswer() != null ? step.getFinalAnswer().length() : 0);
                     pushStepsComplete(ctx, callback);
+                    if (ctx.getCollectedS3ImageUrls() != null && !ctx.getCollectedS3ImageUrls().isEmpty()) {
+                        callback.setRetrievedImageUrls(new java.util.ArrayList<>(ctx.getCollectedS3ImageUrls()));
+                    }
                     streamFinalAnswer(step.getFinalAnswer(), callback);
-                    return;    
+                    return;
                 }
 
                 if (step.getAction() == AgentAction.TOOL_CALL) {
@@ -265,7 +280,22 @@ public class AgentLoop {
                     pushStep(step, callback);
 
                     // 将 Observation 追加到消息列表
-                    ctx.addMessage(ChatMessage.user(result.toObservation()));
+                    ChatMessage obsMsg = ChatMessage.observation(result.toObservation());
+                    if (CollUtil.isNotEmpty(result.getImageUrls())) {
+                        obsMsg.setImageUrls(new java.util.ArrayList<>(result.getImageUrls()));
+                    }
+                    ctx.addMessage(obsMsg);
+
+                    // 收集 S3 图片 URL（最终附到 assistant 回复上持久化）
+                    if (CollUtil.isNotEmpty(result.getS3ImageUrls())) {
+                        java.util.Set<String> existing = ctx.getCollectedS3ImageUrls();
+                        if (existing == null) {
+                            existing = new java.util.LinkedHashSet<>();
+                            ctx.setCollectedS3ImageUrls(existing);
+                        }
+                        existing.addAll(result.getS3ImageUrls());
+                    }
+
                     // 首次 rag_search 执行后，抑制 kb_forced 持续生效，防止 Agent 重复搜索
                     if ("rag_search".equals(step.getToolName()) && !ragSearchCalled) {
                         ragSearchCalled = true;
@@ -420,13 +450,18 @@ public class AgentLoop {
         if (StrUtil.isBlank(finalAnswer)) {
             finalAnswer = "（无回答内容）";
         }
+        // 防御：如果 finalAnswer 是未解析的 JSON，提取 final_answer 字段
         String text = finalAnswer;
+        if (text.startsWith("{") && text.contains("\"final_answer\"")) {
+            text = extractFinalAnswerFromRawJson(text);
+            if (text == null) text = finalAnswer;
+        }
         int length = text.length();
         int pos = 0;
+        boolean streamOk = true;
         try {
             while (pos < length) {
                 int end = Math.min(pos + FINAL_ANSWER_CHUNK_SIZE, length);
-                // 确保不截断代理对（emoji 等多字节字符）
                 if (end < length && Character.isHighSurrogate(text.charAt(end - 1))) {
                     end++;
                 }
@@ -434,20 +469,48 @@ public class AgentLoop {
                 pos = end;
             }
         } catch (Exception e) {
+            streamOk = false;
             log.warn("流式输出过程中异常: {}", e.getMessage());
         } finally {
-            if (beforeCompleteCallback != null) {
-                beforeCompleteCallback.run();
+            if (streamOk) {
+                if (beforeCompleteCallback != null) {
+                    beforeCompleteCallback.accept(finalAnswer);
+                }
+                callback.onComplete();
             }
-            callback.onComplete();
         }
     }
 
     /**
-     * 输出降级回答（流式）
+     * 兜底回答流式输出
      */
     private void streamFallbackAnswer(String fallbackText, StreamCallback callback) {
         streamFinalAnswer(fallbackText, callback);
+    }
+
+    /**
+     * 从原始 JSON 中提取 final_answer，作为最后一层兜底
+     * @return 提取出的文本，如果提取失败返回 null
+     */
+    private String extractFinalAnswerFromRawJson(String text) {
+        try {
+            com.google.gson.JsonElement el = com.google.gson.JsonParser.parseString(text);
+            if (el.isJsonObject()) {
+                var obj = el.getAsJsonObject();
+                var fa = obj.get("final_answer");
+                if (fa != null && !fa.isJsonNull() && StrUtil.isNotBlank(fa.getAsString())) {
+                    return fa.getAsString();
+                }
+            }
+        } catch (Exception e) { return null; }
+        // 纯正则兜底
+        var m = java.util.regex.Pattern.compile("\"final_answer\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+                .matcher(text);
+        if (m.find()) {
+            return m.group(1).replace("\\n", "\n").replace("\\t", "\t")
+                    .replace("\\\"", "\"").replace("\\\\", "\\");
+        }
+        return null;
     }
 
     // ==================== Step 推送 ====================

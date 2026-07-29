@@ -74,4 +74,15 @@ public interface RagTraceRecordService {
      * @param traceId 链路追踪 ID
      */
     void deleteRun(String traceId);
+
+    /**
+     * 将超过指定时长的 RUNNING 状态运行记录标记为 ERROR
+     * <p>
+     * 用于定时自动清理僵死链路（如服务重启、线程异常导致的状态未更新）。
+     * </p>
+     *
+     * @param timeoutMinutes 超过多少分钟未完成的记录视为僵死
+     * @return 被标记为失败的记录数
+     */
+    int markStaleRunningAsError(int timeoutMinutes);
 }

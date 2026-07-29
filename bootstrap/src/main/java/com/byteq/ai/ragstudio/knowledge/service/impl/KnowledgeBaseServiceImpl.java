@@ -106,6 +106,8 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         }
 
         // 使用统一 S3 桶 ragstudio，不再为每个知识库创建独立桶
+        Integer supportsImageEmbedding = detectMultimodalEmbedding(requestParam.getEmbeddingModel());
+
         KnowledgeBaseDO kbDO = KnowledgeBaseDO.builder()
                 .name(requestParam.getName())
                 .description(requestParam.getDescription())
@@ -113,6 +115,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .embeddingModel(requestParam.getEmbeddingModel())
                 .dimension(dimension)
                 .collectionName(requestParam.getCollectionName())
+                .supportsImageEmbedding(supportsImageEmbedding)
                 .createdBy(UserContext.getUsername())
                 .updatedBy(UserContext.getUsername())
                 .build();
@@ -315,7 +318,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         }
 
         if (selectedDimension == null || selectedDimension <= 0) {
-            int autoDim = supported.stream().filter(d -> d <= 2000).max(Integer::compareTo).orElse(1536);
+            int autoDim = supported.stream().max(Integer::compareTo).orElse(1536);
             log.info("未指定维度，自动选择 {} 维（模型支持: {}）", autoDim, supported);
             return autoDim;
         }
@@ -354,15 +357,10 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
      */
     private void cleanupVectorCollection(String collectionName) {
         try {
-            VectorSpaceId spaceId = VectorSpaceId.builder()
-                    .logicalName(collectionName)
-                    .build();
-            if (vectorStoreAdmin.vectorSpaceExists(spaceId)) {
-                // 当前 VectorStoreAdmin 接口未提供删除方法，记录告警供运维人工处理
-                log.warn("向量集合需要清理但 VectorStoreAdmin 暂不支持删除, collectionName={}, 请人工清理", collectionName);
-            }
+            vectorStoreAdmin.deleteCollectionVectors(collectionName);
+            log.info("向量集合已清理, collectionName={}", collectionName);
         } catch (Exception e) {
-            log.warn("检查/清理向量集合失败, collectionName={}, 原因: {}", collectionName, e.getMessage(), e);
+            log.warn("清理向量集合失败, collectionName={}, 原因: {}", collectionName, e.getMessage());
         }
     }
 
@@ -383,6 +381,29 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             log.warn("推导 Embedding Provider 失败, modelId={}", modelId, e);
             return null;
         }
+    }
+
+    /**
+     * 检测嵌入模型是否支持多模态（图像嵌入）
+     */
+    private Integer detectMultimodalEmbedding(String modelId) {
+        if (modelId == null) return 0;
+        try {
+            AiModelDO model = aiModelMapper.selectOne(
+                    Wrappers.lambdaQuery(AiModelDO.class)
+                            .eq(AiModelDO::getModelId, modelId)
+                            .eq(AiModelDO::getCapability, "EMBEDDING")
+                            .eq(AiModelDO::getDeleted, 0)
+                            .last("LIMIT 1")
+            );
+            if (model != null && model.getSupportsMultimodal() != null && model.getSupportsMultimodal() == 1) {
+                log.info("嵌入模型 {} 支持多模态图像嵌入", modelId);
+                return 1;
+            }
+        } catch (Exception e) {
+            log.warn("检测嵌入模型多模态能力失败, modelId={}", modelId, e);
+        }
+        return 0;
     }
 
     // 根据 ID 查询知识库详情，不存在或已删除时抛出异常

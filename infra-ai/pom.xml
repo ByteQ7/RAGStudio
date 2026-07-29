@@ -17,26 +17,19 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- LangChain4j: OpenAI 兼容协议 -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-open-ai</artifactId>
-        </dependency>
-
-
         <!-- AWS S3 SDK: 读取 S3 图片编码为 data URI -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
         </dependency>
 
-        <!-- OkHttp: 仅 Rerank 客户端使用（百炼 Rerank API 为非标准协议） -->
+        <!-- OkHttp: HTTP 请求（聊天 / Embedding / Rerank） -->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
         </dependency>
 
-        <!-- Jackson: 语义高亮客户端 JSON 序列化 -->
+        <!-- Jackson: JSON 序列化 -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>

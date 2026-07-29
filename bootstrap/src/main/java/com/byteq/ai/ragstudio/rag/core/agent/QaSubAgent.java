@@ -11,7 +11,7 @@ import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RetrievalEngine;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillDefinition;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
-import com.byteq.ai.ragstudio.rag.core.skill.SkillReaderTool;
+import com.byteq.ai.ragstudio.rag.core.skill.ToolReaderTool;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillTool;
 import com.byteq.ai.ragstudio.rag.core.skill.SandboxExecutor;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -116,6 +116,9 @@ public class QaSubAgent implements SubAgent {
 
     @Override
     public List<Artifact> run(Task task, AgentContext ctx, StreamCallback callback) {
+        // 每次新对话清空旧的检索结果，避免跨轮对话的引用污染
+        retrievedChunks.clear();
+
         // 1. 构建工具集（按用户问题语义检索，仅注入相关工具）
         ToolRegistry toolRegistry = buildToolRegistry(ctx.getQuestion());
 
@@ -126,11 +129,8 @@ public class QaSubAgent implements SubAgent {
                 cancellationChecker, ctx.getThinkingLevel()
         );
 
-        // 3. 引用溯源回调
-        agentLoop.setBeforeCompleteCallback(() -> {
-            String finalAnswer = callback instanceof com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler
-                    ? ((com.byteq.ai.ragstudio.rag.service.handler.StreamChatEventHandler) callback).getAnswerString()
-                    : null;
+        // 3. 引用溯源回调（直接接收 streamFinalAnswer 中的 finalAnswer 参数，不依赖 callback.getAnswerString）
+        agentLoop.setBeforeCompleteCallback((finalAnswer) -> {
             fireCitations(callback, finalAnswer);
         });
 
@@ -175,29 +175,32 @@ public class QaSubAgent implements SubAgent {
             log.info("语义检索命中工具: {}", relevantTools);
         }
 
+        // 全部 MCP 工具都注册，prompt 注入时按 relevance 筛选
         for (McpToolExecutor executor : mcpToolRegistry.listAllExecutors()) {
-            if (!hasRetrieval || relevantTools.contains(executor.getToolDefinition().name())) {
-                registry.register(new McpToolAdapter(executor));
-            }
+            registry.register(new McpToolAdapter(executor));
         }
         registry.register(new TimeTool());
 
         if (CollUtil.isNotEmpty(knowledgeBaseIds)) {
             RagSearchTool ragTool = new RagSearchTool(retrievalEngine, searchProperties, knowledgeBaseIds, kbSummaryText, collectionNameToKbId);
             ragTool.setChunksConsumer(chunks -> {
-                retrievedChunks.clear();
-                retrievedChunks.addAll(chunks);
+                // 多次 rag_search 调用累积 chunks，按 id 去重，不覆盖之前的检索结果
+                for (RetrievedChunk chunk : chunks) {
+                    if (chunk.getId() != null) {
+                        boolean exists = retrievedChunks.stream()
+                                .anyMatch(c -> chunk.getId().equals(c.getId()));
+                        if (!exists) retrievedChunks.add(chunk);
+                    }
+                }
             });
             registry.register(ragTool);
         }
 
-        registry.register(new SkillReaderTool(skillLoader));
+        registry.register(new ToolReaderTool(skillLoader, mcpToolRegistry));
 
         List<SkillDefinition> skills = skillLoader.getAllSkills();
         for (SkillDefinition def : skills) {
-            if (!hasRetrieval || relevantTools.contains(def.getName())) {
-                registry.register(new SkillTool(def, syncHttpClient, sandboxExecutor));
-            }
+            registry.register(new SkillTool(def, syncHttpClient, sandboxExecutor));
         }
 
         log.info("Q&A Agent 工具: MCP={}/{}, RAG={}, SKILL={}/{}, 内置=1, 总计={}",
@@ -212,26 +215,91 @@ public class QaSubAgent implements SubAgent {
     }
 
     private void fireCitations(StreamCallback callback, String finalAnswer) {
-        if (retrievedChunks.isEmpty()) return;
-        List<String> referencedIds = new ArrayList<>();
-        if (StrUtil.isNotBlank(finalAnswer)) {
-            java.util.regex.Matcher m = CHUNK_REF_PATTERN.matcher(finalAnswer);
-            while (m.find()) referencedIds.add(m.group(1));
-        }
+        if (retrievedChunks.isEmpty() && StrUtil.isBlank(finalAnswer)) return;
         try {
-            String json = OBJECT_MAPPER.writeValueAsString(retrievedChunks.stream()
-                    .filter(c -> {
-                        if (StrUtil.isBlank(finalAnswer)) return true;
-                        if (referencedIds.isEmpty()) return true;
-                        return c.getId() != null && referencedIds.contains(c.getId());
-                    })
-                    .map(c -> Map.of("id", c.getId() != null ? c.getId() : "",
-                            "text", c.getText() != null ? c.getText() : "",
-                            "score", c.getScore() != null ? c.getScore() : 0f,
-                            "kbName", c.getKbName() != null ? c.getKbName() : "",
-                            "docName", c.getDocName() != null ? c.getDocName() : ""))
-                    .toList());
-            callback.onCitation(json);
+            List<String> referencedIds = new ArrayList<>();
+            if (StrUtil.isNotBlank(finalAnswer)) {
+                java.util.regex.Matcher m = CHUNK_REF_PATTERN.matcher(finalAnswer);
+                while (m.find()) {
+                    String id = m.group(1);
+                    if (!referencedIds.contains(id)) referencedIds.add(id);
+                }
+            }
+
+            List<Map<String, Object>> citations = new ArrayList<>();
+            if (!referencedIds.isEmpty()) {
+                for (String id : referencedIds) {
+                    RetrievedChunk c = null;
+                    try {
+                        int idx = Integer.parseInt(id) - 1;
+                        if (idx >= 0 && idx < retrievedChunks.size()) {
+                            c = retrievedChunks.get(idx);
+                        }
+                    } catch (NumberFormatException ignored) {
+                        for (RetrievedChunk rc : retrievedChunks) {
+                            if (id.equals(rc.getId())) { c = rc; break; }
+                        }
+                    }
+                    Map<String, Object> entry = new java.util.LinkedHashMap<>();
+                    entry.put("id", id);
+                    entry.put("chunkId", c != null && c.getId() != null ? c.getId() : "");
+                    entry.put("text", c != null && c.getText() != null ? c.getText() : "");
+                    entry.put("score", c != null && c.getScore() != null ? c.getScore() : 0f);
+                    entry.put("kbName", c != null && c.getKbName() != null ? c.getKbName() : "");
+                    entry.put("docName", c != null && c.getDocName() != null ? c.getDocName() : "");
+                    entry.put("contentType", c != null && c.getContentType() != null ? c.getContentType() : "TEXT");
+                    entry.put("imageUrl",
+                            c != null && c.getMetadata() != null && c.getMetadata().get("image_url") instanceof String imgUrl
+                                    ? imgUrl : "");
+                    if (c == null && retrievedChunks.isEmpty()) continue;
+                    citations.add(entry);
+                }
+            } else {
+                for (RetrievedChunk c : retrievedChunks) {
+                    if (c.isImage()) {
+                        Map<String, Object> entry = new java.util.LinkedHashMap<>();
+                        entry.put("id", c.getId() != null ? c.getId() : "");
+                        entry.put("chunkId", c.getId() != null ? c.getId() : "");
+                        entry.put("text", "");
+                        entry.put("score", c.getScore() != null ? c.getScore() : 0f);
+                        entry.put("kbName", c.getKbName() != null ? c.getKbName() : "");
+                        entry.put("docName", c.getDocName() != null ? c.getDocName() : "");
+                        entry.put("contentType", c.getContentType() != null ? c.getContentType() : "IMAGE");
+                        entry.put("imageUrl",
+                                c.getMetadata() != null && c.getMetadata().get("image_url") instanceof String imgUrl
+                                        ? imgUrl : "");
+                        citations.add(entry);
+                        continue;
+                    }
+                    if (StrUtil.isBlank(c.getText())) continue;
+                    String chunkText = c.getText();
+                    boolean matched = false;
+                    for (int i = 0; i <= chunkText.length() - 10 && !matched; i++) {
+                        if (StrUtil.isNotBlank(finalAnswer) && finalAnswer.contains(chunkText.substring(i, i + 10))) {
+                            matched = true;
+                        }
+                    }
+                    if (matched) {
+                        Map<String, Object> entry = new java.util.LinkedHashMap<>();
+                        entry.put("id", c.getId() != null ? c.getId() : "");
+                        entry.put("chunkId", c.getId() != null ? c.getId() : "");
+                        entry.put("text", c.getText());
+                        entry.put("score", c.getScore() != null ? c.getScore() : 0f);
+                        entry.put("kbName", c.getKbName() != null ? c.getKbName() : "");
+                        entry.put("docName", c.getDocName() != null ? c.getDocName() : "");
+                        entry.put("contentType", c.getContentType() != null ? c.getContentType() : "TEXT");
+                        entry.put("imageUrl",
+                                c.getMetadata() != null && c.getMetadata().get("image_url") instanceof String imgUrl
+                                        ? imgUrl : "");
+                        citations.add(entry);
+                    }
+                }
+            }
+
+            if (!citations.isEmpty()) {
+                String json = OBJECT_MAPPER.writeValueAsString(citations);
+                callback.onCitation(json);
+            }
         } catch (Exception e) {
             log.warn("Q&A 引用溯源失败", e);
         }

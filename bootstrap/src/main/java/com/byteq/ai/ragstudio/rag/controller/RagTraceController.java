@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.rag.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
+import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.rag.controller.request.RagTraceRunPageRequest;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceDetailVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.RagTraceNodeVO;
@@ -14,8 +15,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -109,6 +112,28 @@ public class RagTraceController {
     @DeleteMapping("/rag/traces/runs/{traceId}")
     public Result<Void> delete(@PathVariable String traceId) {
         ragTraceRecordService.deleteRun(traceId);
+        return Results.success();
+    }
+
+    /**
+     * 手动标记一条链路运行记录为失败（ERROR）
+     * <p>
+     * 将该运行记录的状态从 RUNNING 更新为 ERROR，附带手动标记说明。
+     * 仅对当前状态为 RUNNING 的记录生效。
+     * </p>
+     *
+     * @param traceId 链路追踪 ID
+     * @return 操作结果
+     */
+    @PostMapping("/rag/traces/runs/{traceId}/mark-failed")
+    public Result<Void> markFailed(@PathVariable String traceId) {
+        ragTraceRecordService.finishRun(
+                traceId,
+                TraceStatus.ERROR.name(),
+                "[Manual] Marked as failed by user",
+                new Date(),
+                0L
+        );
         return Results.success();
     }
 }

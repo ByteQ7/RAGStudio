@@ -104,8 +104,15 @@ public class S3FileStorageService implements FileStorageService {
         validateBucketName(bucketName);
         Assert.notNull(content, "上传内容不能为空");
         String detected = resolveContentType(originalFilename, contentType);
-        // byte[] 本身已在内存中，ByteArrayInputStream 不产生额外拷贝
         return streamUploadToS3(bucketName, prefix, new ByteArrayInputStream(content), content.length, originalFilename, detected);
+    }
+
+    @Override
+    public StoredFileDTO uploadWithKey(String bucketName, String key, byte[] content, String contentType) {
+        validateBucketName(bucketName);
+        Assert.notNull(content, "上传内容不能为空");
+        String detected = resolveContentType(key, contentType);
+        return streamUploadByKey(bucketName, key, new ByteArrayInputStream(content), content.length, detected);
     }
 
     // 解析 S3 URL 并通过 SDK 获取文件输入流
@@ -123,16 +130,31 @@ public class S3FileStorageService implements FileStorageService {
         s3Client.deleteObject(b -> b.bucket(loc.bucket()).key(loc.key()));
     }
 
-    // 生成 S3 预签名 GET URL（有效期 1 小时）
+    // 生成 S3 预签名 GET URL（默认 1 小时）
     @Override
     public String generatePresignedGetUrl(String s3Url) {
+        return generatePresignedGetUrl(s3Url, Duration.ofHours(1), null);
+    }
+
+    // 生成 S3 预签名 GET URL（指定过期时长）
+    @Override
+    public String generatePresignedGetUrl(String s3Url, Duration duration) {
+        return generatePresignedGetUrl(s3Url, duration, null);
+    }
+
+    // 生成 S3 预签名 GET URL（指定过期时长 + 响应 Content-Type 覆盖）
+    @Override
+    public String generatePresignedGetUrl(String s3Url, Duration duration, String responseContentType) {
         S3Location loc = parseS3Url(s3Url);
+        var requestBuilder = GetObjectRequest.builder()
+                .bucket(loc.bucket())
+                .key(loc.key());
+        if (responseContentType != null && !responseContentType.isBlank()) {
+            requestBuilder.responseContentType(responseContentType);
+        }
         PresignedGetObjectRequest presignedReq = s3Presigner.presignGetObject(p -> p
-                .signatureDuration(Duration.ofHours(1))
-                .getObjectRequest(GetObjectRequest.builder()
-                        .bucket(loc.bucket())
-                        .key(loc.key())
-                        .build()));
+                .signatureDuration(duration)
+                .getObjectRequest(requestBuilder.build()));
         return presignedReq.url().toString();
     }
 
@@ -175,6 +197,23 @@ public class S3FileStorageService implements FileStorageService {
         // 3. 构建返回结果
         String url = toS3Url(bucketName, s3Key);
         return buildStoredFileDTO(url, originalFilename, detectedContentType, size);
+    }
+
+    @SneakyThrows
+    private StoredFileDTO streamUploadByKey(String bucketName, String s3Key, InputStream inputStream,
+                                            long size, String detectedContentType) {
+        PresignedPutObjectRequest presignedReq = s3Presigner.presignPutObject(p -> p
+                .signatureDuration(PRESIGN_DURATION)
+                .putObjectRequest(PutObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(s3Key)
+                        .contentType(detectedContentType)
+                        .build()));
+
+        streamPutViaPresignedUrl(presignedReq, inputStream, size, detectedContentType);
+
+        String url = toS3Url(bucketName, s3Key);
+        return buildStoredFileDTO(url, s3Key, detectedContentType, size);
     }
 
     // 通过 SDK 原生 putObject 上传，具备自动重试能力，适合小文件或对可靠性要求高的场景

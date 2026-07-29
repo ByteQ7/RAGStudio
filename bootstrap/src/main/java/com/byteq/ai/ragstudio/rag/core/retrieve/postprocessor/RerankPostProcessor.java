@@ -9,7 +9,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Rerank 后置处理器
@@ -49,10 +52,25 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
             return chunks;
         }
 
-        return rerankService.rerank(
-                context.getMainQuestion(),
-                chunks,
-                context.getTopK()
-        );
+        // IMAGE chunks 无法参与文本重排序，分离后单独处理
+        List<RetrievedChunk> imageChunks = chunks.stream()
+                .filter(RetrievedChunk::isImage)
+                .collect(Collectors.toList());
+        List<RetrievedChunk> textChunks = chunks.stream()
+                .filter(c -> !c.isImage())
+                .collect(Collectors.toList());
+
+        if (textChunks.isEmpty()) {
+            return imageChunks;
+        }
+
+        List<RetrievedChunk> rerankedText = rerankService.rerank(
+                context.getMainQuestion(), textChunks, context.getTopK());
+
+        // 按原始向量分数降序排列 IMAGE chunk，排在重排序后的文本结果之前
+        imageChunks.sort(Comparator.comparingDouble(c -> c.getScore() != null ? -c.getScore() : 0));
+        List<RetrievedChunk> merged = new ArrayList<>(imageChunks);
+        merged.addAll(rerankedText);
+        return merged;
     }
 }

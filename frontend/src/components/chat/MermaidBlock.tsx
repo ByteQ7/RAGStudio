@@ -69,7 +69,7 @@ export function MermaidBlock({ children }: { children: React.ReactNode }) {
     return (
       <div className="my-3 overflow-hidden rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30">
         <div className="flex items-center justify-between border-b border-amber-300 bg-amber-100 px-3 py-1.5 dark:border-amber-700 dark:bg-amber-900/40">
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+          <span className="font-mono text-[12px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
             mermaid (error)
           </span>
           <Button
@@ -110,7 +110,7 @@ export function MermaidBlock({ children }: { children: React.ReactNode }) {
   return (
     <div className="my-3 overflow-hidden rounded-md border border-[#d0d7de] bg-white dark:border-[#30363d] dark:bg-[#161b22]">
       <div className="flex items-center justify-between border-b border-[#d0d7de] bg-[#f6f8fa] px-3 py-1.5 dark:border-[#30363d] dark:bg-[#161b22]">
-        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-[#57606a] dark:text-[#8b949e]">
+        <span className="font-mono text-[12px] font-semibold uppercase tracking-wider text-[#57606a] dark:text-[#8b949e]">
           mermaid
         </span>
         <Button

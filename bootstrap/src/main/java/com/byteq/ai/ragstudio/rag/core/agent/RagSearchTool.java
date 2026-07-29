@@ -183,6 +183,11 @@ public class RagSearchTool implements Tool {
                 chunksConsumer.accept(ctx.getChunks());
             }
 
+            if (CollUtil.isNotEmpty(ctx.getImageDataUris())) {
+                ToolResult tr = ToolResult.success(TOOL_NAME, ctx.getKbContext(), ctx.getImageDataUris());
+                tr.setS3ImageUrls(ctx.getS3ImageUrls());
+                return tr;
+            }
             return ToolResult.success(TOOL_NAME, ctx.getKbContext());
         } catch (Exception e) {
             String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();

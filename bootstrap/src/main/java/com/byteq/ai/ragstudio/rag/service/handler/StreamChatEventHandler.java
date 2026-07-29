@@ -41,6 +41,7 @@ public class StreamChatEventHandler implements StreamCallback {
     private String agentStepsJson;
     private String citationsJson;
     private int thinkingLevel;
+    private java.util.List<String> retrievedImageUrls;
 
     public void setThinkingLevel(int level) { this.thinkingLevel = level; }
 
@@ -163,6 +164,11 @@ public class StreamChatEventHandler implements StreamCallback {
         }
     }
 
+    @Override
+    public void setRetrievedImageUrls(java.util.List<String> s3Urls) {
+        this.retrievedImageUrls = s3Urls;
+    }
+
     /**
      * 将 Agent 推理步骤嵌入到 assistant 内容中
      * <p>解析 agentStepsJson 中的步骤信息，格式化为可读的推理链追加到消息内容尾部。</p>
@@ -239,7 +245,7 @@ public class StreamChatEventHandler implements StreamCallback {
 
     @Override
     public void onComplete() {
-        log.warn("onComplete called, thinkingLevel={}", thinkingLevel);
+        log.info("onComplete called, thinkingLevel={}", thinkingLevel);
         if (taskManager.isCancelled(taskId)) {
             sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
             return;
@@ -250,6 +256,9 @@ public class StreamChatEventHandler implements StreamCallback {
             ChatMessage message = ChatMessage.assistant(answer.toString(), thinkingContent,
                     resolveThinkingDuration(), agentStepsJson, citationsJson);
             message.setThinkingLevel(thinkingLevel);
+            if (retrievedImageUrls != null && !retrievedImageUrls.isEmpty()) {
+                message.setImageUrls(retrievedImageUrls);
+            }
             messageId = memoryService.append(conversationId, userId, message);
         } catch (Exception e) {
             log.error("对话完成时持久化消息失败，conversationId：{}", conversationId, e);

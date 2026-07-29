@@ -18,18 +18,22 @@
 
 ## 概述
 
-**RAGStudio** 基于 **Java 17 + Spring Boot 3.5** 构建，所有请求统一走 **ReACT Agent 循环**（Thought → Action → Observation），LLM 自主推理、调用工具、观察结果，直到给出最终答案。
+**RAGStudio** 基于 **Java 17 + Spring Boot 3.5** 构建，所有请求统一走 **ReACT Agent 循环**（JSON 结构化 Thought → Action → Observation），LLM 自主推理、调用工具、观察结果，直到给出最终答案。
 
 ### 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| **ReACT Agent 循环** | Thought → Action → Observation 循环替代传统线性 RAG 管线 |
+| **ReACT Agent 循环** | JSON 结构化输出（`{"action":"finish","final_answer":"..."}`），状态严格隔离，零跨状态串扰 |
+| **纯 OkHttp 模型调用** | 移除 LangChain4j 依赖，自研统 `ModelHttpClient` 支持同步/流式/Embedding/连通性探测 |
+| **Native Function Calling 就绪** | 工具定义自动转为 OpenAI `tools` 格式，API 响应 `tool_calls` 结构已完整解析 |
+| **统一工具发现** | `tool_reader` 遍历 MCP + SKILL 注册表，LLM 运行态自主发现和调用任意工具 |
 | **多模型路由** | 数据库驱动动态配置，百炼/DeepSeek/SiliconFlow 故障秒级切换 |
 | **混合检索** | pgvector 语义 + tsvector 关键词，RRF 融合排序 |
-| **MCP 协议** | 运行态发现和调用外部工具，Agent 自主决策 |
+| **OBSERVATION 角色隔离** | 工具执行结果以独立 `observation` 角色注入，LLM 不再混淆系统反馈与用户发言 |
+| **顺序 Chunk 引用** | 知识块编号 `[^chunk_1][^chunk_2]` 替代长 Snowflake ID，LLM 引用准确率大幅提升 |
 | **深度思考** | 0–100% 可调推理深度，分步链式思考过程可见 |
-| **多模态对话** | 图片上传（文件/粘贴），S3 存储 + 预签名 HTTP 展示 |
+| **多模态知识库** | 图片/PDF/Office 文档多模态分块与嵌入，IMAGE chunk 独立向量检索，检索结果图片直通多模态 LLM |
 | **SKILL 技能系统** | 写 YAML 定义工具，零代码接入 Agent 循环 |
 | **全链路追踪** | 自研轻量级分布式追踪，记录管线每个阶段耗时 |
 | **数据摄取管线** | 可视化编排的文档处理流水线：抓取 → 解析 → 分块 → 增强 → 索引 |
@@ -57,7 +61,7 @@ StreamChatPipeline
 | 层级 | 技术 |
 |------|------|
 | 后端 | Java 17, Spring Boot 3.5, MyBatis-Plus, RocketMQ, Sa-Token |
-| AI 引擎 | ReACT Agent Loop + Spring AI (OpenAI 兼容) |
+| AI 引擎 | JSON 结构化 ReACT Agent + 纯 OkHttp OpenAI 兼容调用 |
 | 向量存储 | PostgreSQL + pgvector (HNSW) + tsvector (GIN) |
 | 前端 | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand |
 | 基础设施 | Redis, Docker 沙箱, S3 对象存储 |
@@ -114,23 +118,20 @@ cd frontend && npm install && npm run dev   # → http://localhost:5173
 ### Agent 循环
 
 ```
-迭代 0:  Thought → 需要查日期
-          Action → time_now({})
-          Observation → 2026年6月21日
+迭代 0:  LLM → {"action":"time_now","action_input":{}}
+         系统 → Observation: 2026年6月21日
 
-迭代 1:  Thought → 查节日
-          Action → web_search({"query": "6月21日 节日"})
-          Observation → 父亲节
+迭代 1:  LLM → {"action":"web_search","action_input":{"query":"6月21日节日"}}
+         系统 → Observation: 父亲节
 
-迭代 2:  Thought → 信息充分
-          Action → FINISH
-          Final Answer → 今天是2026年6月21日，父亲节。
+迭代 2:  LLM → {"action":"finish","final_answer":"今天是2026年6月21日，父亲节。"}
+         → 流式推送至前端
 ```
 
-- **先规划再执行**：多步任务先输出 Plan 规划再逐步执行
-- **知识库相关性判断**：进入循环前用 LLM 判断哪些知识库相关，只检索这些
-- **缺参数处理**：可搜索参数（日期）自动获取；用户参数（城市）反问用户
-- **格式校正**：LLM 未按格式输出时自动注入纠正提示重试
+- **JSON 结构化输出**：LLM 输出纯 JSON，解析器提取 `action` / `final_answer` 字段，不再做文本正则猜测
+- **工具全量注册**：MCP + SKILL 全部注册到 ToolRegistry，LLM 通过 `tool_reader` 运行态发现和调用任意工具
+- **OBSERVATION 角色隔离**：工具结果以独立角色注入，LLM 不会误认为用户发言
+- **格式校正**：LLM 未按 JSON 格式输出时自动注入纠正提示重试
 
 ### 深度思考
 
@@ -163,7 +164,7 @@ RRF 公式：`score = Σ 1/(60 + rank)`，无需人工调权重。
 ### MCP 集成
 
 - 运行时注册外部 MCP 服务器（SSE / Streamable HTTP）
-- Agent 在循环中自主发现和调用工具
+- Agent 通过 `tool_reader search` 在循环中自主发现和调用工具
 - 失败时可自动重试或切换工具
 
 ### SKILL 技能系统

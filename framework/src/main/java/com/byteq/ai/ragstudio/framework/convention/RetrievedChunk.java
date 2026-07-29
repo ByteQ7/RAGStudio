@@ -51,4 +51,24 @@ public class RetrievedChunk {
      * 所属文档名称
      */
     private String docName;
+
+    /**
+     * 附加元数据（从向量库 metadata JSON 中提取）
+     */
+    private java.util.Map<String, Object> metadata;
+
+    /**
+     * 内容类型: TEXT / IMAGE
+     */
+    private String contentType;
+
+    public ChunkType getType() {
+        return ChunkType.from(contentType);
+    }
+
+    public boolean isType(ChunkType type) {
+        return getType() == type;
+    }
+
+    public boolean isImage() { return getType() == ChunkType.IMAGE; }
 }

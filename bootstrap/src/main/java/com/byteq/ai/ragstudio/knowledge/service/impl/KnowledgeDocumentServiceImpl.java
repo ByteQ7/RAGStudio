@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.knowledge.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Assert;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -16,6 +17,7 @@ import com.byteq.ai.ragstudio.core.chunk.ChunkingMode;
 import com.byteq.ai.ragstudio.core.chunk.ChunkingOptions;
 import com.byteq.ai.ragstudio.core.chunk.ChunkingStrategy;
 import com.byteq.ai.ragstudio.core.chunk.ChunkingStrategyFactory;
+import com.byteq.ai.ragstudio.core.chunk.ImageChunkGenerator;
 import com.byteq.ai.ragstudio.core.chunk.VectorChunk;
 import com.byteq.ai.ragstudio.core.parser.DocumentParserSelector;
 import com.byteq.ai.ragstudio.core.parser.ParserType;
@@ -70,7 +72,14 @@ import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.text.PDFTextStripper;
+
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -109,6 +118,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final KnowledgeScheduleProperties scheduleProperties;
     private final RemoteFileFetcher remoteFileFetcher;
     private final DocumentVisionExtractor documentVisionExtractor;
+    private final ImageChunkGenerator imageChunkGenerator;
 
     @Value("knowledge-document-chunk_topic${unique-name:}")
     private String chunkTopic;
@@ -269,12 +279,29 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     // 持久化分块结果：Phase1 在事务中删除旧分块、批量创建新分块并更新文档状态；Phase2 在事务外写入向量库
     private int persistChunksAndVectors(String collectionName, String docId, int dimension, List<VectorChunk> chunkResults) {
+        // 使用实际 embedding 维度（多模态模型可能返回与 KB 配置不同的维度）
+        int actualDim = dimension;
+        if (chunkResults != null && !chunkResults.isEmpty()) {
+            VectorChunk first = chunkResults.get(0);
+            if (first.getEmbedding() != null && first.getEmbedding().length != dimension) {
+                actualDim = first.getEmbedding().length;
+                log.warn("Embedding 实际维度 {} 与 KB 配置维度 {} 不一致，使用实际维度入库", actualDim, dimension);
+            }
+        }
+        final int effectiveDim = actualDim;
         List<KnowledgeChunkCreateRequest> chunks = chunkResults.stream()
                 .map(vc -> {
                     KnowledgeChunkCreateRequest req = new KnowledgeChunkCreateRequest();
                     req.setChunkId(vc.getChunkId());
                     req.setIndex(vc.getIndex());
-                    req.setContent(vc.getContent());
+                    req.setContent(vc.isImage() ? "[图片]" : vc.getContent());
+                    req.setContentType(vc.isImage() ? "IMAGE" : "TEXT");
+                    if (vc.isImage() && vc.getMetadata() != null) {
+                        Object imageUrl = vc.getMetadata().get("image_url");
+                        if (imageUrl instanceof String url && !url.isBlank()) {
+                            req.setImageUrl(url);
+                        }
+                    }
                     return req;
                 })
                 .toList();
@@ -297,8 +324,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         int maxRetries = 3;
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                vectorStoreService.deleteDocumentVectors(collectionName, docId, dimension);
-                vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, chunkResults);
+                vectorStoreService.deleteDocumentVectors(collectionName, docId, effectiveDim);
+                vectorStoreService.indexDocumentChunks(collectionName, docId, effectiveDim, chunkResults);
                 break;
             } catch (Exception e) {
                 log.warn("向量存储操作失败（第{}/{}次），collectionName={}, docId={}, chunkCount={}",
@@ -344,15 +371,23 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
      * 4 阶段中的前 3 阶段：Extract → Chunk → Embed
      */
     private ChunkProcessResult runChunkProcess(KnowledgeDocumentDO documentDO) {
+        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
+        String embeddingModel = kbDO.getEmbeddingModel();
+        String mimeType = documentDO.getFileType();
+        boolean supportsImageEmbedding = kbDO.getSupportsImageEmbedding() != null && kbDO.getSupportsImageEmbedding() == 1;
+
+        // 多模态 KB + 可被多模态处理的文件类型 → 走新流程
+        if (supportsImageEmbedding && isMultimodalFileType(mimeType)) {
+            return runMultimodalProcess(documentDO, kbDO, embeddingModel, mimeType);
+        }
+
+        // ======== 传统文本处理流程（保持不变）========
         ChunkingMode chunkingMode = ChunkingMode.fromValue(documentDO.getChunkStrategy());
         if (chunkingMode == null) {
             chunkingMode = ChunkingMode.STRUCTURE_AWARE;
             log.warn("文档分块策略未配置，使用默认策略: {}, docId={}", chunkingMode.getValue(), documentDO.getId());
         }
-        KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
-        String embeddingModel = kbDO.getEmbeddingModel();
         ChunkingOptions config = buildChunkingOptions(chunkingMode, documentDO);
-        String mimeType = documentDO.getFileType();
 
         long extractStart = System.currentTimeMillis();
         try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
@@ -410,6 +445,209 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    private static boolean isMultimodalFileType(String fileType) {
+        if (fileType == null) return false;
+        String ft = fileType.toLowerCase();
+        return ft.startsWith("image/")
+                || "png".equals(ft) || "jpg".equals(ft) || "jpeg".equals(ft) || "gif".equals(ft)
+                || "webp".equals(ft) || "bmp".equals(ft) || "tiff".equals(ft) || "tif".equals(ft)
+                || "pdf".equals(ft) || "application/pdf".equalsIgnoreCase(ft)
+                || "odt".equals(ft) || "ods".equals(ft) || "odp".equals(ft)
+                || "docx".equals(ft) || "pptx".equals(ft) || "xlsx".equals(ft)
+                || "doc".equals(ft) || "ppt".equals(ft) || "xls".equals(ft);
+    }
+
+    /**
+     * 多模态 KB 统一处理入口：根据文件类型分派到不同的处理器
+     */
+    private ChunkProcessResult runMultimodalProcess(KnowledgeDocumentDO documentDO, KnowledgeBaseDO kbDO,
+                                                     String embeddingModel, String mimeType) {
+        log.info("多模态处理: fileType={}, docId={}, model={}", mimeType, documentDO.getId(), embeddingModel);
+
+        if (isImageExtension(mimeType)) {
+            return runImageProcess(documentDO, kbDO, embeddingModel, mimeType);
+        }
+        if (documentVisionExtractor.isPdf(mimeType)) {
+            return runPdfMultimodalProcess(documentDO, kbDO, embeddingModel, mimeType);
+        }
+        return runOfficeMultimodalProcess(documentDO, kbDO, embeddingModel, mimeType);
+    }
+
+    private static String chunkBaseKey(String collectionName, String docId) {
+        return RAGConstant.S3_DOCUMENT_PREFIX + "/" + collectionName + "/" + docId;
+    }
+
+    /**
+     * 图片文件多模态处理：直接生成 IMAGE chunk，不走文本提取和分块
+     */
+    private ChunkProcessResult runImageProcess(KnowledgeDocumentDO documentDO, KnowledgeBaseDO kbDO,
+                                                String embeddingModel, String mimeType) {
+        String docId = documentDO.getId();
+        String bucketName = RAGConstant.S3_BUCKET_NAME;
+        String baseKey = chunkBaseKey(kbDO.getCollectionName(), docId);
+
+        byte[] fileBytes;
+        try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
+            fileBytes = is.readAllBytes();
+        } catch (Exception e) {
+            throw new RuntimeException("读取图片文件失败: " + docId, e);
+        }
+
+        VectorChunk chunk = imageChunkGenerator.generateFromImage(fileBytes, mimeType, bucketName, baseKey, docId, 0);
+        if (chunk == null) {
+            throw new RuntimeException("图片处理失败: " + docId);
+        }
+        List<VectorChunk> chunks = List.of(chunk);
+
+        long embedStart = System.currentTimeMillis();
+        chunkEmbeddingService.embed(chunks, embeddingModel, kbDO.getDimension());
+        long embedDuration = System.currentTimeMillis() - embedStart;
+
+        log.info("图片直接嵌入完成: docId={}, model={}", docId, embeddingModel);
+        return new ChunkProcessResult(chunks, 0, 0, embedDuration);
+    }
+
+    /**
+     * PDF 多模态处理：逐页检测内容类型，文字页 TEXT embed，图表页 IMAGE embed
+     */
+    private ChunkProcessResult runPdfMultimodalProcess(KnowledgeDocumentDO documentDO, KnowledgeBaseDO kbDO,
+                                                        String embeddingModel, String mimeType) {
+        String docId = documentDO.getId();
+        String bucketName = RAGConstant.S3_BUCKET_NAME;
+        String baseKey = chunkBaseKey(kbDO.getCollectionName(), docId);
+        byte[] fileBytes;
+        try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
+            fileBytes = is.readAllBytes();
+        } catch (Exception e) {
+            throw new RuntimeException("读取 PDF 文件失败: " + docId, e);
+        }
+
+        Set<Integer> imagePages = new HashSet<>(documentVisionExtractor.findPagesWithImages(fileBytes));
+        log.info("PDF 页面检测: totalImagePages={}, docId={}", imagePages.size(), docId);
+
+        List<VectorChunk> chunks = new ArrayList<>();
+        int totalPages;
+        try (PDDocument pdfDoc = Loader.loadPDF(fileBytes)) {
+            PDFRenderer renderer = new PDFRenderer(pdfDoc);
+            PDFTextStripper stripper = new PDFTextStripper();
+            totalPages = Math.min(pdfDoc.getNumberOfPages(), 50);
+
+            for (int i = 0; i < totalPages; i++) {
+                if (imagePages.contains(i)) {
+                    VectorChunk chunk = imageChunkGenerator.generateSinglePage(pdfDoc, renderer, i,
+                            bucketName, baseKey, docId);
+                    if (chunk != null) chunks.add(chunk);
+                } else {
+                    stripper.setStartPage(i + 1);
+                    stripper.setEndPage(i + 1);
+                    String pageText = stripper.getText(pdfDoc).trim();
+                    if (StrUtil.isNotBlank(pageText)) {
+                        chunks.add(VectorChunk.builder()
+                                .chunkId(IdUtil.getSnowflakeNextIdStr())
+                                .index(i)
+                                .content(pageText)
+                                .contentType("TEXT")
+                                .metadata(Map.of("page_number", i, "doc_id", docId))
+                                .build());
+                    }
+                }
+            }
+
+            if (totalPages > 0 && chunks.isEmpty()) {
+                throw new RuntimeException("PDF 多模态处理未产生任何分块: docId=" + docId);
+            }
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("PDF 多模态处理失败: docId=" + docId, e);
+        }
+
+        long embedStart = System.currentTimeMillis();
+        chunkEmbeddingService.embed(chunks, embeddingModel, kbDO.getDimension());
+        long embedDuration = System.currentTimeMillis() - embedStart;
+
+        log.info("PDF 多模态处理完成: docId={}, pages={}, textChunks={}, imageChunks={}, model={}",
+                docId, totalPages,
+                chunks.stream().filter(c -> !c.isImage()).count(),
+                chunks.stream().filter(VectorChunk::isImage).count(),
+                embeddingModel);
+        return new ChunkProcessResult(chunks, 0, 0, embedDuration);
+    }
+
+    /**
+     * Office 文档多模态处理：文本 TEXT embed + 嵌入图片 IMAGE embed
+     */
+    private ChunkProcessResult runOfficeMultimodalProcess(KnowledgeDocumentDO documentDO, KnowledgeBaseDO kbDO,
+                                                           String embeddingModel, String mimeType) {
+        String docId = documentDO.getId();
+        long extractStart = System.currentTimeMillis();
+
+        // 先用 Tika 提取全文
+        try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
+            String text = parserSelector.select(ParserType.TIKA.getType()).extractAsMarkdown(is, documentDO.getDocName());
+            long extractDuration = System.currentTimeMillis() - extractStart;
+
+            // 简单文本分块（Office 文档通常结构清晰，用结构感知策略）
+            ChunkingStrategy chunkingStrategy = chunkingStrategyFactory.requireStrategy(ChunkingMode.STRUCTURE_AWARE);
+            ChunkingOptions config = ChunkingMode.STRUCTURE_AWARE.createDefaultOptions(1400, 0);
+            List<VectorChunk> textChunks = chunkingStrategy.chunk(text, config);
+            textChunks.forEach(c -> c.setContentType("TEXT"));
+
+            // 尝试提取嵌入图片
+            List<VectorChunk> imageChunks = List.of();
+            if (documentVisionExtractor.mayContainEmbeddedImages(mimeType)) {
+                imageChunks = extractEmbeddedImageChunks(documentDO, kbDO, mimeType);
+                if (!imageChunks.isEmpty()) {
+                    log.info("提取到 {} 个嵌入图片块: docId={}", imageChunks.size(), docId);
+                }
+            }
+
+            List<VectorChunk> allChunks = new ArrayList<>(textChunks);
+            allChunks.addAll(imageChunks);
+
+            long embedStart = System.currentTimeMillis();
+            chunkEmbeddingService.embed(allChunks, embeddingModel, kbDO.getDimension());
+            long embedDuration = System.currentTimeMillis() - embedStart;
+
+            log.info("Office 文档多模态处理完成: docId={}, textChunks={}, imageChunks={}, model={}",
+                    docId, textChunks.size(), imageChunks.size(), embeddingModel);
+            return new ChunkProcessResult(allChunks, extractDuration, 0, embedDuration);
+        } catch (Exception e) {
+            throw new RuntimeException("Office 文档多模态处理失败: docId=" + docId, e);
+        }
+    }
+
+    /**
+     * 从 Office 文档中提取嵌入图片并生成 IMAGE chunk
+     */
+    private List<VectorChunk> extractEmbeddedImageChunks(KnowledgeDocumentDO documentDO, KnowledgeBaseDO kbDO,
+                                                          String mimeType) {
+        String docId = documentDO.getId();
+        String bucketName = RAGConstant.S3_BUCKET_NAME;
+        String baseKey = chunkBaseKey(kbDO.getCollectionName(), docId);
+        try {
+            byte[] fileBytes;
+            try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
+                fileBytes = is.readAllBytes();
+            }
+            List<DocumentVisionExtractor.ExtractedImage> images =
+                    documentVisionExtractor.extractEmbeddedImageBytes(fileBytes);
+            if (images.isEmpty()) return List.of();
+
+            List<VectorChunk> chunks = new ArrayList<>();
+            for (int i = 0; i < images.size(); i++) {
+                DocumentVisionExtractor.ExtractedImage img = images.get(i);
+                VectorChunk chunk = imageChunkGenerator.generateFromImage(
+                        img.bytes(), img.mimeType(), bucketName, baseKey, docId, i);
+                if (chunk != null) chunks.add(chunk);
+            }
+            return chunks;
+        } catch (Exception e) {
+            log.warn("提取嵌入图片失败: docId={}", docId, e);
+            return List.of();
+        }
+    }
+
     // 判断文件扩展名是否为常见图片格式
     private static boolean isImageExtension(String fileType) {
         if (fileType == null) return false;
@@ -417,6 +655,17 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             case "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "svg", "ico" -> true;
             default -> fileType.startsWith("image/");
         };
+    }
+
+    // 根据 S3 URL 的文件扩展名推断 MIME 类型
+    private static String detectImageMimeType(String url) {
+        if (url == null) return "image/jpeg";
+        String lower = url.toLowerCase();
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".bmp")) return "image/bmp";
+        return "image/jpeg";
     }
 
     // 带超时（120秒）的视觉提取，防止 LLM 调用挂死线程
@@ -494,6 +743,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                         .logicalName(kbDO.getCollectionName())
                         .build())
                 .skipIndexerWrite(true)
+                .supportsImageEmbedding(kbDO.getSupportsImageEmbedding() != null && kbDO.getSupportsImageEmbedding() == 1)
                 .build();
 
         IngestionContext result;
@@ -804,18 +1054,40 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         List<VectorChunk> vectorChunks = null;
         if (enabled) {
             List<KnowledgeChunkVO> chunks = knowledgeChunkService.listByDocId(docId);
-            vectorChunks = chunks.stream().map(each ->
-                    VectorChunk.builder()
-                            .chunkId(each.getId())
-                            .content(each.getContent())
-                            .index(each.getChunkIndex())
-                            .build()
-            ).toList();
+            vectorChunks = chunks.stream().map(each -> {
+                        String contentType = each.getContentType();
+                        boolean isImage = "IMAGE".equalsIgnoreCase(contentType);
+                        Map<String, Object> metadata = new HashMap<>();
+
+                        VectorChunk.VectorChunkBuilder builder = VectorChunk.builder()
+                                .chunkId(each.getId())
+                                .content(each.getContent())
+                                .index(each.getChunkIndex())
+                                .contentType(contentType);
+
+                        if (isImage && each.getImageUrl() != null && !each.getImageUrl().isBlank()) {
+                            metadata.put("image_url", each.getImageUrl());
+                            try (InputStream is = fileStorageService.openStream(each.getImageUrl())) {
+                                byte[] imageBytes = is.readAllBytes();
+                                String mimeType = detectImageMimeType(each.getImageUrl());
+                                String base64 = Base64.getEncoder().encodeToString(imageBytes);
+                                metadata.put("image_base64", "data:" + mimeType + ";base64," + base64);
+                            } catch (Exception e) {
+                                log.warn("enable() 下载图片失败，回退为 TEXT 类型: chunkId={}, url={}",
+                                        each.getId(), each.getImageUrl(), e);
+                                builder.contentType("TEXT");
+                                metadata.clear();
+                            }
+                        }
+
+                        return builder.metadata(metadata).build();
+                    })
+                    .toList();
             if (CollUtil.isEmpty(vectorChunks)) {
                 log.warn("启用文档时未找到任何 Chunk，跳过向量重建，docId={}", docId);
                 return;
             }
-            chunkEmbeddingService.embed(vectorChunks, kbDO.getEmbeddingModel());
+            chunkEmbeddingService.embed(vectorChunks, kbDO.getEmbeddingModel(), kbDO.getDimension());
         }
 
         final List<VectorChunk> finalVectorChunks = vectorChunks;

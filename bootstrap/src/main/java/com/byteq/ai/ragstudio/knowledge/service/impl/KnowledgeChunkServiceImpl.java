@@ -240,6 +240,8 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                     .contentHash(SecureUtil.sha256(content))
                     .charCount(content.length())
                     .tokenCount(resolveTokenCount(content))
+                    .contentType(StringUtils.hasText(request.getContentType()) ? request.getContentType() : "TEXT")
+                    .imageUrl(request.getImageUrl())
                     .enabled(1)
                     .createdBy(username)
                     .updatedBy(username)
@@ -262,6 +264,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                             .chunkId(String.valueOf(each.getId()))
                             .content(each.getContent())
                             .index(each.getChunkIndex())
+                            .contentType(each.getContentType() != null ? each.getContentType() : "TEXT")
                             .build())
                     .toList();
             if (CollUtil.isNotEmpty(vectorChunks)) {

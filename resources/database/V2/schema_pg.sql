@@ -249,6 +249,8 @@ CREATE TABLE t_knowledge_chunk (
     content_hash VARCHAR(64),
     char_count   INTEGER,
     token_count  INTEGER,
+    content_type VARCHAR(32) DEFAULT 'TEXT',
+    image_url    VARCHAR(1024),
     enabled      SMALLINT    NOT NULL DEFAULT 1,
     created_by   VARCHAR(64) NOT NULL,
     updated_by   VARCHAR(64),

@@ -71,7 +71,8 @@ const emptyProviderForm = (): AiProviderPayload & { endpointsJson: string; iconF
   endpoints: {},
   enabled: 1,
   endpointsJson: "",
-  iconFile: null
+  iconFile: null,
+  apiProtocol: "openai"
 });
 
 const emptyModelForm = () => ({
@@ -85,7 +86,8 @@ const emptyModelForm = () => ({
   supportsMultimodal: 0,
   dimension: undefined as number[] | undefined,
   dimensionText: "",
-  customUrl: ""
+  customUrl: "",
+  apiProtocol: "__inherit__"
 });
 
 // ==================== Helpers ====================
@@ -186,7 +188,8 @@ export function AiModelConfigPage() {
       apiKey: provider.apiKey || "",
       endpoints: provider.endpoints || {},
       enabled: provider.enabled,
-      endpointsJson
+      endpointsJson,
+      apiProtocol: provider.apiProtocol || "openai"
     });
     setProviderDialogMode("edit");
     setEditingProviderId(provider.id);
@@ -223,7 +226,8 @@ export function AiModelConfigPage() {
       baseUrl: providerForm.baseUrl.trim(),
       apiKey: providerForm.apiKey?.trim() || undefined,
       endpoints: endpoints || undefined,
-      enabled: providerForm.enabled ?? 1
+      enabled: providerForm.enabled ?? 1,
+      apiProtocol: providerForm.apiProtocol || "openai"
     };
 
     try {
@@ -323,7 +327,8 @@ export function AiModelConfigPage() {
       supportsMultimodal: model.supportsMultimodal ?? 0,
       dimension: model.dimension ?? undefined,
       dimensionText: dimensionArrayToText(model.dimension ?? undefined),
-      customUrl: model.customUrl || ""
+      customUrl: model.customUrl || "",
+      apiProtocol: model.apiProtocol || "__inherit__"
     });
     setModelDialogMode("edit");
     setEditingModelId(model.id);
@@ -369,7 +374,8 @@ export function AiModelConfigPage() {
       supportsThinking: modelForm.supportsThinking ?? 0,
       supportsMultimodal: modelForm.supportsMultimodal ?? 0,
       dimension,
-      customUrl: modelForm.customUrl?.trim() || undefined
+      customUrl: modelForm.customUrl?.trim() ?? "",
+      apiProtocol: modelForm.apiProtocol === "__inherit__" ? undefined : modelForm.apiProtocol?.trim() || undefined
     };
 
     try {
@@ -473,7 +479,7 @@ export function AiModelConfigPage() {
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <div>
             <h1 className="text-xs font-semibold text-gray-900">供应商</h1>
-            <p className="text-[10px] text-gray-400 mt-0.5">{providers.length} 个</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{providers.length} 个</p>
           </div>
           <Button
             variant="ghost"
@@ -597,6 +603,25 @@ export function AiModelConfigPage() {
                 type="password"
                 placeholder="sk-..."
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">API 协议</Label>
+              <Select
+                value={providerForm.apiProtocol}
+                onValueChange={(v) =>
+                  setProviderForm((prev) => ({ ...prev, apiProtocol: v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择协议" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai">OpenAI 兼容</SelectItem>
+                  <SelectItem value="dashscope">DashScope（百炼原生）</SelectItem>
+                  <SelectItem value="anthropic">Anthropic 兼容</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -818,6 +843,26 @@ export function AiModelConfigPage() {
                 }
                 placeholder="可选，覆盖供应商的 API 地址"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">协议覆盖</Label>
+              <Select
+                value={modelForm.apiProtocol}
+                onValueChange={(v) =>
+                  setModelForm((prev) => ({ ...prev, apiProtocol: v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="继承供应商协议" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__inherit__">继承供应商</SelectItem>
+                  <SelectItem value="openai">OpenAI 兼容</SelectItem>
+                  <SelectItem value="dashscope">DashScope（百炼原生）</SelectItem>
+                  <SelectItem value="anthropic">Anthropic 兼容</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-3">

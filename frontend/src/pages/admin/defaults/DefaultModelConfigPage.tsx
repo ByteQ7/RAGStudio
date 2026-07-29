@@ -261,7 +261,7 @@ export function DefaultModelConfigPage() {
                                     {model.providerName}
                                   </span>
                                   {isMultimodalScene && model.supportsMultimodal !== 1 && (
-                                    <span className="ml-2 text-[10px] text-amber-400">
+                                    <span className="ml-2 text-[11px] text-amber-400">
                                       不支持多模态
                                     </span>
                                   )}

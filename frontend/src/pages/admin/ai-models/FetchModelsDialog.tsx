@@ -305,7 +305,7 @@ export function FetchModelsDialog({
                         >
                           <meta.icon className={cn("h-3.5 w-3.5", meta.color)} />
                           {meta.label}
-                          <span className="ml-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">{count}</span>
+                          <span className="ml-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-500 tabular-nums">{count}</span>
                         </TabsTrigger>
                       );
                     })}
@@ -370,19 +370,19 @@ export function FetchModelsDialog({
                                   {model.modelId}
                                 </span>
                                 {model.supportsThinking && (
-                                  <Badge className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[10px] text-violet-600">思考</Badge>
+                                  <Badge className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[11px] text-violet-600">思考</Badge>
                                 )}
                                 {model.supportsMultimodal && (
-                                  <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-2 py-0 text-[10px] text-emerald-600">多模态</Badge>
+                                  <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-2 py-0 text-[11px] text-emerald-600">多模态</Badge>
                                 )}
                                 {exists && (
-                                  <Badge className="rounded-full border-gray-200 bg-gray-100 px-2 py-0 text-[10px] text-gray-500">已存在</Badge>
+                                  <Badge className="rounded-full border-gray-200 bg-gray-100 px-2 py-0 text-[11px] text-gray-500">已存在</Badge>
                                 )}
                               </div>
 
                               {!exists && (
                                 <div className="mt-1.5 flex items-center gap-2">
-                                  <span className="text-[11px] text-gray-400">显示名称:</span>
+                                  <span className="text-[12px] text-gray-400">显示名称:</span>
                                   <Input
                                     value={importNameOverrides[model.modelId] ?? model.modelName}
                                     onChange={(e) => setImportNameOverrides((prev) => ({ ...prev, [model.modelId]: e.target.value }))}
@@ -400,7 +400,7 @@ export function FetchModelsDialog({
                                 if (!m) return null;
                                 const Icon = m.icon;
                                 return (
-                                  <Badge key={c} variant="outline" className={cn("rounded-full px-2 py-0 text-[10px]", exists ? "border-gray-200 text-gray-400" : m.color)}>
+                                  <Badge key={c} variant="outline" className={cn("rounded-full px-2 py-0 text-[11px]", exists ? "border-gray-200 text-gray-400" : m.color)}>
                                     <Icon className="mr-0.5 h-3 w-3" />
                                     {m.label}
                                   </Badge>

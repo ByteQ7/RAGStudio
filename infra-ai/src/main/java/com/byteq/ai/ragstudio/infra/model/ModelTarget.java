@@ -32,4 +32,14 @@ public record ModelTarget(
         DynamicModelConfig.ModelEntry candidate,
         DynamicModelConfig.ProviderEntry provider
 ) {
+    /** 获取生效的协议名称：模型级覆盖 > 供应商级 > 默认 openai */
+    public String protocolName() {
+        if (candidate.getProtocol() != null && !candidate.getProtocol().isBlank()) {
+            return candidate.getProtocol();
+        }
+        if (provider.getProtocol() != null && !provider.getProtocol().isBlank()) {
+            return provider.getProtocol();
+        }
+        return "openai";
+    }
 }

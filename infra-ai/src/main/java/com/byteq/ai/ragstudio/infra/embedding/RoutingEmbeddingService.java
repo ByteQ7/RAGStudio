@@ -2,6 +2,7 @@ package com.byteq.ai.ragstudio.infra.embedding;
 
 import com.byteq.ai.ragstudio.infra.enums.ModelCapability;
 import com.byteq.ai.ragstudio.framework.exception.RemoteException;
+import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
@@ -103,6 +104,15 @@ public class RoutingEmbeddingService implements EmbeddingService {
         );
     }
 
+    @Override
+    public List<Float> embed(String text, String modelId, Integer dimension) {
+        if (dimension == null || dimension <= 0) {
+            return embed(text, modelId);
+        }
+        List<List<Float>> batch = embedBatch(List.of(text), modelId, dimension);
+        return batch.isEmpty() ? List.of() : batch.get(0);
+    }
+
     /**
      * 批量将多个文本转换为嵌入向量（使用默认模型路由）
      * <p>
@@ -136,6 +146,36 @@ public class RoutingEmbeddingService implements EmbeddingService {
                 List.of(resolveTarget(modelId)),
                 this::resolveClient,
                 (client, target) -> client.embedBatch(texts, target)
+        );
+    }
+
+    @Override
+    public List<List<Float>> embedBatch(List<String> texts, String modelId, Integer dimension) {
+        if (dimension == null || dimension <= 0) {
+            return embedBatch(texts, modelId);
+        }
+        ModelTarget original = resolveTarget(modelId);
+        DynamicModelConfig.ModelEntry entry = DynamicModelConfig.ModelEntry.builder()
+                .id(original.candidate().getId())
+                .provider(original.candidate().getProvider())
+                .model(original.candidate().getModel())
+                .url(original.candidate().getUrl())
+                .dimension(dimension)
+                .dimensions(original.candidate().getDimensions())
+                .priority(original.candidate().getPriority())
+                .enabled(original.candidate().getEnabled())
+                .supportsThinking(original.candidate().getSupportsThinking())
+                .supportsMultimodal(original.candidate().getSupportsMultimodal())
+                .isDefault(original.candidate().getIsDefault())
+                .capability(original.candidate().getCapability())
+                .protocol(original.candidate().getProtocol())
+                .build();
+        ModelTarget target = new ModelTarget(original.id(), entry, original.provider());
+        return executor.executeWithFallback(
+                ModelCapability.EMBEDDING,
+                List.of(target),
+                this::resolveClient,
+                (client, t) -> client.embedBatch(texts, t)
         );
     }
 

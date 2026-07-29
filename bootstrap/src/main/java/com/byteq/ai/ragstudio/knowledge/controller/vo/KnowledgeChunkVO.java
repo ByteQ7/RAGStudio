@@ -51,6 +51,16 @@ public class KnowledgeChunkVO {
     private Integer tokenCount;
 
     /**
+     * 分块内容类型：TEXT / IMAGE
+     */
+    private String contentType;
+
+    /**
+     * 图片 S3 URL（仅 IMAGE 类型 chunk）
+     */
+    private String imageUrl;
+
+    /**
      * 是否启用 0：禁用 1：启用
      */
     private Integer enabled;

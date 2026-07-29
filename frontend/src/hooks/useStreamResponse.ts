@@ -67,7 +67,13 @@ async function readSseStream(response: Response, handlers: StreamHandlers, signa
         }
         break;
       case "citation":
-        handlers.onCitation?.(payload as Citation[]);
+        // 防御后端双重 JSON 编码：SseEmitter.event().data(String) 会将 JSON 字符串再次序列化
+        // 前端 parseData 解析后可能得到 string 而非 array，需再次解包
+        handlers.onCitation?.(
+          Array.isArray(payload) ? (payload as Citation[])
+            : typeof payload === "string" ? (JSON.parse(payload) as Citation[])
+            : []
+        );
         break;
       case "finish":
         handlers.onFinish?.(payload as CompletionPayload);

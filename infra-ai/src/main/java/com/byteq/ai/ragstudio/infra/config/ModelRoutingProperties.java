@@ -39,6 +39,11 @@ public class ModelRoutingProperties {
     private Stream stream = new Stream();
 
     /**
+     * HTTP 客户端配置
+     */
+    private Http http = new Http();
+
+    /**
      * 模型选择策略配置类
      * <p>
      * 配置模型调用过程中的故障转移和熔断策略。
@@ -71,5 +76,25 @@ public class ModelRoutingProperties {
          * 消息分块大小：流式响应中每次向客户端发送的 Token 数量，默认 5
          */
         private Integer messageChunkSize = 5;
+    }
+
+    /**
+     * HTTP 客户端配置类
+     * <p>
+     * 配置调用 AI 模型时的底层 HTTP 连接参数。
+     * 适用于 Chat、Embedding、Rerank 等所有通过 {@code ModelHttpClient} 发出的请求。
+     * </p>
+     */
+    @Data
+    public static class Http {
+        /**
+         * 连接超时（秒），默认 10
+         */
+        private Long connectTimeoutSeconds = 10L;
+
+        /**
+         * 读取超时（秒），默认 120
+         */
+        private Long readTimeoutSeconds = 120L;
     }
 }

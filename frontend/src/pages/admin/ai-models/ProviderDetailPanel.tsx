@@ -263,7 +263,7 @@ export function ProviderDetailPanel({
               </h2>
               <Badge
                 className={cn(
-                  "rounded-full px-3 py-0.5 text-[11px] font-medium",
+                  "rounded-full px-3 py-0.5 text-[12px] font-medium",
                   isProviderEnabled
                     ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                     : "bg-gray-100 text-gray-500 border border-gray-200"
@@ -285,7 +285,7 @@ export function ProviderDetailPanel({
         <div className="flex items-center gap-2">
           {/* 启用/禁用开关 */}
           <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5">
-            <span className="text-[11px] font-medium text-gray-500">
+            <span className="text-[12px] font-medium text-gray-500">
               {isProviderEnabled ? "已启用" : "已禁用"}
             </span>
             {isToggling ? (
@@ -556,7 +556,7 @@ export function ProviderDetailPanel({
                 </div>
                 {connectivity.success && (
                   <Badge className={cn(
-                    "rounded-full px-3 py-0.5 text-[11px] font-medium",
+                    "rounded-full px-3 py-0.5 text-[12px] font-medium",
                     connectivity.latencyMs != null && connectivity.latencyMs < 300
                       ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
                       : "bg-amber-100 text-amber-700 border border-amber-200"

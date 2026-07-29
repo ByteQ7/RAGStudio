@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
+import { RoleBadge } from "@/components/common/RoleBadge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -162,7 +163,7 @@ export function AdminLayout() {
   const currentPath = location.pathname;
 
   return (
-    <div className="flex h-screen" style={{ background: '#f5f6f8' }}>
+    <div className="flex h-screen" style={{ background: 'var(--color-bg-layout)' }}>
       {/* Mobile sidebar overlay */}
       {mobileSidebar && (
         <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm lg:hidden" onClick={() => setMobileSidebar(false)} />
@@ -170,21 +171,21 @@ export function AdminLayout() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed lg:static inset-y-0 left-0 z-50 flex flex-col border-r border-gray-200/60 transition-all duration-300",
+        "fixed lg:static inset-y-0 left-0 z-50 flex flex-col border-r transition-all duration-200",
         collapsed ? "w-[56px]" : "w-[220px]",
         mobileSidebar ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
-        "bg-white/90 backdrop-blur-xl"
-      )}>
+        "bg-[var(--sidebar-bg)]"
+      )} style={{ borderColor: 'var(--color-border-secondary)' }}>
         {/* Logo */}
-        <div className={cn("flex h-14 items-center border-b border-gray-100/80", collapsed ? "justify-center px-0" : "px-4")}>
+        <div className={cn("flex h-14 items-center border-b", collapsed ? "justify-center px-0" : "px-4")} style={{ borderColor: 'var(--color-border-secondary)' }}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: 'var(--color-fill-quaternary)' }}>
               <RAGStudioLogo className="h-6 w-6" />
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <h1 className="text-sm font-semibold truncate" style={{ color: '#212529' }}>RAGStudio</h1>
-                <p className="text-[10px] truncate" style={{ color: '#868e96' }}>管理控制台</p>
+                <h1 className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>RAGStudio</h1>
+                <p className="text-[11px] truncate" style={{ color: 'var(--color-text-tertiary)' }}>管理控制台</p>
               </div>
             )}
           </div>
@@ -201,16 +202,23 @@ export function AdminLayout() {
                 to={item.path}
                 onClick={() => setMobileSidebar(false)}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 group",
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-100 group",
+                  "border-l-2 border-transparent",
                   isActive
                     ? "font-medium"
-                    : "text-gray-500 hover:text-gray-700",
+                    : "hover:bg-[var(--color-fill-quaternary)]",
                   collapsed && "justify-center px-2"
                 )}
-                style={isActive ? { background: 'linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.06))', color: '#6366f1' } : {}}
+                style={isActive ? {
+                  background: 'var(--color-fill-quaternary)',
+                  color: 'var(--color-text)',
+                  borderLeftColor: 'hsl(var(--primary))'
+                } : {
+                  color: 'var(--color-text-secondary)'
+                }}
                 title={collapsed ? item.label : undefined}
               >
-                <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-[#6366f1]" : "text-gray-400 group-hover:text-gray-600")} />
+                <Icon className={cn("h-4 w-4 shrink-0")} style={{ color: isActive ? 'hsl(var(--primary))' : 'var(--color-text-tertiary)' }} />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             );
@@ -218,11 +226,12 @@ export function AdminLayout() {
         </nav>
 
         {/* Collapse button */}
-        <div className="border-t border-gray-100/80 p-2">
+        <div className="border-t p-2" style={{ borderColor: 'var(--color-border-secondary)' }}>
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}
-            className="flex w-full items-center justify-center rounded-lg py-2 text-xs text-gray-400 hover:bg-gray-100/50 hover:text-gray-600 transition-all"
+            className="flex w-full items-center justify-center rounded-lg py-2 text-xs transition-all"
+            style={{ color: 'var(--color-text-tertiary)' }}
           >
             {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
           </button>
@@ -232,21 +241,21 @@ export function AdminLayout() {
       {/* Main */}
       <div className={cn("flex flex-1 flex-col min-w-0", isAiModelsRoute ? "h-screen overflow-hidden" : "h-screen overflow-y-auto")}>
         {/* Top bar */}
-        <header className="sticky top-0 z-30 border-b border-gray-200/50" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(16px) saturate(1.3)' }}>
+        <header className="sticky top-0 z-30 border-b" style={{ borderColor: 'var(--color-border-secondary)', background: 'var(--color-bg-elevated)' }}>
           <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
             <Button variant="ghost" size="icon" className="lg:hidden -ml-2" onClick={() => setMobileSidebar(true)}>
               <Menu className="h-5 w-5" />
             </Button>
 
             {/* Breadcrumb */}
-            <nav className="hidden sm:flex items-center gap-1.5 text-sm text-gray-400 min-w-0">
+            <nav className="hidden sm:flex items-center gap-1.5 text-sm min-w-0" style={{ color: 'var(--color-text-tertiary)' }}>
               {breadcrumbs.map((item, i) => (
                 <span key={i} className="flex items-center gap-1.5">
-                  {i > 0 && <span className="text-gray-300">/</span>}
+                  {i > 0 && <span className="opacity-50">/</span>}
                   {item.to && i < breadcrumbs.length - 1 ? (
-                    <Link to={item.to} className="hover:text-gray-600 transition-colors">{item.label}</Link>
+                    <Link to={item.to} className="transition-colors" style={{ color: 'var(--color-text-secondary)' }}>{item.label}</Link>
                   ) : (
-                    <span className={i === breadcrumbs.length - 1 ? "text-gray-700 font-medium" : ""}>{item.label}</span>
+                    <span className={i === breadcrumbs.length - 1 ? "font-medium" : ""} style={{ color: i === breadcrumbs.length - 1 ? 'var(--color-text)' : undefined }}>{item.label}</span>
                   )}
                 </span>
               ))}
@@ -256,7 +265,7 @@ export function AdminLayout() {
 
             {/* Search */}
             <div className="relative hidden md:block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: 'var(--color-text-tertiary)' }} />
               <input
                 ref={searchInputRef}
                 value={kbQuery}
@@ -265,36 +274,54 @@ export function AdminLayout() {
                 onBlur={() => { blurTimeoutRef.current = window.setTimeout(() => setSearchFocused(false), 150); }}
                 onKeyDown={handleSearchKeyDown}
                 placeholder="搜索 Chunk..."
-                className="h-8 w-[200px] rounded-lg border border-gray-200/60 bg-gray-50/50 pl-9 pr-3 text-xs text-gray-700 placeholder:text-gray-400 transition-all focus:w-[260px] focus:border-indigo-300/50 focus:bg-white focus:shadow-[0_0_0_2px_rgba(99,102,241,0.06)] focus:outline-none"
+                className="h-8 w-[200px] rounded-lg border pl-9 pr-3 text-xs transition-all focus:w-[260px] focus:outline-none"
+                style={{
+                  borderColor: 'var(--color-border-secondary)',
+                  background: 'var(--color-bg-container-secondary)',
+                  color: 'var(--color-text)'
+                }}
               />
               {searchFocused && kbQuery.trim() && (
-                <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border border-gray-100 bg-white py-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
-                  {searchLoading && <div className="px-3 py-2 text-xs text-gray-400">搜索中...</div>}
+                <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border py-1 shadow-lg"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    background: 'var(--color-bg-elevated)'
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}>
+                  {searchLoading && <div className="px-3 py-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>搜索中...</div>}
                   {chunkOptions.map((chunk) => (
                     <button key={chunk.id} type="button" onMouseDown={() => handleChunkSelect(chunk)}
-                      className="w-full px-3 py-2 text-left text-xs hover:bg-gray-50 transition-colors">
-                      <span className="font-mono text-gray-900">{chunk.id}</span>
-                      <span className="ml-2 text-gray-400">{chunk.kbName || '知识库'} → {chunk.docName || '文档'}</span>
+                      className="w-full px-3 py-2 text-left text-xs transition-colors hover:bg-[var(--color-fill-quaternary)]">
+                      <span className="font-mono" style={{ color: 'var(--color-text)' }}>{chunk.id}</span>
+                      <span className="ml-2" style={{ color: 'var(--color-text-tertiary)' }}>{chunk.kbName || '知识库'} → {chunk.docName || '文档'}</span>
                     </button>
                   ))}
-                  {!searchLoading && chunkOptions.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">无结果</div>}
+                  {!searchLoading && chunkOptions.length === 0 && <div className="px-3 py-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>无结果</div>}
                 </div>
               )}
             </div>
 
             {/* Right actions */}
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" className="hidden sm:inline-flex gap-1.5 text-xs" onClick={() => navigate("/chat")}>
+              <Button variant="ghost" size="sm" className="hidden sm:inline-flex gap-1.5 text-xs" onClick={() => navigate("/chat")}
+                style={{ color: 'var(--color-text-secondary)' }}>
                 <MessageSquare className="h-3.5 w-3.5" />返回聊天
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" className="flex items-center gap-2 rounded-lg border border-gray-200/60 bg-white px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors" aria-label="用户菜单">
+                  <button type="button" className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors"
+                    style={{
+                      borderColor: 'var(--color-border-secondary)',
+                      background: 'var(--color-bg-container)',
+                      color: 'var(--color-text-secondary)'
+                    }}
+                    aria-label="用户菜单">
                     <div className="flex h-6 w-6 items-center justify-center rounded-full overflow-hidden">
                       {user?.avatar && !user.avatar.startsWith('s3://') ? (
                         <img src={user.avatar} alt={user.username || '用户'} className="h-full w-full object-cover" />
                       ) : (
-                        <span className="flex h-full w-full items-center justify-center bg-indigo-50 text-[10px] font-semibold text-indigo-600">
+                        <span className="flex h-full w-full items-center justify-center text-[11px] font-semibold"
+                          style={{ background: 'var(--color-fill-quaternary)', color: 'hsl(var(--primary))' }}>
                           {(user?.username || "管").slice(0, 1).toUpperCase()}
                         </span>
                       )}
@@ -302,8 +329,10 @@ export function AdminLayout() {
                     <span className="hidden sm:inline">{user?.username || "管理员"}</span>
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" sideOffset={6} className="w-44 rounded-xl border-gray-100 p-1 shadow-lg">
-                  <div className="px-3 py-1.5 text-xs text-gray-500">{user?.username} · {user?.role === "admin" ? "管理员" : "成员"}</div>
+                <DropdownMenuContent align="end" sideOffset={6} className="w-44 p-1">
+                  <div className="px-3 py-1.5 text-xs flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
+                    {user?.username} · <RoleBadge role={(user?.role as "admin" | "user") || "admin"} />
+                  </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => fileInputRefAvatar.current?.click()} className="rounded-lg text-xs">
                     <Image className="mr-2 h-3.5 w-3.5" />更换头像
@@ -312,7 +341,7 @@ export function AdminLayout() {
                     <KeyRound className="mr-2 h-3.5 w-3.5" />修改密码
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="rounded-lg text-xs text-rose-500 focus:text-rose-500">
+                  <DropdownMenuItem onClick={handleLogout} className="rounded-lg text-xs text-destructive focus:text-destructive">
                     <LogOut className="mr-2 h-3.5 w-3.5" />退出登录
                   </DropdownMenuItem>
                 </DropdownMenuContent>

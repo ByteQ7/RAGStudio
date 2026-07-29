@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
+import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
 import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
@@ -112,6 +113,26 @@ public class ToolRegistry {
     }
 
     /**
+     * 构建 OpenAI function calling 格式的 tools 列表
+     */
+    public List<Map<String, Object>> buildOpenAiTools() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (Tool tool : tools.values()) {
+            list.add(tool.toOpenAiTool());
+        }
+        return list;
+    }
+
+    /**
+     * 按 OpenAI tool_call 格式执行工具
+     */
+    public ToolResult executeToolCall(String toolCallId, String name, Map<String, Object> args) {
+        ToolResult result = execute(name, args);
+        result.setToolCallId(toolCallId);
+        return result;
+    }
+
+    /**
      * 列出所有已注册工具
      *
      * @return 工具列表（不可变副本）
@@ -171,7 +192,7 @@ public class ToolRegistry {
                     .depth(RagTraceContext.depth())
                     .nodeType("TOOL")
                     .nodeName(name)
-                    .status("RUNNING")
+                    .status(TraceStatus.RUNNING.name())
                     .startTime(new java.util.Date())
                     .build());
             RagTraceContext.pushNode(nodeId);
@@ -186,7 +207,7 @@ public class ToolRegistry {
             log.info("工具执行完成: {}, success={}, durationMs={}",
                     name, result.isSuccess(), result.getDurationMs());
             if (tracing) {
-                traceRecordService.finishNode(traceId, nodeId, "SUCCESS", null,
+                traceRecordService.finishNode(traceId, nodeId, TraceStatus.SUCCESS.name(), null,
                         new java.util.Date(), System.currentTimeMillis() - start);
             }
             return result;
@@ -195,7 +216,7 @@ public class ToolRegistry {
             long duration = System.currentTimeMillis() - start;
             log.warn("工具执行超时: {}, timeoutMs={}", name, toolTimeout.toMillis());
             if (tracing) {
-                traceRecordService.finishNode(traceId, nodeId, "TIMEOUT",
+                traceRecordService.finishNode(traceId, nodeId, TraceStatus.TIMEOUT.name(),
                         "超时（" + toolTimeout.toMillis() + "ms）",
                         new java.util.Date(), duration);
             }
@@ -207,7 +228,7 @@ public class ToolRegistry {
             String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             log.warn("工具执行异常: {}, durationMs={}, error={}", name, duration, errorMsg);
             if (tracing) {
-                traceRecordService.finishNode(traceId, nodeId, "ERROR", errorMsg,
+                traceRecordService.finishNode(traceId, nodeId, TraceStatus.ERROR.name(), errorMsg,
                         new java.util.Date(), duration);
             }
             ToolResult failure = ToolResult.failure(name, errorMsg);

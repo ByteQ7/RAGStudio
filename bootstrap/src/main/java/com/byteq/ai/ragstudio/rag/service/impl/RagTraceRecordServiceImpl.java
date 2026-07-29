@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.rag.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceRunDO;
 import com.byteq.ai.ragstudio.rag.dao.mapper.RagTraceNodeMapper;
@@ -11,8 +12,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * RAG Trace 记录服务实现
@@ -33,6 +36,8 @@ public class RagTraceRecordServiceImpl implements RagTraceRecordService {
     private final RagTraceRunMapper runMapper;
     private final RagTraceNodeMapper nodeMapper;
     private final Executor traceRecordExecutor;
+
+    private final AtomicLong writeFailureCount = new AtomicLong(0);
 
     public RagTraceRecordServiceImpl(RagTraceRunMapper runMapper,
                                      RagTraceNodeMapper nodeMapper,
@@ -56,8 +61,11 @@ public class RagTraceRecordServiceImpl implements RagTraceRecordService {
                     .endTime(endTime)
                     .durationMs(durationMs)
                     .build();
-            runMapper.update(update, Wrappers.lambdaUpdate(RagTraceRunDO.class)
+            int rows = runMapper.update(update, Wrappers.lambdaUpdate(RagTraceRunDO.class)
                     .eq(RagTraceRunDO::getTraceId, traceId));
+            if (rows == 0) {
+                log.warn("finishRun 未更新任何行，可能 startRun 尚未提交，traceId：{}", traceId);
+            }
         });
     }
 
@@ -75,15 +83,18 @@ public class RagTraceRecordServiceImpl implements RagTraceRecordService {
                     .endTime(endTime)
                     .durationMs(durationMs)
                     .build();
-            nodeMapper.update(update, Wrappers.lambdaUpdate(RagTraceNodeDO.class)
+            int rows = nodeMapper.update(update, Wrappers.lambdaUpdate(RagTraceNodeDO.class)
                     .eq(RagTraceNodeDO::getTraceId, traceId)
                     .eq(RagTraceNodeDO::getNodeId, nodeId));
+            if (rows == 0) {
+                log.warn("finishNode 未更新任何行，open startNode 尚未提交，traceId：{}，nodeId：{}",
+                        traceId, nodeId);
+            }
         });
     }
 
     @Override
     public void deleteRun(String traceId) {
-        // 同步执行 — 用户主动请求删除，不能 fire-and-forget
         try {
             nodeMapper.delete(Wrappers.lambdaUpdate(RagTraceNodeDO.class)
                     .eq(RagTraceNodeDO::getTraceId, traceId));
@@ -96,23 +107,48 @@ public class RagTraceRecordServiceImpl implements RagTraceRecordService {
         }
     }
 
-    /**
-     * 异步执行 trace DB 操作
-     * <p>
-     * 使用 CompletableFuture.runAsync 提交到 traceRecordExecutor。
-     * DB 操作异常被捕获并记录日志，不会传播到调用方。
-     * 当执行器队列满时，CallerRunsPolicy 会降级为调用线程同步执行。
-     * </p>
-     *
-     * @param operation 操作名称（用于日志标识）
-     * @param task      DB 操作逻辑
-     */
+    @Override
+    public int markStaleRunningAsError(int timeoutMinutes) {
+        int marked = 0;
+        try {
+            Date cutoff = new Date(System.currentTimeMillis() - (long) timeoutMinutes * 60 * 1000);
+            List<RagTraceRunDO> staleRuns = runMapper.selectList(
+                    Wrappers.lambdaQuery(RagTraceRunDO.class)
+                            .eq(RagTraceRunDO::getStatus, TraceStatus.RUNNING.name())
+                            .le(RagTraceRunDO::getStartTime, cutoff)
+            );
+            for (RagTraceRunDO run : staleRuns) {
+                RagTraceRunDO update = RagTraceRunDO.builder()
+                        .status(TraceStatus.ERROR.name())
+                        .errorMessage("[Auto-marked] Run timed out after " + timeoutMinutes + " minutes")
+                        .endTime(new Date())
+                        .durationMs(System.currentTimeMillis()
+                                - (run.getStartTime() != null ? run.getStartTime().getTime() : 0))
+                        .build();
+                int rows = runMapper.update(update, Wrappers.lambdaUpdate(RagTraceRunDO.class)
+                        .eq(RagTraceRunDO::getTraceId, run.getTraceId())
+                        .eq(RagTraceRunDO::getStatus, TraceStatus.RUNNING.name()));
+                marked += rows;
+            }
+            if (marked > 0) {
+                log.info("已标记 {} 条僵死 RUNNING 记录为 ERROR", marked);
+            }
+        } catch (Exception e) {
+            log.error("标记僵死 RUNNING 记录时出错", e);
+        }
+        return marked;
+    }
+
     private void execute(String operation, Runnable task) {
         CompletableFuture.runAsync(() -> {
             try {
                 task.run();
             } catch (Exception e) {
-                log.warn("trace {} 异步写入失败", operation, e);
+                long count = writeFailureCount.incrementAndGet();
+                log.warn("trace {} 异步写入失败 (累计 {})", operation, count, e);
+                if (count % 100 == 1) {
+                    log.error("trace 异步写入失败累积 {} 次，请检查数据库和 trace 线程池状态", count);
+                }
             }
         }, traceRecordExecutor);
     }

@@ -211,7 +211,7 @@ export function DeepThinkingSlider() {
                 type="button"
                 onClick={() => setDeepThinkingLevel(v)}
                 className={cn(
-                  "text-[11px] font-medium transition-all rounded select-none px-1.5 py-0.5",
+                  "text-[12px] font-medium transition-all rounded select-none px-1.5 py-0.5",
                   deepThinkingLevel === v
                     ? "text-amber-600 bg-amber-50"
                     : "text-gray-400 hover:text-gray-600"
@@ -230,7 +230,7 @@ export function DeepThinkingSlider() {
                 deepThinkingLevel > 0 ? "text-amber-400" : "text-gray-300"
               )}
             />
-            <p className="text-[11px] text-gray-400 leading-tight">{descText}</p>
+            <p className="text-[12px] text-gray-400 leading-tight">{descText}</p>
           </div>
         </div>
       )}

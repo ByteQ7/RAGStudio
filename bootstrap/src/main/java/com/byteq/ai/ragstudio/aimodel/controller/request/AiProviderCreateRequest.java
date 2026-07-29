@@ -30,4 +30,6 @@ public class AiProviderCreateRequest {
 
     /** 是否启用（默认 1） */
     private Integer enabled;
+    /** API 协议类型: openai / dashscope / anthropic */
+    private String apiProtocol;
 }

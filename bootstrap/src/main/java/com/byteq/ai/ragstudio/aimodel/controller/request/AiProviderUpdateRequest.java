@@ -24,4 +24,7 @@ public class AiProviderUpdateRequest {
 
     /** 是否启用 */
     private Integer enabled;
+
+    /** API 协议类型: openai / dashscope / anthropic */
+    private String apiProtocol;
 }

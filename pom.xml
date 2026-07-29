@@ -26,7 +26,8 @@
         <rocketmq-spring-boot-starter.version>2.3.5</rocketmq-spring-boot-starter.version>
         <okhttp.version>4.12.0</okhttp.version>
         <mcp-sdk.version>1.1.2</mcp-sdk.version>
-        <langchain4j.version>1.0.0</langchain4j.version>
+
+
         <spotless-maven-plugin.version>2.22.1</spotless-maven-plugin.version>
         <surefire-plugin.version>3.2.5</surefire-plugin.version>
     </properties>
@@ -47,15 +48,7 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- LangChain4j BOM -->
-            <dependency>
-                <groupId>dev.langchain4j</groupId>
-                <artifactId>langchain4j-bom</artifactId>
-                <version>${langchain4j.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-
+            <!-- Tika BOM -->
             <dependency>
                 <groupId>org.apache.tika</groupId>
                 <artifactId>tika-bom</artifactId>

@@ -21,6 +21,8 @@ public class AiProviderVO {
     private Integer enabled;
     /** 供应商图标 URL */
     private String iconUrl;
+    /** API 协议类型: openai / dashscope / anthropic */
+    private String apiProtocol;
     /** 关联的模型数量 */
     private Integer modelCount;
     private Date createTime;

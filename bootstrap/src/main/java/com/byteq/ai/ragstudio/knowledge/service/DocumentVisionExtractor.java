@@ -414,13 +414,65 @@ public class DocumentVisionExtractor {
     // ==================== ZIP 嵌入图片提取（ODT/DOCX/PPTX） ====================
 
     /**
-     * 从 ZIP 格式的文档中提取嵌入图片，返回 Base64 data URI 列表
-     * <p>
-     * ODT/DOCX/PPTX 都是 ZIP 包，图片文件位于特定目录：
-     * - ODT:  Pictures/  或 media/
-     * - DOCX: word/media/
-     * - PPTX: ppt/media/
+     * 从 ZIP 格式的文档中提取嵌入图片的字节数组（用于生成 IMAGE chunk）
+     *
+     * @param zipBytes 文档的 ZIP 字节
+     * @return 提取到的图片字节和 MIME 类型列表
      */
+    public List<ExtractedImage> extractEmbeddedImageBytes(byte[] zipBytes) {
+        List<ExtractedImage> images = new ArrayList<>();
+        Set<String> imageHashes = new HashSet<>();
+        long totalBytes = 0;
+        List<String> imagePathPrefixes = List.of(
+                "pictures/", "media/",
+                "word/media/", "ppt/media/"
+        );
+        Set<String> imageExts = Set.of("png", "jpg", "jpeg", "gif", "bmp", "webp", "svg");
+
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                if (images.size() >= MAX_EMBEDDED_IMAGES) break;
+
+                String name = entry.getName().replace('\\', '/').toLowerCase();
+                if (name.startsWith("meta-inf/")) continue;
+
+                boolean isImage = imagePathPrefixes.stream().anyMatch(name::startsWith);
+                if (!isImage) {
+                    String ext = name.contains(".") ? name.substring(name.lastIndexOf('.') + 1) : "";
+                    isImage = imageExts.contains(ext);
+                }
+                if (!isImage) continue;
+
+                long entrySize = entry.getCompressedSize();
+                if (entrySize > MAX_PER_ENTRY_BYTES) continue;
+
+                byte[] imageBytes = zis.readAllBytes();
+                if (imageBytes.length == 0 || imageBytes.length > MAX_PER_ENTRY_BYTES) continue;
+
+                totalBytes += imageBytes.length;
+                if (totalBytes > MAX_TOTAL_EXTRACTED_BYTES) break;
+
+                String hash = sha256(imageBytes);
+                if (imageHashes.contains(hash)) continue;
+                imageHashes.add(hash);
+
+                String mime = detectImageMime(name, imageBytes);
+                images.add(new ExtractedImage(imageBytes, mime, name));
+            }
+        } catch (Exception e) {
+            log.warn("从 ZIP 提取嵌入图片失败: {}", e.getMessage());
+        }
+        return images;
+    }
+
+    /**
+     * ZIP 文档中提取的图片数据
+     */
+    public record ExtractedImage(byte[] bytes, String mimeType, String entryName) {
+    }
+
     private List<String> extractImagesFromZip(byte[] zipBytes) {
         List<String> dataUris = new ArrayList<>();
         Set<String> imageHashes = new HashSet<>();

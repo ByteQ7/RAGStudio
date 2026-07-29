@@ -22,4 +22,14 @@ public class KnowledgeChunkCreateRequest {
      * 分块 ID
      */
     private String chunkId;
+
+    /**
+     * 分块内容类型：TEXT / IMAGE
+     */
+    private String contentType;
+
+    /**
+     * 图片 S3 URL（仅 IMAGE 类型 chunk）
+     */
+    private String imageUrl;
 }

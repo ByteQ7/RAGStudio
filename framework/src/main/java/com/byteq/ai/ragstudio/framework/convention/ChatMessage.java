@@ -15,6 +15,7 @@ import java.util.List;
  *   <li>{@link Role#SYSTEM}：系统提示词，用于为大模型设定行为、规则</li>
  *   <li>{@link Role#USER}：用户输入消息</li>
  *   <li>{@link Role#ASSISTANT}：大模型（助手）回复内容</li>
+ *   <li>{@link Role#OBSERVATION}：ReACT 循环中的 Observation（工具执行结果，如知识库检索、API 调用返回），LLM 应将其视为系统返回而非用户发言</li>
  * </ul>
  * 该结构适合在不同模型/厂商之间做一层通用抽象
  * </p>
@@ -28,29 +29,16 @@ public class ChatMessage {
      * 消息角色类型
      */
     public enum Role {
-        /**
-         * 系统角色，一般用于设定对话规则、身份设定、风格约束等
-         */
         SYSTEM,
-
-        /**
-         * 用户角色，表示真实用户的提问或输入内容
-         */
         USER,
+        ASSISTANT,
+        /** ReACT 循环中的 Observation（工具执行结果），LLM 应视为系统返回而非用户发言 */
+        OBSERVATION;
 
-        /**
-         * 助手机器人角色，表示大模型返回的回复内容
-         */
-        ASSISTANT;
-
-        /**
-         * 根据字符串值匹配对应的角色枚举
-         *
-         * @param value 角色字符串值，不区分大小写
-         * @return 匹配到的 {@link Role} 枚举值
-         * @throws IllegalArgumentException 当传入的字符串无法匹配任何角色时抛出异常
-         */
         public static Role fromString(String value) {
+            if ("tool".equalsIgnoreCase(value)) {
+                return OBSERVATION;
+            }
             for (Role role : Role.values()) {
                 if (role.name().equalsIgnoreCase(value)) {
                     return role;
@@ -129,6 +117,16 @@ public class ChatMessage {
      */
     public static ChatMessage assistant(String content) {
         return new ChatMessage(Role.ASSISTANT, content);
+    }
+
+    /**
+     * 创建一条 Observation（工具执行结果）消息
+     *
+     * @param content 工具返回内容
+     * @return 封装好的 {@link ChatMessage} 对象，角色为 {@link Role#OBSERVATION}
+     */
+    public static ChatMessage observation(String content) {
+        return new ChatMessage(Role.OBSERVATION, content);
     }
 
     /**

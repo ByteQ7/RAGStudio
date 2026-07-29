@@ -1,4 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-sans/700.css';
+@import '@fontsource/geist-mono';
 
 @tailwind base;
 @tailwind components;
@@ -7,39 +11,133 @@
 :root {
   color-scheme: light;
 
+  /* shadcn/ui 兼容变量 */
   --background: 220 20% 97%;
   --foreground: 224 71% 4%;
   --card: 0 0% 100%;
   --card-foreground: 224 71% 4%;
   --popover: 0 0% 100%;
   --popover-foreground: 224 71% 4%;
-  --primary: 239 84% 67%;
+  --primary: 212 100% 48%;
   --primary-foreground: 0 0% 100%;
   --secondary: 220 14% 93%;
   --secondary-foreground: 224 71% 4%;
   --muted: 220 14% 93%;
   --muted-foreground: 220 9% 50%;
-  --accent: 35 92% 50%;
+  --accent: 212 100% 48%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
   --border: 220 13% 91%;
   --input: 220 13% 91%;
-  --ring: 239 84% 67%;
-  --chat-user: 239 84% 97%;
+  --ring: 212 100% 48%;
+  --chart-1: 212 100% 48%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 100% 50%;
+  --chart-4: 280 60% 55%;
+  --chart-5: 340 80% 55%;
+
+  /* 消息气泡 */
+  --chat-user-bg: 212 84% 95%;
+  --chat-user-text: 212 100% 20%;
   --chat-assistant: 0 0% 100%;
-  --glow: 239 84% 67%;
 
+  /* LobeHub 语义色板 */
+  --color-text: #080808;
+  --color-text-secondary: #666666;
+  --color-text-tertiary: #999999;
+  --color-text-quaternary: #bbbbbb;
+
+  --color-bg-layout: #f8f8f8;
+  --color-bg-container: #ffffff;
+  --color-bg-container-secondary: #fbfbfb;
+  --color-bg-elevated: #ffffff;
+  --color-bg-spotlight: rgba(0, 0, 0, 0.85);
+
+  --color-border: #e3e3e3;
+  --color-border-secondary: #eeeeee;
+
+  --color-fill: rgba(0, 0, 0, 0.12);
+  --color-fill-secondary: rgba(0, 0, 0, 0.06);
+  --color-fill-tertiary: rgba(0, 0, 0, 0.03);
+  --color-fill-quaternary: rgba(0, 0, 0, 0.015);
+
+  /* 阴影（LobeHub 三级） */
+  --shadow-sm: 0 3px 1px -1px rgba(26, 26, 26, 0.06);
+  --shadow-md: 0 8px 16px -4px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 20px 20px -8px rgba(0, 0, 0, 0.24);
+
+  /* 功能性色板 */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* 圆角体系（与 LobeHub 对齐） */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  /* 控件高度 */
+  --control-height-sm: 28px;
+  --control-height: 36px;
+  --control-height-lg: 40px;
+
+  /* 侧栏 */
   --sidebar-bg: #ffffff;
-  --sidebar-item-hover: #f8f9fc;
-  --sidebar-item-active: #eef2ff;
+  --sidebar-item-hover: #f5f5f5;
+  --sidebar-item-active: #e8f0fe;
+}
 
-  --gradient-primary: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
-  --gradient-subtle: linear-gradient(135deg, #f8f9fc 0%, #eef2ff 100%);
-  --gradient-chat-user: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+.dark {
+  color-scheme: dark;
 
-  --shadow-message: 0 1px 3px rgba(0, 0, 0, 0.04);
-  --shadow-sidebar: 0 0 0 1px rgba(0, 0, 0, 0.02), 2px 0 8px rgba(0, 0, 0, 0.04);
+  --background: 222 13% 12%;
+  --foreground: 210 20% 94%;
+  --card: 222 13% 14%;
+  --card-foreground: 210 20% 94%;
+  --popover: 222 13% 14%;
+  --popover-foreground: 210 20% 94%;
+  --primary: 212 100% 52%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 222 10% 18%;
+  --secondary-foreground: 210 20% 94%;
+  --muted: 222 10% 18%;
+  --muted-foreground: 222 8% 55%;
+  --accent: 212 100% 52%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 222 10% 22%;
+  --input: 222 10% 22%;
+  --ring: 212 100% 52%;
+
+  --chat-user-bg: 212 60% 22%;
+  --chat-user-text: 212 100% 90%;
+  --chat-assistant: 222 13% 16%;
+
+  --color-text: #e8e8e8;
+  --color-text-secondary: #999999;
+  --color-text-tertiary: #666666;
+  --color-text-quaternary: #444444;
+
+  --color-bg-layout: #1a1a1a;
+  --color-bg-container: #222222;
+  --color-bg-container-secondary: #282828;
+  --color-bg-elevated: #2a2a2a;
+  --color-bg-spotlight: rgba(0, 0, 0, 0.9);
+
+  --color-border: #333333;
+  --color-border-secondary: #2a2a2a;
+
+  --color-fill: rgba(255, 255, 255, 0.12);
+  --color-fill-secondary: rgba(255, 255, 255, 0.06);
+  --color-fill-tertiary: rgba(255, 255, 255, 0.03);
+  --color-fill-quaternary: rgba(255, 255, 255, 0.015);
+
+  --sidebar-bg: #1e1e1e;
+  --sidebar-item-hover: #2a2a2a;
+  --sidebar-item-active: #1a3a5c;
 }
 
 * {
@@ -54,10 +152,11 @@ html, body {
 }
 
 body {
-  background: var(--background);
-  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  color: hsl(var(--foreground));
+  background: var(--color-bg-layout);
+  font-family: 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif;
+  color: var(--color-text);
   overflow: hidden;
+  font-size: 15px;
 }
 
 #root {
@@ -65,7 +164,7 @@ body {
   min-height: 100vh;
 }
 
-/* ===== Scrollbar ===== */
+/* ===== 滚动条 ===== */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -74,12 +173,12 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-text-quaternary);
   border-radius: 999px;
   transition: background 0.2s;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--color-text-tertiary);
 }
 
 .sidebar-scroll {
@@ -88,7 +187,7 @@ body {
   transition: scrollbar-color 0.3s;
 }
 .sidebar-scroll:hover {
-  scrollbar-color: #d1d5db transparent;
+  scrollbar-color: var(--color-text-quaternary) transparent;
 }
 .sidebar-scroll::-webkit-scrollbar {
   width: 4px;
@@ -97,10 +196,10 @@ body {
   background: transparent;
 }
 .sidebar-scroll:hover::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-text-quaternary);
 }
 
-/* ===== Glass ===== */
+/* ===== 毛玻璃 ===== */
 .glass {
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(20px) saturate(1.4);
@@ -113,21 +212,19 @@ body {
   backdrop-filter: blur(16px) saturate(1.3);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
   border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-sm);
 }
 
-/* ===== Typography ===== */
-.text-gradient {
-  background: var(--gradient-primary);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.dark .glass,
+.dark .glass-card {
+  background: rgba(30, 30, 30, 0.75);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* ===== Chat Message Bubbles ===== */
+/* ===== 消息气泡 ===== */
 .user-message {
-  background: var(--gradient-chat-user);
-  color: #fff;
+  background: hsl(var(--chat-user-bg));
+  color: hsl(var(--chat-user-text));
   padding: 12px 18px;
   border-radius: 18px 18px 4px 18px;
   max-width: 78%;
@@ -137,7 +234,7 @@ body {
   line-height: 1.65;
   word-break: break-word;
   overflow-wrap: break-word;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+  box-shadow: var(--shadow-sm);
 }
 
 .user-message .prose {
@@ -147,12 +244,12 @@ body {
 .user-message .prose > :first-child { margin-top: 0; }
 .user-message .prose > :last-child { margin-bottom: 0; }
 
-/* ===== AI Wait Animation ===== */
+/* ===== AI 等待动画 ===== */
 .ai-wait {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #94a3b8;
+  color: var(--color-text-tertiary);
   font-size: 13px;
 }
 .ai-wait-dots {
@@ -165,7 +262,7 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: #cbd5e1;
+  background: var(--color-text-tertiary);
   animation: ai-wait-bounce 1.2s ease-in-out infinite;
 }
 .ai-wait-dot:nth-child(2) { animation-delay: 0.15s; }
@@ -176,7 +273,7 @@ body {
   40% { transform: translateY(-4px); opacity: 1; }
 }
 
-/* ===== Focus Ring ===== */
+/* ===== 焦点环 ===== */
 button:focus:not(:focus-visible),
 select:focus:not(:focus-visible),
 [role="switch"]:focus:not(:focus-visible) {
@@ -184,7 +281,21 @@ select:focus:not(:focus-visible),
   box-shadow: none;
 }
 
-/* ===== Admin Layout ===== */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* ===== 降低动效 ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===== 管理后台布局 ===== */
 @layer components {
   .admin-page {
     @apply space-y-5;
@@ -193,10 +304,13 @@ select:focus:not(:focus-visible),
     @apply flex flex-row flex-wrap items-center gap-3;
   }
   .admin-page-title {
-    @apply text-xl font-semibold text-gray-900;
+    color: var(--color-text);
+    font-size: 20px;
+    font-weight: 600;
   }
   .admin-page-subtitle {
-    @apply text-sm text-gray-500;
+    color: var(--color-text-secondary);
+    font-size: 14px;
   }
   .admin-page-actions {
     @apply flex flex-1 flex-wrap items-center justify-end gap-2;
@@ -205,41 +319,50 @@ select:focus:not(:focus-visible),
     @apply grid gap-3 md:grid-cols-2 xl:grid-cols-4;
   }
   .admin-stat-card {
-    @apply relative flex items-center justify-between rounded-xl border border-gray-100 bg-white p-4 transition-all duration-200 hover:-translate-y-0.5 shadow-sm hover:shadow-md;
+    background: var(--color-bg-container);
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--radius);
+    padding: 16px;
+    transition: all 0.15s;
+  }
+  .admin-stat-card:hover {
+    box-shadow: var(--shadow-sm);
   }
   .admin-stat-icon {
     @apply flex h-9 w-9 items-center justify-center rounded-lg;
-    background: #eef2ff;
-    color: #6366f1;
+    background: var(--color-fill-quaternary);
+    color: hsl(var(--primary));
   }
   .admin-stat-label {
-    @apply text-xs text-gray-400;
+    color: var(--color-text-tertiary);
+    font-size: 12px;
   }
   .admin-stat-value {
-    @apply text-xl font-semibold text-gray-900;
+    color: var(--color-text);
+    font-size: 20px;
+    font-weight: 600;
   }
   .admin-stat-trend {
-    @apply text-xs font-medium;
+    font-size: 12px;
+    font-weight: 500;
   }
   .ui-card {
-    @apply rounded-xl border border-gray-100 bg-white shadow-sm transition-all duration-200 hover:shadow-md;
+    background: var(--color-bg-container);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    transition: all 0.15s;
   }
   .ui-card-header {
-    @apply border-b border-gray-100 px-5 pt-4 pb-3;
+    border-bottom: 1px solid var(--color-border-secondary);
+    padding: 16px 20px 12px;
   }
   .ui-card-title {
-    @apply text-base font-semibold text-gray-900;
+    color: var(--color-text);
+    font-size: 16px;
+    font-weight: 600;
   }
   .ui-card-content {
-    @apply p-5;
-  }
-  .ui-button.admin-primary-gradient {
-    background: var(--gradient-primary);
-    @apply text-white shadow-sm transition-all duration-200;
-  }
-  .ui-button.admin-primary-gradient:hover {
-    @apply shadow-md;
-    filter: brightness(1.05);
+    padding: 20px;
   }
 }
 
@@ -263,10 +386,92 @@ textarea { field-sizing: content; }
   width: 6px;
 }
 
-/* ===== Prose overrides ===== */
+/* ===== Prose ===== */
 .prose {
   max-width: none;
 }
 .prose code {
   @apply font-mono;
+}
+
+/* ===== 旧类名兼容层（逐步迁移中，勿手动修改） ===== */
+@layer base {
+  .text-gray-300 { color: var(--color-text-tertiary) !important; }
+  .text-gray-400 { color: var(--color-text-tertiary) !important; }
+  .text-gray-500 { color: var(--color-text-secondary) !important; }
+  .text-gray-600 { color: var(--color-text-secondary) !important; }
+  .text-gray-700 { color: var(--color-text) !important; }
+  .text-gray-800 { color: var(--color-text) !important; }
+  .text-gray-900 { color: var(--color-text) !important; }
+  .bg-gray-50 { background: var(--color-fill-quaternary) !important; }
+  .bg-gray-100 { background: var(--color-bg-container-secondary) !important; }
+  .bg-gray-50\/50 { background: var(--color-fill-quaternary) !important; }
+  .bg-white\/80 { background: var(--color-bg-elevated) !important; }
+  .bg-white\/90 { background: var(--color-bg-elevated) !important; }
+  .bg-white\/75 { background: var(--color-bg-elevated) !important; }
+  .border-gray-100 { border-color: var(--color-border-secondary) !important; }
+  .border-gray-200 { border-color: var(--color-border) !important; }
+  .border-gray-200\/50 { border-color: var(--color-border) !important; }
+  .border-gray-200\/60 { border-color: var(--color-border) !important; }
+  .bg-indigo-50 { background: var(--color-fill-quaternary) !important; }
+  .bg-indigo-50\/80 { background: var(--color-fill-quaternary) !important; }
+  .bg-indigo-100 { background: var(--color-fill-tertiary) !important; }
+  .bg-indigo-600 { background: hsl(var(--primary)) !important; }
+  .text-indigo-500 { color: hsl(var(--primary)) !important; }
+  .text-indigo-600 { color: hsl(var(--primary)) !important; }
+  .text-indigo-700 { color: hsl(var(--primary)) !important; }
+  .border-indigo-100\/50 { border-color: hsl(var(--primary) / 0.2) !important; }
+  .border-indigo-200 { border-color: hsl(var(--primary) / 0.3) !important; }
+  .border-indigo-200\/70 { border-color: hsl(var(--primary) / 0.3) !important; }
+  .border-indigo-300\/50 { border-color: hsl(var(--primary) / 0.4) !important; }
+  .focus\:border-indigo-300\/50:focus { border-color: hsl(var(--primary) / 0.4) !important; }
+  .focus\:border-indigo-400:focus { border-color: hsl(var(--primary)) !important; }
+  .hover\:text-indigo-400:hover { color: hsl(var(--primary)) !important; }
+  .hover\:text-indigo-500:hover { color: hsl(var(--primary)) !important; }
+  .hover\:text-indigo-600:hover { color: hsl(var(--primary)) !important; }
+  .hover\:bg-indigo-50:hover { background: var(--color-fill-quaternary) !important; }
+  .hover\:bg-indigo-100:hover { background: var(--color-fill-tertiary) !important; }
+  .hover\:border-indigo-100:hover { border-color: hsl(var(--primary) / 0.2) !important; }
+  .hover\:border-indigo-300:hover { border-color: hsl(var(--primary) / 0.4) !important; }
+  .hover\:shadow-indigo-50:hover { box-shadow: var(--shadow-sm) !important; }
+  .shadow-indigo-50 { box-shadow: var(--shadow-sm) !important; }
+  .shadow-indigo-100 { box-shadow: var(--shadow-sm) !important; }
+  .focus\:shadow-\[0_0_0_2px_rgba\(99\,102\,241\,0\.06\)\]:focus { box-shadow: 0 0 0 2px hsl(var(--primary) / 0.06) !important; }
+  .focus\:shadow-\[0_0_0_3px_rgba\(99\,102\,241\,0\.06\)\]:focus { box-shadow: 0 0 0 3px hsl(var(--primary) / 0.06) !important; }
+  .focus\:shadow-\[0_0_0_3px_rgba\(99\,102\,241\,0\.08\)\]:focus { box-shadow: 0 0 0 3px hsl(var(--primary) / 0.08) !important; }
+  .shadow-\[0_0_0_1px_rgba\(0\,0\,0\,0\.02\)\,_2px_0_12px_rgba\(0\,0\,0\,0\.04\)\] { box-shadow: var(--shadow-sm) !important; }
+  .shadow-\[0_1px_3px_rgba\(0\,0\,0\,0\.04\)\] { box-shadow: var(--shadow-sm) !important; }
+  .shadow-\[0_1px_4px_rgba\(0\,0\,0\,0\.02\)\,_0_4px_12px_rgba\(0\,0\,0\,0\.02\)\] { box-shadow: var(--shadow-sm) !important; }
+  .shadow-\[0_4px_16px_rgba\(0\,0\,0\,0\.06\)\,_0_0_0_1px_rgba\(0\,0\,0\,0\.02\)\] { box-shadow: var(--shadow-secondary) !important; }
+  .shadow-\[0_8px_24px_rgba\(0\,0\,0\,0\.08\)\] { box-shadow: var(--shadow-secondary) !important; }
+  .shadow-\[0_8px_32px_rgba\(0\,0\,0\,0\.04\)\] { box-shadow: var(--shadow-sm) !important; }
+  .shadow-\[0_0_0_1px_rgba\(255\,255\,255\,0\.1\)\,_0_8px_32px_rgba\(0\,0\,0\,0\.06\)\] { box-shadow: var(--shadow-sm) !important; }
+  .shadow-\[inset_0_-4px_8px_rgba\(0\,0\,0\,0\.04\)\] { box-shadow: none !important; }
+  .shadow-sm {
+    --tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color);
+    box-shadow: var(--shadow-sm) !important;
+  }
+  .shadow-md {
+    --tw-shadow-colored: 0 4px 6px -1px var(--tw-shadow-color);
+    box-shadow: var(--shadow-sm) !important;
+  }
+  .shadow-lg {
+    --tw-shadow-colored: 0 10px 15px -3px var(--tw-shadow-color);
+    box-shadow: var(--shadow-secondary) !important;
+  }
+  .bg-gradient-to-br { background: var(--color-bg-container) !important; }
+  .from-indigo-50 { --tw-gradient-from: transparent !important; }
+  .to-purple-50 { --tw-gradient-to: transparent !important; }
+  .hover\:shadow-md:hover { box-shadow: var(--shadow-sm) !important; }
+  .hover\:shadow-lg:hover { box-shadow: var(--shadow-secondary) !important; }
+  .hover\:bg-gray-50\/70:hover { background: var(--color-fill-quaternary) !important; }
+  .hover\:bg-gray-50:hover { background: var(--color-fill-quaternary) !important; }
+  .hover\:bg-gray-100:hover { background: var(--color-bg-container-secondary) !important; }
+  .hover\:bg-white\/80:hover { background: var(--color-bg-container) !important; }
+  .hover\:text-gray-600:hover { color: var(--color-text) !important; }
+  .hover\:text-gray-700:hover { color: var(--color-text) !important; }
+  .hover\:text-gray-900:hover { color: var(--color-text) !important; }
+  .dark\:text-\[#58a6ff\] { color: hsl(var(--primary)) !important; }
+  .hover\:text-\[#0969da\]:hover { color: hsl(var(--primary)) !important; }
+  .dark\:hover\:text-\[#58a6ff\]:hover { color: hsl(var(--primary)) !important; }
 }

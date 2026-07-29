@@ -87,6 +87,9 @@ public class DynamicModelConfig {
         /** 端点映射，如 {"chat": "/v1/chat/completions", "embedding": "/v1/embeddings"} */
         @Builder.Default
         private Map<String, String> endpoints = new HashMap<>();
+        /** API 协议类型：openai / dashscope / anthropic */
+        @Builder.Default
+        private String protocol = "openai";
     }
 
     /**
@@ -113,6 +116,8 @@ public class DynamicModelConfig {
         private Boolean supportsMultimodal = false;
         private Boolean isDefault;
         private String capability;
+        /** API 协议类型覆盖（可选，覆盖供应商的 protocol）：openai / dashscope / anthropic */
+        private String protocol;
     }
 
     /**

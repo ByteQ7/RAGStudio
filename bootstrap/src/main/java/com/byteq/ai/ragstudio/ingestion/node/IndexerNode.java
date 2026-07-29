@@ -236,10 +236,20 @@ public class IndexerNode implements IngestionNode {
             }
 
             Integer chunkIndex = null;
+            Map<String, Object> chunkMeta = new HashMap<>();
             if (row.has("metadata") && row.get("metadata").isJsonObject()) {
-                JsonObject metadata = row.getAsJsonObject("metadata");
-                if (metadata.has("chunk_index") && !metadata.get("chunk_index").isJsonNull()) {
-                    chunkIndex = metadata.get("chunk_index").getAsInt();
+                JsonObject metaObj = row.getAsJsonObject("metadata");
+                if (metaObj.has("chunk_index") && !metaObj.get("chunk_index").isJsonNull()) {
+                    chunkIndex = metaObj.get("chunk_index").getAsInt();
+                }
+                // 使用 Jackson 解析 metadata，避免 Gson getAsNumber() 类型不兼容
+                try {
+                    String metaJson = metaObj.toString();
+                    com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>> typeRef =
+                            new com.fasterxml.jackson.core.type.TypeReference<>() {};
+                    chunkMeta = objectMapper.readValue(metaJson, typeRef);
+                } catch (Exception e) {
+                    log.warn("解析 metadata JSON 失败: chunkId={}", chunkId);
                 }
             }
 
@@ -248,6 +258,7 @@ public class IndexerNode implements IngestionNode {
                     .content(content)
                     .index(chunkIndex)
                     .embedding(embedding)
+                    .metadata(chunkMeta)
                     .build();
         }).filter(chunk -> chunk != null).toList();
 
@@ -360,6 +371,13 @@ public class IndexerNode implements IngestionNode {
                 }
             }
 
+            // 图像块的元数据始终写入（不受 metadataFields 配置影响）
+            if (chunk.isImage() && chunk.getMetadata() != null) {
+                addMetaIfPresent(metadata, chunk.getMetadata(), "content_type");
+                addMetaIfPresent(metadata, chunk.getMetadata(), "image_url");
+                addMetaIfPresent(metadata, chunk.getMetadata(), "page_number");
+            }
+
             JsonObject row = new JsonObject();
             row.addProperty("id", chunkId);
             row.addProperty("content", content);
@@ -394,6 +412,13 @@ public class IndexerNode implements IngestionNode {
     private void addMetadataValue(JsonObject metadata, String field, Object value) {
         JsonElement element = GSON.toJsonTree(value);
         metadata.add(field, element);
+    }
+
+    private void addMetaIfPresent(JsonObject metadata, Map<String, Object> source, String key) {
+        Object value = source.get(key);
+        if (value != null) {
+            addMetadataValue(metadata, key, value);
+        }
     }
 
     /**

@@ -48,4 +48,7 @@ public class AiModelCreateRequest {
 
     /** 自定义 URL */
     private String customUrl;
+
+    /** API 协议类型覆盖: openai / dashscope / anthropic */
+    private String apiProtocol;
 }

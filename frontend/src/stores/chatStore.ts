@@ -253,7 +253,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       const mapped: Message[] = data.map((item) => ({
         id: String(item.id),
-        role: item.role === "assistant" ? "assistant" : "user",
+        role: item.role === "assistant" ? "assistant" : (item.role === "tool" || item.role === "observation") ? "observation" : "user",
         content: item.content,
         createdAt: item.createTime,
         feedback: mapVoteToFeedback(item.vote),

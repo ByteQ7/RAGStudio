@@ -66,6 +66,16 @@ public class KnowledgeChunkDO {
     private Integer tokenCount;
 
     /**
+     * 分块内容类型：TEXT / IMAGE，默认 TEXT。用于多模态知识库 enable/re-enable 流程
+     */
+    private String contentType;
+
+    /**
+     * 图片 S3 URL（仅 IMAGE 类型 chunk）。用于 enable/re-enable 时重新下载图片进行嵌入
+     */
+    private String imageUrl;
+
+    /**
      * 是否启用：0-禁用，1-启用。禁用后该分片在向量检索中不再被召回
      */
     private Integer enabled;

@@ -17,4 +17,10 @@ public interface VectorStoreAdmin {
      * 只判断存在性（不创建）
      */
     boolean vectorSpaceExists(VectorSpaceId spaceId);
+    /**
+     * 删除指定集合的所有向量
+     *
+     * @param collectionName 向量集合名称
+     */
+    void deleteCollectionVectors(String collectionName);
 }

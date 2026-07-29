@@ -5,6 +5,7 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
+import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.rag.config.MemoryProperties;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
@@ -312,13 +313,15 @@ public class StreamChatPipeline {
         AgentContext agentCtx = new AgentContext(
                 ctx.getQuestion(),
                 ctx.getHistory(),
-                "",        // kbContext：不预检索，Agent 自主调用 rag_search
+                "",
                 kbRelevant,
                 List.of(),
                 10,
                 120_000L,
                 ctx.getImageUrls(),
-                ctx.getDeepThinkingLevel()
+                ctx.getDeepThinkingLevel(),
+                ctx.getConversationId(),
+                ctx.getUserId()
         );
 
         // 5. 执行 Orchestrator（Task 驱动，SSE 事件透传）
@@ -346,9 +349,9 @@ public class StreamChatPipeline {
 
     // ==================== 链路追踪 ====================
 
-    private static final String TRACE_STATUS_RUNNING = "RUNNING";
-    private static final String TRACE_STATUS_SUCCESS = "SUCCESS";
-    private static final String TRACE_STATUS_ERROR = "ERROR";
+    private static final String TRACE_STATUS_RUNNING = TraceStatus.RUNNING.name();
+    private static final String TRACE_STATUS_SUCCESS = TraceStatus.SUCCESS.name();
+    private static final String TRACE_STATUS_ERROR = TraceStatus.ERROR.name();
 
     /**
      * 记录流水线阶段耗时到链路追踪系统

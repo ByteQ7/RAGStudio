@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
-import type { Message } from "@/types";
+import { Check, ChevronDown, ChevronRight, Copy, Image, Loader2, X } from "lucide-react";
+import type { Message, Citation } from "@/types";
+import { getPresignedUrl } from "@/utils/image";
 interface CitationListProps {
   message: Message;
 }
@@ -15,13 +16,41 @@ interface CitationListProps {
 export function CitationList({ message }: CitationListProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+  const [loadingImages, setLoadingImages] = useState<Set<string>>(new Set());
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
   const citations = message.citations;
   const answer = message.content;
 
+  useEffect(() => {
+    if (!Array.isArray(citations)) return;
+    for (const c of citations) {
+      if (c.contentType === "IMAGE" && c.imageUrl && !imageUrls[c.id]) {
+        setLoadingImages((prev) => new Set(prev).add(c.id));
+        getPresignedUrl(c.imageUrl)
+          .then((url) => {
+            setImageUrls((prev) => ({ ...prev, [c.id]: url }));
+            setLoadingImages((prev) => {
+              const next = new Set(prev);
+              next.delete(c.id);
+              return next;
+            });
+          })
+          .catch(() => {
+            setLoadingImages((prev) => {
+              const next = new Set(prev);
+              next.delete(c.id);
+              return next;
+            });
+          });
+      }
+    }
+  }, [citations]);
+
   // 匹配答案中被引用的 chunk ID，按出现顺序编号
   const { matchedCitations, idToNum } = useMemo(() => {
-    if (!citations || citations.length === 0 || !answer) {
-      return { matchedCitations: [] as typeof citations, idToNum: {} as Record<string, number> };
+    if (!Array.isArray(citations) || citations.length === 0 || !answer) {
+      return { matchedCitations: [] as Citation[], idToNum: {} as Record<string, number> };
     }
 
     const markerRegex = /\[\^chunk_(\w+)\]/g;
@@ -50,9 +79,10 @@ export function CitationList({ message }: CitationListProps) {
       return { matchedCitations: matched, idToNum: numMap };
     }
 
-    // 方案B：连续 10 字匹配（兜底）
+    // 方案B：连续 10 字匹配（兜底），IMAGE 类型无需匹配直接保留
     const MIN_MATCH_LEN = 10;
     const matched = citations.filter((chunk) => {
+      if (chunk.contentType === "IMAGE") return true;
       if (!chunk.text) return false;
       const text = chunk.text;
       for (let i = 0; i <= text.length - MIN_MATCH_LEN; i++) {
@@ -113,8 +143,8 @@ export function CitationList({ message }: CitationListProps) {
   if (!matchedCitations || matchedCitations.length === 0) return null;
 
   return (
-    <div className="mt-4 border-t border-gray-100 pt-3">
-      <p className="mb-2 text-xs text-gray-400">
+    <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--color-border-secondary)' }}>
+      <p className="mb-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
         知识库引用（{matchedCitations.length}）
       </p>
 
@@ -128,31 +158,43 @@ export function CitationList({ message }: CitationListProps) {
                 <button
                   type="button"
                   onClick={() => toggleExpand(citation.id)}
-                  className="flex flex-1 items-center gap-1.5 rounded-l-lg border border-r-0 border-gray-100 bg-gray-50/50 px-3 py-1.5 text-left text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+                  className="flex flex-1 items-center gap-1.5 rounded-l-lg border border-r-0 px-3 py-1.5 text-left text-xs transition-colors"
+                  style={{ borderColor: 'var(--color-border-secondary)', background: 'var(--color-fill-quaternary)', color: 'var(--color-text-secondary)' }}
                 >
                   {isExpanded ? (
                     <ChevronDown className="h-3 w-3 flex-shrink-0" />
                   ) : (
                     <ChevronRight className="h-3 w-3 flex-shrink-0" />
                   )}
-                  <span className="font-mono text-[#0969da] dark:text-[#58a6ff] font-medium min-w-[1.5em]">
+                  <span className="font-mono font-medium min-w-[1.5em]" style={{ color: 'hsl(var(--primary))' }}>
                     [{num}]
                   </span>
-                  <span className="font-mono truncate text-gray-400">{citation.id}</span>
+                  <span className="font-mono truncate" style={{ color: 'var(--color-text-tertiary)' }}>{citation.chunkId || citation.id}</span>
+                  {citation.contentType === "IMAGE" && (
+                    <Image className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+                  )}
                   {citation.kbName || citation.docName ? (
-                    <span className="hidden sm:inline truncate text-gray-400 text-xs ml-1">
+                    <span className="hidden sm:inline truncate text-xs ml-1" style={{ color: 'var(--color-text-tertiary)' }}>
                       {citation.kbName || ''}{citation.kbName && citation.docName ? ' · ' : ''}{citation.docName || ''}
                     </span>
                   ) : null}
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleCopyId(citation.id)}
-                  className="flex-shrink-0 rounded-r-lg border border-gray-100 bg-gray-50/50 px-2 py-1.5 text-gray-400 hover:text-[#0969da] dark:hover:text-[#58a6ff] hover:bg-gray-100 transition-colors"
-                  title="复制 Chunk ID"
+                  onClick={() => {
+                    const text = citation.chunkId || citation.id;
+                    handleCopyId(text);
+                  }}
+                  className={`flex-shrink-0 rounded-r-lg border px-2 py-1.5 transition-all duration-200 ${copiedId === (citation.chunkId || citation.id) ? "scale-110" : ""}`}
+                  style={{
+                    borderColor: copiedId === (citation.chunkId || citation.id) ? 'hsl(var(--success))' : 'var(--color-border-secondary)',
+                    background: copiedId === (citation.chunkId || citation.id) ? 'rgba(34,197,94,0.12)' : 'var(--color-fill-quaternary)',
+                    color: copiedId === (citation.chunkId || citation.id) ? 'hsl(var(--success))' : 'var(--color-text-tertiary)'
+                  }}
+                  title={copiedId === (citation.chunkId || citation.id) ? "已复制" : "复制 Chunk ID"}
                 >
-                  {copiedId === citation.id ? (
-                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  {copiedId === (citation.chunkId || citation.id) ? (
+                    <Check className="h-3.5 w-3.5" />
                   ) : (
                     <Copy className="h-3.5 w-3.5" />
                   )}
@@ -160,16 +202,75 @@ export function CitationList({ message }: CitationListProps) {
               </div>
 
               {isExpanded && (
-                <div className="mt-1 ml-6 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">
-                    {citation.text}
-                  </p>
+                <div className="mt-1 ml-6 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--color-border-secondary)', background: 'var(--color-bg-container-secondary)' }}>
+                  {citation.contentType === "IMAGE" ? (
+                    <div className="space-y-2">
+                      {loadingImages.has(citation.id) ? (
+                        <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          加载图片中...
+                        </div>
+                      ) : imageUrls[citation.id] ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedImage(imageUrls[citation.id])}
+                          className="block w-full text-left cursor-zoom-in"
+                        >
+                          <img
+                            src={imageUrls[citation.id]}
+                            alt={`知识库引用图片 [${num}]`}
+                            className="max-w-full max-h-64 rounded object-contain"
+                            loading="lazy"
+                          />
+                        </button>
+                      ) : (
+                        <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                          无法加载图片
+                        </p>
+                      )}
+                      {citation.text && (
+                        <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>
+                          {citation.text}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>
+                      {citation.text}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
       </div>
+
+      {expandedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setExpandedImage(null)}
+          onKeyDown={(e) => e.key === "Escape" && setExpandedImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="图片预览"
+        >
+          <button
+            type="button"
+            onClick={() => setExpandedImage(null)}
+            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors"
+            style={{ background: 'rgba(255,255,255,0.15)' }}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={expandedImage}
+            alt="预览大图"
+            className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

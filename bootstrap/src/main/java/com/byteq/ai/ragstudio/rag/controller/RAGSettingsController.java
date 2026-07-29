@@ -212,6 +212,7 @@ public class RAGSettingsController {
                                     .priority(c.getPriority())
                                     .enabled(c.getEnabled())
                                     .supportsThinking(c.getSupportsThinking())
+                                    .supportsMultimodal(c.getSupportsMultimodal())
                                     .build())
                           .collect(Collectors.toList()))
                 .build();

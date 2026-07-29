@@ -55,6 +55,12 @@ export interface RagTraceRunQuery {
   status?: string;
 }
 
+const normalizeStatusParam = (status?: string): string | undefined => {
+  if (!status) return undefined;
+  if (status.toLowerCase() === "failed") return "ERROR";
+  return status;
+};
+
 export async function getRagTraceRuns(
   query: RagTraceRunQuery = {}
 ): Promise<PageResult<RagTraceRun>> {
@@ -65,7 +71,7 @@ export async function getRagTraceRuns(
       traceId: query.traceId || undefined,
       conversationId: query.conversationId || undefined,
       taskId: query.taskId || undefined,
-      status: query.status || undefined
+      status: normalizeStatusParam(query.status)
     }
   });
 }
@@ -99,7 +105,7 @@ export async function getRagTraceStats(
       traceId: query.traceId || undefined,
       conversationId: query.conversationId || undefined,
       taskId: query.taskId || undefined,
-      status: query.status || undefined
+      status: normalizeStatusParam(query.status)
     }
   });
 }

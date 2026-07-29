@@ -12,6 +12,7 @@ export interface AiProvider {
   enabled: number;
   iconUrl?: string | null;
   modelCount?: number;
+  apiProtocol?: string | null;
   createTime?: string | null;
   updateTime?: string | null;
 }
@@ -30,6 +31,7 @@ export interface AiModel {
   supportsMultimodal?: number;
   dimension?: number[] | null;
   customUrl?: string | null;
+  apiProtocol?: string | null;
   createTime?: string | null;
   updateTime?: string | null;
 }
@@ -41,6 +43,7 @@ export interface AiProviderPayload {
   apiKey?: string;
   endpoints?: Record<string, string>;
   enabled?: number;
+  apiProtocol?: string;
 }
 
 export interface AiModelPayload {
@@ -55,6 +58,7 @@ export interface AiModelPayload {
   supportsMultimodal?: number;
   dimension?: number[];
   customUrl?: string;
+  apiProtocol?: string;
 }
 
 export interface ModelPriorityItem {

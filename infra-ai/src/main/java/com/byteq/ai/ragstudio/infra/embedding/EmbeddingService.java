@@ -61,6 +61,16 @@ public interface EmbeddingService {
     List<Float> embed(String text, String modelId);
 
     /**
+     * 将单个文本转换为嵌入向量（指定模型和维度）
+     *
+     * @param text      待嵌入的文本
+     * @param modelId   指定的模型 ID
+     * @param dimension 请求的输出维度，null 时使用模型默认
+     * @return 文本的向量表示
+     */
+    List<Float> embed(String text, String modelId, Integer dimension);
+
+    /**
      * 批量将多个文本转换为嵌入向量（使用默认模型路由）
      * <p>
      * 一次性处理多个文本的向量化转换，优先利用模型的批处理能力提高效率。
@@ -86,5 +96,15 @@ public interface EmbeddingService {
      * @throws RemoteException 当指定模型不可用或调用失败时抛出
      */
     List<List<Float>> embedBatch(List<String> texts, String modelId);
+
+    /**
+     * 批量将多个文本转换为嵌入向量（指定模型和维度）
+     *
+     * @param texts     待嵌入的文本列表
+     * @param modelId   指定的模型 ID
+     * @param dimension 请求的输出维度，null 时使用模型默认
+     * @return 文本向量列表
+     */
+    List<List<Float>> embedBatch(List<String> texts, String modelId, Integer dimension);
 }
 

@@ -86,6 +86,8 @@ export function CreateKnowledgeBaseDialog({
     [embeddingModels, selectedModelId]
   );
 
+  const isMultimodalModel = selectedModel?.supportsMultimodal === true;
+
   const availableDimensions = useMemo(() => {
     const dims = selectedModel?.dimensions;
     if (dims && dims.length > 0) return dims;
@@ -134,9 +136,8 @@ export function CreateKnowledgeBaseDialog({
   useEffect(() => {
     if (selectedModel && availableDimensions.length > 0) {
       const current = form.getValues("dimension");
-      const validDims = availableDimensions.filter((d) => d <= 2000);
       if (!current || !availableDimensions.includes(current)) {
-        form.setValue("dimension", validDims.length > 0 ? validDims[validDims.length - 1] : availableDimensions[0]);
+        form.setValue("dimension", availableDimensions[availableDimensions.length - 1]);
       }
     }
   }, [selectedModel, availableDimensions, form]);
@@ -290,6 +291,11 @@ export function CreateKnowledgeBaseDialog({
                     </SelectContent>
                   </Select>
                   <FormDescription>选择用于向量化文档的模型</FormDescription>
+                  {isMultimodalModel && (
+                    <div className="mt-1.5 rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-700">
+                      该模型为多模态 Embedding 模型，图片将以视觉向量方式入库，PDF 将按页面智能处理
+                    </div>
+                  )}
                   {selectedModelId && (
                     <div className="mt-1 flex items-center gap-1.5">
                       {probing ? (
@@ -335,16 +341,16 @@ export function CreateKnowledgeBaseDialog({
                       </FormControl>
                       <SelectContent>
                         {availableDimensions.map((dim) => {
-                          const disabled = dim > 2000;
+                          const overLimit = dim > 2000;
                           return (
-                            <SelectItem key={dim} value={String(dim)} disabled={disabled}>
-                              {dim}维 {disabled ? "(超出2000限制)" : ""}
+                            <SelectItem key={dim} value={String(dim)}>
+                              {dim}维 {overLimit ? "(超过2000维，需确认 pgvector 支持)" : ""}
                             </SelectItem>
                           );
                         })}
                       </SelectContent>
                     </Select>
-                    <FormDescription>pgvector 最高支持 2000 维，超过的选项不可用</FormDescription>
+                    <FormDescription>维度超过 2000 需在 pgvector 启用 max_dim 参数，并重启数据库</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

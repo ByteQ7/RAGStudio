@@ -64,4 +64,9 @@ public class KnowledgeBaseVO {
      * 更新时间
      */
     private Date updateTime;
+
+    /**
+     * 是否支持图像嵌入: 1-是，0-否
+     */
+    private Integer supportsImageEmbedding;
 }

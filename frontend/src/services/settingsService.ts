@@ -70,6 +70,7 @@ export interface ModelCandidate {
   priority?: number | null;
   enabled?: boolean | null;
   supportsThinking?: boolean | null;
+  supportsMultimodal?: boolean | null;
 }
 
 export async function getSystemSettings(): Promise<SystemSettings> {

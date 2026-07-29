@@ -46,6 +46,12 @@ public class AgentContext {
     /** 深度思考级别（0=关闭，1-100=开启） */
     private final int thinkingLevel;
 
+    /** 会话 ID（用于持久化 Observation 到对话历史） */
+    private final String conversationId;
+
+    /** 用户 ID（用于持久化 Observation 到对话历史） */
+    private final String userId;
+
     // ==================== 运行时累积 ====================
 
     /** Agent 推理步骤记录（用于前端回放和日志） */
@@ -53,6 +59,9 @@ public class AgentContext {
 
     /** 发送给 LLM 的消息列表（动态追加 Observation） */
     private final List<ChatMessage> messages = new ArrayList<>();
+
+    /** Agent 运行期间收集的 S3 图片 URL（最终附到 assistant 回复持久化） */
+    private java.util.Set<String> collectedS3ImageUrls;
 
     /** 循环开始时间戳 */
     private long startTimeMs;
@@ -74,6 +83,15 @@ public class AgentContext {
                         String kbContext, boolean kbRelevant,
                         List<Tool> tools, int maxIterations, long timeoutMs,
                         List<String> imageUrls, int thinkingLevel) {
+        this(question, history, kbContext, kbRelevant, tools, maxIterations, timeoutMs,
+                imageUrls, thinkingLevel, null, null);
+    }
+
+    public AgentContext(String question, List<ChatMessage> history,
+                        String kbContext, boolean kbRelevant,
+                        List<Tool> tools, int maxIterations, long timeoutMs,
+                        List<String> imageUrls, int thinkingLevel,
+                        String conversationId, String userId) {
         this.question = question;
         this.history = history != null ? List.copyOf(history) : List.of();
         this.kbContext = kbContext != null ? kbContext : "";
@@ -83,6 +101,8 @@ public class AgentContext {
         this.timeoutMs = timeoutMs > 0 ? timeoutMs : 120_000L;
         this.imageUrls = imageUrls != null ? List.copyOf(imageUrls) : List.of();
         this.thinkingLevel = Math.max(0, Math.min(100, thinkingLevel));
+        this.conversationId = conversationId;
+        this.userId = userId;
     }
 
     /** 标记循环开始 */
@@ -117,8 +137,12 @@ public class AgentContext {
     public List<String> getImageUrls() { return imageUrls; }
     public List<AgentStep> getSteps() { return List.copyOf(steps); }
     public List<ChatMessage> getMessages() { return messages; }
+    public java.util.Set<String> getCollectedS3ImageUrls() { return collectedS3ImageUrls; }
+    public void setCollectedS3ImageUrls(java.util.Set<String> urls) { this.collectedS3ImageUrls = urls; }
     public long getStartTimeMs() { return startTimeMs; }
     public int getThinkingLevel() { return thinkingLevel; }
+    public String getConversationId() { return conversationId; }
+    public String getUserId() { return userId; }
 
     /** 是否包含 KB 上下文 */
     public boolean hasKb() {

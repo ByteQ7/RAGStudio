@@ -27,12 +27,22 @@ public class PgVectorStoreService implements VectorStoreService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final VectorStoreAdmin vectorStoreAdmin;
 
     @Override
     public void indexDocumentChunks(String collectionName, String docId, int dimension, List<VectorChunk> chunks) {
         if (chunks == null || chunks.isEmpty()) {
             return;
         }
+
+        int actualDim = chunks.get(0).getEmbedding() != null ? chunks.get(0).getEmbedding().length : dimension;
+        if (actualDim != dimension) {
+            log.warn("Embedding 实际维度 {} 与 KB 配置维度 {} 不一致", actualDim, dimension);
+            dimension = actualDim;
+        }
+
+        // 确保向量表存在（>2000维会跳过HNSW索引）
+        autoCreateVectorTable(collectionName, dimension);
 
         String table = vectorTableName(dimension);
         for (VectorChunk chunk : chunks) {
@@ -45,12 +55,13 @@ public class PgVectorStoreService implements VectorStoreService {
 
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         jdbcTemplate.batchUpdate(
-                "INSERT INTO " + table + " (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector)",
+                "INSERT INTO " + table + " (id, content, metadata, embedding, content_type) VALUES (?, ?, ?::jsonb, ?::vector, ?)",
                 chunks, chunks.size(), (ps, chunk) -> {
                     ps.setString(1, chunk.getChunkId());
                     ps.setString(2, chunk.getContent());
                     ps.setString(3, buildMetadataJson(collectionName, docId, chunk));
                     ps.setString(4, toVectorLiteral(chunk.getEmbedding()));
+                    ps.setString(5, chunk.getContentType() != null ? chunk.getContentType() : "TEXT");
                 });
 
         log.info("批量写入向量到 {}，collectionName={}, docId={}, count={}", table, collectionName, docId, chunks.size());
@@ -95,12 +106,13 @@ public class PgVectorStoreService implements VectorStoreService {
         String table = vectorTableName(dimension);
         // noinspection SqlDialectInspection,SqlNoDataSourceInspection
         jdbcTemplate.update(
-                "INSERT INTO " + table + " (id, content, metadata, embedding) VALUES (?, ?, ?::jsonb, ?::vector) " +
-                        "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding",
+                "INSERT INTO " + table + " (id, content, metadata, embedding, content_type) VALUES (?, ?, ?::jsonb, ?::vector, ?) " +
+                        "ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding, content_type = EXCLUDED.content_type",
                 chunk.getChunkId(),
                 chunk.getContent(),
                 buildMetadataJson(collectionName, docId, chunk),
-                toVectorLiteral(chunk.getEmbedding())
+                toVectorLiteral(chunk.getEmbedding()),
+                chunk.getContentType() != null ? chunk.getContentType() : "TEXT"
         );
     }
 
@@ -131,5 +143,13 @@ public class PgVectorStoreService implements VectorStoreService {
             sb.append(v);
         }
         return sb.append("]").toString();
+    }
+
+    private void autoCreateVectorTable(String collectionName, int dimension) {
+        VectorSpaceSpec spec = VectorSpaceSpec.builder()
+                .spaceId(VectorSpaceId.builder().logicalName(collectionName).build())
+                .dimension(dimension)
+                .build();
+        vectorStoreAdmin.ensureVectorSpace(spec);
     }
 }

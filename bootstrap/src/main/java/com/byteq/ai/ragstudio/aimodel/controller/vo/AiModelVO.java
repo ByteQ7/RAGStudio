@@ -26,6 +26,8 @@ public class AiModelVO {
     /** 向量维度列表（如 [1024, 1536, 4096]），仅 embedding */
     private List<Integer> dimension;
     private String customUrl;
+    /** API 协议类型覆盖: openai / dashscope / anthropic */
+    private String apiProtocol;
     private Date createTime;
     private Date updateTime;
 }

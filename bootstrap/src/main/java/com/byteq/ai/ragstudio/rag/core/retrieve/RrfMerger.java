@@ -69,11 +69,15 @@ public final class RrfMerger {
         for (String id : sortedIds) {
             RetrievedChunk original = chunkMap.get(id);
             double rrfScore = rrfScores.get(id);
-            // 保留 RRF 分数
+            // 保留 RRF 分数及其他关键字段
             fused.add(RetrievedChunk.builder()
                     .id(original.getId())
                     .text(original.getText())
                     .score((float) rrfScore)
+                    .metadata(original.getMetadata())
+                    .contentType(original.getContentType())
+                    .kbName(original.getKbName())
+                    .docName(original.getDocName())
                     .build());
         }
 

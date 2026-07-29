@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.byteq.ai.ragstudio.core.chunk.ChunkEmbeddingService;
 import com.byteq.ai.ragstudio.core.chunk.ChunkingOptions;
 import com.byteq.ai.ragstudio.core.chunk.ChunkingStrategyFactory;
+import com.byteq.ai.ragstudio.core.chunk.ImageChunkGenerator;
 import com.byteq.ai.ragstudio.core.chunk.VectorChunk;
 import com.byteq.ai.ragstudio.core.chunk.ChunkingStrategy;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
@@ -15,55 +16,33 @@ import com.byteq.ai.ragstudio.ingestion.domain.enums.IngestionNodeType;
 import com.byteq.ai.ragstudio.ingestion.domain.pipeline.NodeConfig;
 import com.byteq.ai.ragstudio.ingestion.domain.result.NodeResult;
 import com.byteq.ai.ragstudio.ingestion.domain.settings.ChunkerSettings;
-import lombok.RequiredArgsConstructor;
+import com.byteq.ai.ragstudio.rag.constant.RAGConstant;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * 文本分块节点（ChunkerNode）
- * <p>
- * 数据摄入流水线的核心处理节点，负责将 ParserNode 解析后的完整文本按照指定的策略
- * 切分成多个较小的文本块（Chunk）。分块是 RAG（检索增强生成）系统的关键步骤，
- * 合理的分块策略直接影响后续的检索效果。
- * </p>
- * <p>
- * 核心处理逻辑：
- * <ol>
- *   <li>优先使用增强后的文本（enhancedText），否则使用原始解析文本（rawText）</li>
- *   <li>根据流水线配置选择分块策略（固定大小分块或结构感知分块）</li>
- *   <li>执行分块操作，将长文本切分为多个文本块</li>
- *   <li>为每个文本块生成向量嵌入（embedding），用于后续的向量检索</li>
- * </ol>
- * </p>
- * <p>
- * 支持的分块策略：
- * <ul>
- *   <li>{@link FixedSizeTextChunker} - 固定大小分块，按字符数切分</li>
- *   <li>{@link StructureAwareTextChunker} - 结构感知分块，保留文档结构</li>
- * </ul>
- * </p>
- */
+@Slf4j
 @Component
-@RequiredArgsConstructor
 public class ChunkerNode implements IngestionNode {
 
-    /**
-     * Jackson JSON 对象映射器，用于解析节点配置
-     */
     private final ObjectMapper objectMapper;
-
-    /**
-     * 分块策略工厂，根据配置选择对应的分块实现
-     */
     private final ChunkingStrategyFactory chunkingStrategyFactory;
-
-    /**
-     * 文本块向量嵌入服务，为切分后的文本块生成向量表示
-     */
     private final ChunkEmbeddingService chunkEmbeddingService;
+    private final ImageChunkGenerator imageChunkGenerator;
+
+    public ChunkerNode(ObjectMapper objectMapper,
+                       ChunkingStrategyFactory chunkingStrategyFactory,
+                       ChunkEmbeddingService chunkEmbeddingService,
+                       ImageChunkGenerator imageChunkGenerator) {
+        this.objectMapper = objectMapper;
+        this.chunkingStrategyFactory = chunkingStrategyFactory;
+        this.chunkEmbeddingService = chunkEmbeddingService;
+        this.imageChunkGenerator = imageChunkGenerator;
+    }
 
     @Override
     public String getNodeType() {
@@ -86,7 +65,16 @@ public class ChunkerNode implements IngestionNode {
         List<VectorChunk> results = chunker.chunk(text, chunkConfig);
         List<VectorChunk> chunks = convertToVectorChunks(results);
 
-        // 为切分后的每个文本块生成向量嵌入，用于后续的相似度检索
+        // 多模态嵌入模型：为 PDF/图片文件额外生成图像块
+        if (context.isSupportsImageEmbedding() && context.getRawBytes() != null) {
+            List<VectorChunk> imageChunks = generateImageChunks(context);
+            if (!imageChunks.isEmpty()) {
+                chunks.addAll(imageChunks);
+                log.info("生成了 {} 个图像块", imageChunks.size());
+            }
+        }
+
+        // 为切分后的每个文本块/图像块生成向量嵌入，用于后续的相似度检索
         // 优先使用 IndexerNode settings 中配置的 embeddingModel（通过 IngestionEngine 预扫描写入 context）
         chunkEmbeddingService.embed(chunks, context.getEmbeddingModel());
 
@@ -94,23 +82,43 @@ public class ChunkerNode implements IngestionNode {
         return NodeResult.ok("已分块 " + chunks.size() + " 段");
     }
 
-    /**
-     * 将分块设置转换为分块配置对象
-     *
-     * @param settings 分块设置，包含策略类型、块大小和重叠大小
-     * @return 分块配置对象
-     */
+    private List<VectorChunk> generateImageChunks(IngestionContext context) {
+        String mimeType = context.getMimeType();
+        byte[] rawBytes = context.getRawBytes();
+        String docId = context.getTaskId();
+        String bucketName = RAGConstant.S3_BUCKET_NAME;
+        String baseKey = RAGConstant.S3_DOCUMENT_PREFIX + "/"
+                + context.getVectorSpaceId().getLogicalName() + "/" + docId;
+
+        if (mimeType == null) return List.of();
+
+        if (isPdf(mimeType)) {
+            return imageChunkGenerator.generateFromPdf(rawBytes, bucketName, baseKey, docId);
+        }
+        if (isImage(mimeType)) {
+            VectorChunk chunk = imageChunkGenerator.generateFromImage(rawBytes, mimeType, bucketName, baseKey, docId, 0);
+            if (chunk != null) {
+                return List.of(chunk);
+            }
+        }
+        return List.of();
+    }
+
+    private boolean isPdf(String mimeType) {
+        return "pdf".equalsIgnoreCase(mimeType)
+                || "application/pdf".equalsIgnoreCase(mimeType);
+    }
+
+    private boolean isImage(String mimeType) {
+        if (mimeType == null) return false;
+        return mimeType.toLowerCase().startsWith("image/");
+    }
+
     private ChunkingOptions convertToChunkConfig(ChunkerSettings settings) {
         return settings.getStrategy().createDefaultOptions(
                 settings.getChunkSize(), settings.getOverlapSize());
     }
 
-    /**
-     * 将分块结果转换为 VectorChunk 列表
-     *
-     * @param results 原始分块结果
-     * @return 转换后的 VectorChunk 列表
-     */
     private List<VectorChunk> convertToVectorChunks(List<VectorChunk> results) {
         return results.stream()
                 .map(result -> VectorChunk.builder()
@@ -119,19 +127,11 @@ public class ChunkerNode implements IngestionNode {
                         .content(result.getContent())
                         .metadata(result.getMetadata())
                         .embedding(result.getEmbedding())
+                        .contentType("TEXT")
                         .build())
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 解析节点配置中的 settings JSON 为 ChunkerSettings 对象
-     * <p>
-     * 如果配置中未指定分块大小或重叠大小，使用默认值（分块大小=512，重叠大小=128）。
-     * </p>
-     *
-     * @param node JSON 配置节点
-     * @return 分块设置对象
-     */
     private ChunkerSettings parseSettings(JsonNode node) {
         ChunkerSettings settings = objectMapper.convertValue(node, ChunkerSettings.class);
         if (settings.getChunkSize() == null || settings.getChunkSize() <= 0) {

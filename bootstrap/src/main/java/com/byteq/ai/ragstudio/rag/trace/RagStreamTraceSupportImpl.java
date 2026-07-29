@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.rag.trace;
 import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.trace.RagStreamTraceSupport;
+import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
@@ -37,17 +38,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequiredArgsConstructor
 public class RagStreamTraceSupportImpl implements RagStreamTraceSupport {
 
-    /** 运行中状态 */
-    private static final String STATUS_RUNNING = "RUNNING";
-
-    /** 成功状态 */
-    private static final String STATUS_SUCCESS = "SUCCESS";
-
-    /** 错误状态 */
-    private static final String STATUS_ERROR = "ERROR";
-
-    /** 已取消状态 */
-    private static final String STATUS_CANCELLED = "CANCELLED";
+    private static final String STATUS_RUNNING = TraceStatus.RUNNING.name();
+    private static final String STATUS_SUCCESS = TraceStatus.SUCCESS.name();
+    private static final String STATUS_ERROR = TraceStatus.ERROR.name();
+    private static final String STATUS_CANCELLED = TraceStatus.CANCELLED.name();
 
     /** 链路追踪配置 */
     private final RagTraceProperties traceProperties;

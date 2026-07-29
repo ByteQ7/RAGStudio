@@ -6,7 +6,7 @@ module.exports = {
     extend: {
       colors: {
         background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        foreground: "var(--color-text)",
         card: "hsl(var(--card))",
         "card-foreground": "hsl(var(--card-foreground))",
         popover: "hsl(var(--popover))",
@@ -24,63 +24,71 @@ module.exports = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        "chat-user": "hsl(var(--chat-user))",
-        "chat-assistant": "hsl(var(--chat-assistant))",
-        lobe: {
-          50: "#f5f3ff", 100: "#ede9fe", 200: "#ddd6fe",
-          300: "#c4b5fd", 400: "#a78bfa", 500: "#8b5cf6",
-          600: "#7c3aed", 700: "#6d28d9", 800: "#5b21b6", 900: "#4c1d95"
-        }
+        "chat-user": "hsl(var(--chat-user-bg))",
+        "chat-assistant": "hsl(var(--chat-assistant))"
       },
       fontFamily: {
-        display: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "Roboto", '"Helvetica Neue"', "Arial", '"Noto Sans"', "sans-serif"],
-        body: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "Roboto", '"Helvetica Neue"', "Arial", '"Noto Sans"', "sans-serif"],
-        mono: ["'JetBrains Mono'", "ui-monospace", "SFMono-Regular", '"SF Mono"', "Menlo", "Consolas", "monospace"]
+        display: ["Geist Sans", "-apple-system", "BlinkMacSystemFont", '"Segoe UI Variable Display"', '"Segoe UI"', "Roboto", '"Helvetica Neue"', "Arial", '"HarmonyOS Sans SC"', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei UI"', '"Microsoft YaHei"', "ui-sans-serif", "system-ui", "sans-serif"],
+        body: ["Geist Sans", "-apple-system", "BlinkMacSystemFont", '"Segoe UI Variable Display"', '"Segoe UI"', "Roboto", '"Helvetica Neue"', "Arial", '"HarmonyOS Sans SC"', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei UI"', '"Microsoft YaHei"', "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["Geist Mono", "ui-monospace", "SFMono-Regular", '"SF Mono"', "Menlo", "Consolas", "monospace"]
+      },
+      fontSize: {
+        xs: ["13px", "1.5"],
+        sm: ["14px", "1.5"],
+        base: ["15px", "1.5714"],
+        lg: ["17px", "1.5"],
+        xl: ["21px", "1.4"],
+        "heading-1": ["38px", "1.2"],
+        "heading-2": ["30px", "1.25"],
+        "heading-3": ["24px", "1.3"],
+        "heading-4": ["20px", "1.35"],
+        "heading-5": ["17px", "1.4"]
+      },
+      spacing: {
+        xxs: "4px",
+        xs: "8px",
+        sm: "12px",
+        md: "20px",
+        lg: "24px",
+        xl: "32px"
+      },
+      borderRadius: {
+        xs: "var(--radius-xs)",
+        sm: "var(--radius-sm)",
+        DEFAULT: "var(--radius)",
+        lg: "var(--radius-lg)"
       },
       boxShadow: {
-        soft: "0 1px 3px rgba(15, 23, 42, 0.05)",
-        glass: "0 0 0 1px rgba(255,255,255,0.1), 0 8px 32px rgba(0,0,0,0.06)",
-        "glass-lg": "0 0 0 1px rgba(255,255,255,0.1), 0 16px 48px rgba(0,0,0,0.08)",
-        glow: "0 0 0 1px rgba(99,102,241,0.2), 0 4px 16px rgba(99,102,241,0.1)",
-        "glow-lg": "0 0 0 1px rgba(99,102,241,0.3), 0 8px 32px rgba(99,102,241,0.15)",
-        card: "0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)",
-        cardh: "0 2px 8px rgba(99,102,241,0.08), 0 0 0 1px rgba(99,102,241,0.06)",
-        dropdown: "0 4px 16px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.02)",
-        modal: "0 20px 60px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.02)"
-      },
-      backgroundImage: {
-        "lobe-gradient": "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%)",
-        "lobe-subtle": "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)",
-        "lobe-card": "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)",
-        "lobe-glow": "radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.08) 0%, transparent 60%)"
+        tertiary: "var(--shadow-sm)",
+        secondary: "var(--shadow-md)",
+        DEFAULT: "var(--shadow-lg)"
       },
       keyframes: {
-        "fade-up": { "0%": { opacity: "0", transform: "translateY(8px)" }, "100%": { opacity: "1", transform: "translateY(0)" } },
-        "fade-scale": { "0%": { opacity: "0", transform: "scale(0.96)" }, "100%": { opacity: "1", transform: "scale(1)" } },
-        "slide-in": { "0%": { opacity: "0", transform: "translateX(-12px)" }, "100%": { opacity: "1", transform: "translateX(0)" } },
+        "fade-up": { "0%": { opacity: "0", transform: "translateY(6px)" }, "100%": { opacity: "1", transform: "translateY(0)" } },
+        "fade-scale": { "0%": { opacity: "0", transform: "scale(0.97)" }, "100%": { opacity: "1", transform: "scale(1)" } },
+        "slide-in": { "0%": { opacity: "0", transform: "translateX(-10px)" }, "100%": { opacity: "1", transform: "translateX(0)" } },
         "pulse-soft": { "0%, 100%": { opacity: "1" }, "50%": { opacity: "0.5" } },
         "blink": { "0%, 100%": { opacity: "1" }, "50%": { opacity: "0" } },
         "spin-slow": { "0%": { transform: "rotate(0deg)" }, "100%": { transform: "rotate(360deg)" } },
-        shimmer: { "0%": { backgroundPosition: "-200% 0" }, "100%": { backgroundPosition: "200% 0" } },
-        "gradient-x": { "0%, 100%": { backgroundPosition: "0% 50%" }, "50%": { backgroundPosition: "100% 50%" } }
+        shimmer: { "0%": { backgroundPosition: "-200% 0" }, "100%": { backgroundPosition: "200% 0" } }
       },
       animation: {
-        "fade-up": "fade-up 0.3s cubic-bezier(0.25, 1, 0.5, 1)",
-        "fade-scale": "fade-scale 0.2s cubic-bezier(0.25, 1, 0.5, 1)",
-        "slide-in": "slide-in 0.2s cubic-bezier(0.25, 1, 0.5, 1)",
+        "fade-up": "fade-up 0.2s cubic-bezier(0.25, 1, 0.5, 1)",
+        "fade-scale": "fade-scale 0.15s cubic-bezier(0.25, 1, 0.5, 1)",
+        "slide-in": "slide-in 0.15s cubic-bezier(0.25, 1, 0.5, 1)",
         "pulse-soft": "pulse-soft 1.4s ease-in-out infinite",
         "blink": "blink 1s step-end infinite",
         "spin-slow": "spin-slow 4s linear infinite",
-        shimmer: "shimmer 2s linear infinite",
-        "gradient-x": "gradient-x 4s ease infinite"
+        shimmer: "shimmer 2s linear infinite"
       },
       typography: {
         DEFAULT: {
           css: {
             maxWidth: "none",
-            h1: { marginTop: "1rem", marginBottom: "0.75rem", fontWeight: "600" },
-            h2: { marginTop: "1rem", marginBottom: "0.75rem", fontWeight: "600" },
-            h3: { marginTop: "0.75rem", marginBottom: "0.5rem", fontWeight: "600" },
+            color: "var(--color-text)",
+            h1: { marginTop: "1rem", marginBottom: "0.75rem", fontWeight: "600", color: "var(--color-text)" },
+            h2: { marginTop: "1rem", marginBottom: "0.75rem", fontWeight: "600", color: "var(--color-text)" },
+            h3: { marginTop: "0.75rem", marginBottom: "0.5rem", fontWeight: "600", color: "var(--color-text)" },
             h4: { marginTop: "0.75rem", marginBottom: "0.5rem", fontWeight: "600" },
             p: { marginTop: "0.5rem", marginBottom: "0.5rem" },
             ul: { marginTop: "0.5rem", marginBottom: "0.5rem" },

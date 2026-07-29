@@ -5,7 +5,7 @@ import com.byteq.ai.ragstudio.aimodel.service.DefaultModelConfigService;
 import com.byteq.ai.ragstudio.alert.service.EmailService;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.embedding.EmbeddingService;
-import com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jModelFactory;
+import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
@@ -14,6 +14,8 @@ import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
 import jakarta.annotation.PostConstruct;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -34,7 +36,7 @@ public class ToolRetriever {
     private final McpToolRegistry mcpToolRegistry;
     private final EmailService emailService;
     private final DefaultModelConfigService defaultModelConfigService;
-    private final LangChain4jModelFactory modelFactory;
+    private final HttpModelFactory modelFactory;
     private final com.byteq.ai.ragstudio.infra.model.ModelSelector modelSelector;
     private final ToolCardStore store = new ToolCardStore();
 
@@ -48,7 +50,7 @@ public class ToolRetriever {
     public ToolRetriever(EmbeddingService embeddingService, SkillLoader skillLoader,
                          McpToolRegistry mcpToolRegistry, EmailService emailService,
                          DefaultModelConfigService defaultModelConfigService,
-                         LangChain4jModelFactory modelFactory,
+                         HttpModelFactory modelFactory,
                          com.byteq.ai.ragstudio.infra.model.ModelSelector modelSelector) {
         this.embeddingService = embeddingService;
         this.skillLoader = skillLoader;
@@ -65,7 +67,13 @@ public class ToolRetriever {
         if (stored != null && !stored.isEmpty()) {
             this.toolRoutingModel = stored;
         }
-        rebuildIndex();
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void onReady() {
+        Thread thread = new Thread(this::rebuildIndex, "tool-retriever-rebuild");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     public synchronized void rebuildIndex() {
@@ -114,12 +122,7 @@ public class ToolRetriever {
                 .filter(t -> modelId.equals(t.id()))
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("未找到模型: " + modelId));
-        try {
-            var model = modelFactory.getOrCreateEmbeddingModel(target);
-            model.embed("你好");
-        } finally {
-            modelFactory.evict(modelId);
-        }
+        embeddingService.embed("你好", modelId);
     }
 
     public List<String> retrieve(String question, int topK) {

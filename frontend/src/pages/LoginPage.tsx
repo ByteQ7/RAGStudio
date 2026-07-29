@@ -37,7 +37,7 @@ export function LoginPage() {
 
       {/* 登录卡片 */}
       <div className="relative w-full max-w-[400px] animate-fade-up">
-        <div className="rounded-2xl border border-white/60 bg-white/75 p-8 shadow-glass backdrop-blur-xl backdrop-saturate-150">
+        <div className="rounded-2xl border border-border/10 bg-card p-8 shadow-tertiary backdrop-blur-xl backdrop-saturate-150">
           {/* Logo */}
           <div className="flex flex-col items-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 shadow-sm">

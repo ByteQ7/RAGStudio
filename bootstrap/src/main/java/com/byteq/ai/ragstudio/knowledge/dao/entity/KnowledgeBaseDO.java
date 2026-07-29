@@ -61,6 +61,12 @@ public class KnowledgeBaseDO {
     private String collectionName;
 
     /**
+     * 是否支持图像嵌入: 1-是，0-否
+     * 由嵌入模型的多模态能力自动判断
+     */
+    private Integer supportsImageEmbedding;
+
+    /**
      * 创建人
      */
     private String createdBy;

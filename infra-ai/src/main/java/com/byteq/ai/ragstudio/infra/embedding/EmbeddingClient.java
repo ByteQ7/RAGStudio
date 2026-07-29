@@ -29,7 +29,7 @@ import java.util.List;
  * </p>
  *
  * @author byteq
- * @see com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jModelFactory
+ * @see com.byteq.ai.ragstudio.infra.http.HttpModelFactory
  * @see ModelTarget
  */
 public interface EmbeddingClient {
@@ -72,4 +72,21 @@ public interface EmbeddingClient {
      * @throws ModelClientException 当请求失败、响应异常或网络错误时抛出
      */
     List<List<Float>> embedBatch(List<String> texts, ModelTarget target);
+
+    /**
+     * 批量将图像（Base64 data URI 列表）转换为嵌入向量
+     * <p>
+     * 仅多模态 Embedding 模型支持此操作。普通文本 Embedding 客户端调用此方法将抛出
+     * {@link UnsupportedOperationException}。
+     * </p>
+     *
+     * @param imageBase64List 图像的 Base64 data URI 列表（如 "data:image/jpeg;base64,..."），不能为空
+     * @param target          目标模型配置，包含模型名称、候选模型列表等信息
+     * @return 图像向量列表，每个输入图像对应一个 {@link List}{@code <Float>} 向量，顺序与输入一致
+     * @throws UnsupportedOperationException 如果当前客户端不支持图像嵌入
+     * @throws ModelClientException           当请求失败、响应异常或网络错误时抛出
+     */
+    default List<List<Float>> embedImages(List<String> imageBase64List, ModelTarget target) {
+        throw new UnsupportedOperationException("当前 Embedding 客户端不支持图像嵌入");
+    }
 }

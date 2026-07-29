@@ -1,4 +1,4 @@
-export type Role = "user" | "assistant";
+export type Role = "user" | "assistant" | "tool" | "observation";
 
 export type FeedbackValue = "like" | "dislike" | null;
 
@@ -30,10 +30,13 @@ export interface Session {
 
 export interface Citation {
   id: string;
+  chunkId?: string;
   text: string;
   score: number;
   kbName?: string;
   docName?: string;
+  contentType?: string;
+  imageUrl?: string;
 }
 
 export interface Message {

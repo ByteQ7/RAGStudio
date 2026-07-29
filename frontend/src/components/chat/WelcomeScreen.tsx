@@ -224,19 +224,19 @@ export function WelcomeScreen() {
   const uploadingCount = images.filter((img) => img.uploading).length;
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center px-6 py-10" style={{ background: 'linear-gradient(180deg, #f8f9fc 0%, #f0f1ff 40%, #eef2ff 70%, #f8f9fc 100%)' }}>
+    <div className="flex min-h-full flex-col items-center justify-center px-6 py-10" style={{ background: 'var(--color-bg-layout)' }}>
       {/* Hero section */}
       <div
         className="w-[60%] text-center opacity-0 animate-fade-up"
         style={{ animationFillMode: "both" }}
       >
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl shadow-sm" style={{ background: '#e9ecef', color: '#495057' }}>
-          <RAGStudioLogo className="h-6 w-6" />
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl" style={{ background: 'var(--color-fill-quaternary)' }}>
+          <RAGStudioLogo className="h-6 w-6" style={{ color: 'hsl(var(--primary))' }} />
         </div>
-        <h1 className="mt-6 font-display text-[2rem] font-bold leading-tight tracking-tight sm:text-[2.5rem]">
-          <span className="text-gradient">你好，有什么可以帮你的？</span>
+        <h1 className="mt-6 font-display text-[2rem] font-bold leading-tight tracking-tight sm:text-[2.5rem]" style={{ color: 'var(--color-text)' }}>
+          <span className="text-primary">你好，有什么可以帮你的？</span>
         </h1>
-        <p className="mt-3 text-[15px] leading-relaxed text-gray-500">
+        <p className="mt-3 text-[15px] leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
           基于企业知识库的 AI 智能助手，支持深度推理与分析
         </p>
       </div>
@@ -256,16 +256,20 @@ export function WelcomeScreen() {
                 onClick={() => applyPreset(preset.prompt)}
                 disabled={isStreaming}
                 className={cn(
-                  "group relative flex flex-col items-start rounded-xl border border-gray-100 bg-white p-4 text-left transition-all duration-200 hover:border-indigo-100 hover:shadow-md hover:shadow-indigo-50",
+                  "group relative flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150",
                   isStreaming && "cursor-not-allowed opacity-60"
                 )}
+                style={{
+                  borderColor: 'var(--color-border-secondary)',
+                  background: 'var(--color-bg-container)'
+                }}
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-500 transition-colors group-hover:bg-indigo-100">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors" style={{ background: 'var(--color-fill-quaternary)', color: 'hsl(var(--primary))' }}>
                   <Icon className="h-4 w-4" />
                 </span>
-                <span className="mt-3 text-[13px] font-semibold text-gray-800">{preset.title}</span>
-                <span className="mt-1 text-xs leading-relaxed text-gray-400">{preset.description}</span>
-                <ArrowUpRight className="absolute top-3.5 right-3.5 h-3.5 w-3.5 text-gray-300 transition-colors group-hover:text-indigo-400" />
+                <span className="mt-3 text-[14px] font-semibold" style={{ color: 'var(--color-text)' }}>{preset.title}</span>
+                <span className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--color-text-tertiary)' }}>{preset.description}</span>
+                <ArrowUpRight className="absolute top-3.5 right-3.5 h-3.5 w-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
               </button>
             );
           })}
@@ -286,12 +290,13 @@ export function WelcomeScreen() {
 
         <div
           className={cn(
-            "flex flex-col rounded-2xl px-5 pt-4 pb-3 transition-all duration-200",
-            isFocused
-              ? "border-indigo-200/70 shadow-[0_0_0_3px_rgba(99,102,241,0.08),0_4px_16px_rgba(0,0,0,0.04)]"
-              : "border-gray-200/60 shadow-[0_1px_4px_rgba(0,0,0,0.02),0_4px_12px_rgba(0,0,0,0.02)]",
-            "bg-white/90 backdrop-blur-xl backdrop-saturate-150 border"
+            "flex flex-col rounded-2xl px-5 pt-4 pb-3 transition-all duration-150 border",
+            "bg-[var(--color-bg-elevated)] backdrop-blur-xl backdrop-saturate-150"
           )}
+          style={{
+            borderColor: isFocused ? 'var(--color-border)' : 'var(--color-border-secondary)',
+            boxShadow: isFocused ? 'var(--shadow-md)' : 'var(--shadow-sm)'
+          }}
         >
           <textarea
             ref={textareaRef}
@@ -299,7 +304,8 @@ export function WelcomeScreen() {
             onChange={(event) => setValue(event.target.value)}
             onPaste={handlePaste}
             placeholder={"输入你的问题..."}
-            className="max-h-40 min-h-[64px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none"
+            className="max-h-40 min-h-[64px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] focus:outline-none"
+            style={{ color: 'var(--color-text)' }}
             rows={2}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
@@ -328,7 +334,8 @@ export function WelcomeScreen() {
               {images.map((img, idx) => (
                 <div key={idx} className="relative group">
                   {img.uploading ? (
-                    <div className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 border border-gray-200">
+                    <div className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-xs border"
+                      style={{ background: 'var(--color-bg-container-secondary)', color: 'var(--color-text-secondary)', borderColor: 'var(--color-border-secondary)' }}>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       <span>上传中...</span>
                     </div>
@@ -337,15 +344,17 @@ export function WelcomeScreen() {
                       <img
                         src={img.previewUrl || img.localUrl || img.url}
                         alt={img.name}
-                        className="h-full w-full rounded-lg border border-gray-200 object-cover"
+                        className="h-full w-full rounded-lg object-cover"
+                        style={{ borderColor: 'var(--color-border-secondary)', borderWidth: 1, borderStyle: 'solid' }}
                       />
-                      <span className="absolute -bottom-0.5 left-0 right-0 truncate px-1 text-[10px] text-white text-center leading-tight bg-black/40 rounded-b-lg">
+                      <span className="absolute -bottom-0.5 left-0 right-0 truncate px-1 text-[11px] text-white text-center leading-tight bg-black/40 rounded-b-lg">
                         {img.name}
                       </span>
                       <button
                         type="button"
                         onClick={() => removeImage(idx)}
-                        className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gray-700 text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ background: 'var(--color-bg-spotlight)' }}
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -356,67 +365,84 @@ export function WelcomeScreen() {
             </div>
           )}
 
-          <div className="flex items-center gap-3 border-t border-gray-100 pt-3 mt-1">
-            {/* 图片上传按钮 */}
-            <div className="flex items-center gap-1">
+          <div className="flex items-center gap-3" style={{ borderTopColor: 'var(--color-border-secondary)', borderTopWidth: 1, borderStyle: 'solid' }}>
+            <div className="pt-3 mt-1 flex items-center gap-3 flex-1">
+              {/* 图片上传按钮 */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isStreaming || images.length >= MAX_IMAGES}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ color: 'var(--color-text-tertiary)' }}
+                  title={images.length >= MAX_IMAGES ? `最多 ${MAX_IMAGES} 张图片` : "上传图片 (或 Ctrl+V 粘贴)"}
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  <span className="hidden sm:inline">图片</span>
+                  {images.length > 0 && (
+                    <span className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>{images.length}/{MAX_IMAGES}</span>
+                  )}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleImageSelect}
+                />
+              </div>
+
+              <DeepThinkingSlider />
+
+              <div className="flex-1" />
+              <p className="hidden text-[12px] sm:block" style={{ color: 'var(--color-text-tertiary)' }}>
+                <kbd className="font-mono" style={{ color: 'var(--color-text-secondary)' }}>Enter</kbd> 发送 · <kbd className="font-mono" style={{ color: 'var(--color-text-secondary)' }}>Shift+Enter</kbd> 换行
+              </p>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isStreaming || images.length >= MAX_IMAGES}
-                className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title={images.length >= MAX_IMAGES ? `最多 ${MAX_IMAGES} 张图片` : "上传图片 (或 Ctrl+V 粘贴)"}
+                onClick={handleSubmit}
+                disabled={(uploadingCount > 0) || (!hasContent && !isStreaming)}
+                aria-label={isStreaming ? "停止生成" : uploadingCount > 0 ? "上传中" : "发送消息"}
+                className={cn(
+                  "inline-flex items-center justify-center rounded-full px-5 py-2.5 text-[14px] font-medium transition-all duration-200",
+                  isStreaming
+                    ? ""
+                    : uploadingCount > 0
+                      ? "cursor-not-allowed"
+                      : ""
+                )}
+                style={{
+                  background: isStreaming
+                    ? 'var(--color-fill-quaternary)'
+                    : uploadingCount > 0
+                      ? 'var(--color-fill-tertiary)'
+                      : hasContent
+                        ? 'hsl(var(--primary))'
+                        : 'var(--color-fill-tertiary)',
+                  color: isStreaming
+                    ? 'hsl(var(--primary))'
+                    : uploadingCount > 0
+                      ? 'var(--color-text-tertiary)'
+                      : hasContent
+                        ? 'white'
+                        : 'var(--color-text-tertiary)'
+                }}
               >
-                <ImagePlus className="h-4 w-4" />
-                <span className="hidden sm:inline">图片</span>
-                {images.length > 0 && (
-                  <span className="text-[10px] text-gray-400">{images.length}/{MAX_IMAGES}</span>
+                {isStreaming ? (
+                  <span className="inline-flex items-center gap-1.5"><Square className="h-3.5 w-3.5" /> 停止</span>
+                ) : uploadingCount > 0 ? (
+                  <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> 上传中</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5"><Send className="h-3.5 w-3.5" /> 发送</span>
                 )}
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={handleImageSelect}
-              />
             </div>
-
-            <DeepThinkingSlider />
-
-            <div className="flex-1" />
-            <p className="hidden text-[11px] text-gray-300 sm:block">
-              <kbd className="text-gray-500">Enter</kbd> 发送 · <kbd className="text-gray-500">Shift+Enter</kbd> 换行
-            </p>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={(uploadingCount > 0) || (!hasContent && !isStreaming)}
-              aria-label={isStreaming ? "停止生成" : uploadingCount > 0 ? "上传中" : "发送消息"}
-              className={cn(
-                "inline-flex items-center justify-center rounded-full px-5 py-2.5 text-[13px] font-medium transition-all duration-200",
-                isStreaming
-                  ? "bg-rose-50 text-rose-500 hover:bg-rose-100"
-                  : uploadingCount > 0
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : hasContent
-                      ? "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 hover:shadow-md"
-                      : "bg-gray-100 text-gray-400"
-              )}
-            >
-              {isStreaming ? (
-                <span className="inline-flex items-center gap-1.5"><Square className="h-3.5 w-3.5" /> 停止</span>
-              ) : uploadingCount > 0 ? (
-                <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> 上传中</span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5"><Send className="h-3.5 w-3.5" /> 发送</span>
-              )}
-            </button>
           </div>
         </div>
 
         {isStreaming ? (
-          <p className="mt-2 text-xs text-gray-400 animate-pulse-soft">生成中...</p>
+          <p className="mt-2 text-xs animate-pulse-soft" style={{ color: 'var(--color-text-tertiary)' }}>生成中...</p>
         ) : null}
       </div>
     </div>

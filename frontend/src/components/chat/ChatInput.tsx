@@ -192,13 +192,11 @@ export function ChatInput() {
   return (
     <div className="space-y-2">
       <div
-        className={cn(
-          "flex flex-col rounded-2xl px-4 pt-3.5 pb-2.5 transition-all duration-200",
-          isFocused
-            ? "border-indigo-200/70 shadow-[0_0_0_3px_rgba(99,102,241,0.08),0_4px_16px_rgba(0,0,0,0.04)]"
-            : "border-gray-200/60 shadow-[0_1px_4px_rgba(0,0,0,0.02),0_4px_12px_rgba(0,0,0,0.02)]",
-          "bg-white/90 backdrop-blur-xl backdrop-saturate-150 border"
-        )}
+        className="flex flex-col rounded-2xl px-4 pt-3.5 pb-2.5 transition-all duration-150 border bg-[var(--color-bg-elevated)] backdrop-blur-xl backdrop-saturate-150"
+        style={{
+          borderColor: isFocused ? 'var(--color-border)' : 'var(--color-border-secondary)',
+          boxShadow: isFocused ? 'var(--shadow-md)' : 'var(--shadow-sm)'
+        }}
       >
         <Textarea
           ref={textareaRef}
@@ -206,7 +204,8 @@ export function ChatInput() {
           onChange={(event) => setValue(event.target.value)}
           onPaste={handlePaste}
           placeholder={"输入你的问题..."}
-          className="max-h-40 min-h-[40px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] text-gray-900 shadow-none placeholder:text-gray-400 focus-visible:ring-0"
+          className="max-h-40 min-h-[40px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] shadow-none focus-visible:ring-0"
+          style={{ color: 'var(--color-text)' }}
           rows={1}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
@@ -226,7 +225,8 @@ export function ChatInput() {
             {images.map((img, idx) => (
               <div key={idx} className="relative group">
                 {img.uploading ? (
-                  <div className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 border border-gray-200">
+                  <div className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-xs border"
+                    style={{ background: 'var(--color-bg-container-secondary)', color: 'var(--color-text-secondary)', borderColor: 'var(--color-border-secondary)' }}>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     <span>上传中...</span>
                   </div>
@@ -235,15 +235,17 @@ export function ChatInput() {
                     <img
                       src={img.previewUrl || img.localUrl || img.url}
                       alt={img.name}
-                      className="h-full w-full rounded-lg border border-gray-200 object-cover"
+                      className="h-full w-full rounded-lg object-cover"
+                      style={{ border: '1px solid var(--color-border-secondary)' }}
                     />
-                    <span className="absolute -bottom-0.5 left-0 right-0 truncate px-1 text-[10px] text-white text-center leading-tight bg-black/40 rounded-b-lg">
+                    <span className="absolute -bottom-0.5 left-0 right-0 truncate px-1 text-[11px] text-white text-center leading-tight bg-black/40 rounded-b-lg">
                       {img.name}
                     </span>
                       <button
                         type="button"
                         onClick={() => removeImage(idx)}
-                      className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gray-700 text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ background: 'var(--color-bg-spotlight)' }}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -255,7 +257,8 @@ export function ChatInput() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex h-14 w-14 items-center justify-center rounded-lg border-2 border-dashed border-gray-200 text-gray-300 hover:border-indigo-300 hover:text-indigo-400 transition-colors"
+                className="flex h-14 w-14 items-center justify-center rounded-lg border-2 border-dashed transition-colors"
+                style={{ borderColor: 'var(--color-border-secondary)', color: 'var(--color-text-tertiary)' }}
                 title="继续添加图片"
               >
                 <PlusIcon className="h-5 w-5" />
@@ -265,20 +268,21 @@ export function ChatInput() {
         )}
 
         {/* 底部工具栏 */}
-        <div className="flex items-center gap-2 border-t border-gray-100 pt-2 mt-1.5">
+        <div className="flex items-center gap-2 pt-2 mt-1.5" style={{ borderTop: '1px solid var(--color-border-secondary)' }}>
           {/* 图片上传按钮 */}
           <div className="relative">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming || images.length >= MAX_IMAGES}
-              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ color: 'var(--color-text-tertiary)' }}
               title={images.length >= MAX_IMAGES ? `最多 ${MAX_IMAGES} 张图片` : "上传图片 (或 Ctrl+V 粘贴)"}
             >
               <ImagePlus className="h-4 w-4" />
               <span className="hidden sm:inline">图片</span>
               {images.length > 0 && (
-                <span className="text-[10px] text-gray-400">
+                <span className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
                   {images.length}/{MAX_IMAGES}
                 </span>
               )}
@@ -297,8 +301,8 @@ export function ChatInput() {
           <DeepThinkingSlider />
 
           <div className="ml-auto flex items-center gap-3">
-            <span className="hidden text-[11px] text-gray-300 sm:inline">
-              <kbd className="font-sans">Enter</kbd> 发送 · <kbd className="font-sans">Shift+Enter</kbd> 换行
+            <span className="hidden text-[12px] sm:inline" style={{ color: 'var(--color-text-tertiary)' }}>
+              <kbd className="font-mono" style={{ color: 'var(--color-text-secondary)' }}>Enter</kbd> 发送 · <kbd className="font-mono" style={{ color: 'var(--color-text-secondary)' }}>Shift+Enter</kbd> 换行
             </span>
             <button
               type="button"
@@ -306,17 +310,27 @@ export function ChatInput() {
               disabled={(uploadingCount > 0) || (!hasContent && !isStreaming && !isStopping)}
               aria-label={isStopping ? "停止中" : isStreaming ? "停止生成" : uploadingCount > 0 ? "上传中" : "发送消息"}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium transition-all duration-200",
-                isStopping
-                  ? "bg-amber-50 text-amber-500"
-                  : isStreaming
-                    ? "bg-rose-50 text-rose-500 hover:bg-rose-100"
-                    : uploadingCount > 0
-                      ? "cursor-not-allowed bg-gray-100 text-gray-400"
-                      : hasContent
-                        ? "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 hover:shadow-md"
-                        : "cursor-not-allowed bg-gray-100 text-gray-400"
+                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[14px] font-medium transition-all duration-200",
+                isStopping || isStreaming ? "" : ""
               )}
+              style={{
+                background: isStopping
+                  ? 'var(--color-warning)'
+                  : isStreaming
+                    ? 'var(--color-fill-quaternary)'
+                    : uploadingCount > 0
+                      ? 'var(--color-fill-tertiary)'
+                      : hasContent
+                        ? 'hsl(var(--primary))'
+                        : 'var(--color-fill-tertiary)',
+                color: isStreaming
+                  ? 'hsl(var(--primary))'
+                  : uploadingCount > 0
+                    ? 'var(--color-text-tertiary)'
+                    : hasContent
+                      ? 'white'
+                      : 'var(--color-text-tertiary)'
+              }}
             >
               {isStopping ? (
                 <>
@@ -344,7 +358,7 @@ export function ChatInput() {
         </div>
       </div>
       {isStreaming ? (
-        <p className="text-center text-[11px] text-gray-400 animate-pulse-soft">生成中...</p>
+        <p className="text-center text-[12px] animate-pulse-soft" style={{ color: 'var(--color-text-tertiary)' }}>生成中...</p>
       ) : null}
     </div>
   );

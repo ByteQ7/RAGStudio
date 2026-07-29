@@ -46,3 +46,12 @@ export function revokeImageUrls(images: UploadedImage[]) {
     }
   }
 }
+
+export async function getPresignedUrl(s3Url: string): Promise<string> {
+  const token = storage.getToken();
+  const headers: Record<string, string> = token ? { Authorization: token } : {};
+  const resp = await fetch(`${API_BASE_URL}/presign?url=${encodeURIComponent(s3Url)}`, { headers });
+  if (!resp.ok) throw new Error("获取预签名 URL 失败");
+  const data = await resp.json();
+  return String(data.data || data);
+}

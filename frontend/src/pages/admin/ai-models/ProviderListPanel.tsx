@@ -69,7 +69,7 @@ export function ProviderListPanel({
         ) : (
           <div
             className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold transition-colors",
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold transition-colors",
               isActive
                 ? "bg-indigo-50 text-indigo-600"
                 : "bg-gray-50 text-gray-400"
@@ -98,7 +98,7 @@ export function ProviderListPanel({
           </div>
           <span
             className={cn(
-              "block truncate text-[10px] mt-px",
+              "block truncate text-[11px] mt-px",
               isActive ? "text-gray-400" : "text-gray-300"
             )}
           >
@@ -109,7 +109,7 @@ export function ProviderListPanel({
         {/* 模型计数 */}
         <span
           className={cn(
-            "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums",
+            "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums",
             isActive
               ? "bg-indigo-50 text-indigo-500"
               : "bg-gray-50 text-gray-400"
@@ -135,8 +135,8 @@ export function ProviderListPanel({
       {/* 已启用 */}
       <section>
         <div className="mb-2 flex items-center gap-1.5 px-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">已启用</span>
-          <span className="text-[10px] text-gray-300 ml-auto">{enabled.length}</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">已启用</span>
+          <span className="text-[11px] text-gray-300 ml-auto">{enabled.length}</span>
         </div>
         <div className="space-y-1">
           {enabled.length > 0 ? (
@@ -144,7 +144,7 @@ export function ProviderListPanel({
           ) : (
             <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-200 py-6 text-gray-400">
               <PlugZap className="h-4 w-4" strokeWidth={1.5} />
-              <p className="text-[11px]">暂无启用的供应商</p>
+              <p className="text-[12px]">暂无启用的供应商</p>
             </div>
           )}
         </div>
@@ -153,8 +153,8 @@ export function ProviderListPanel({
       {/* 未启用 */}
       <section>
         <div className="mb-2 flex items-center gap-1.5 px-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">未启用</span>
-          <span className="text-[10px] text-gray-300 ml-auto">{disabled.length}</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">未启用</span>
+          <span className="text-[11px] text-gray-300 ml-auto">{disabled.length}</span>
         </div>
         <div className="space-y-1">
           {disabled.length > 0 ? (
@@ -162,7 +162,7 @@ export function ProviderListPanel({
           ) : (
             <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-200 py-6 text-gray-400">
               <Cpu className="h-4 w-4" strokeWidth={1.5} />
-              <p className="text-[11px]">暂无未启用的供应商</p>
+              <p className="text-[12px]">暂无未启用的供应商</p>
             </div>
           )}
         </div>

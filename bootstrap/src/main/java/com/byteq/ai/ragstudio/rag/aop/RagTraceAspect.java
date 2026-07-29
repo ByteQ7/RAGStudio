@@ -4,6 +4,7 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
+import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceRoot;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
@@ -46,14 +47,9 @@ import java.util.Date;
 @RequiredArgsConstructor
 public class RagTraceAspect {
 
-    /** 运行中状态 */
-    private static final String STATUS_RUNNING = "RUNNING";
-
-    /** 成功状态 */
-    private static final String STATUS_SUCCESS = "SUCCESS";
-
-    /** 错误状态 */
-    private static final String STATUS_ERROR = "ERROR";
+    private static final String STATUS_RUNNING = TraceStatus.RUNNING.name();
+    private static final String STATUS_SUCCESS = TraceStatus.SUCCESS.name();
+    private static final String STATUS_ERROR = TraceStatus.ERROR.name();
 
     /** 链路追踪记录服务 */
     private final RagTraceRecordService traceRecordService;

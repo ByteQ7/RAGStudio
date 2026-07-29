@@ -26,13 +26,13 @@ import com.byteq.ai.ragstudio.aimodel.service.AiModelConfigService;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
-import com.byteq.ai.ragstudio.infra.langchain4j.LangChain4jModelFactory;
+import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
+import com.byteq.ai.ragstudio.infra.http.ModelHttpClient;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import com.byteq.ai.ragstudio.infra.protocol.ModelProtocol;
+import com.byteq.ai.ragstudio.infra.protocol.ProtocolRegistry;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.output.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -61,10 +61,12 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     private final AiProviderMapper providerMapper;
     private final AiModelMapper modelMapper;
     private final AiModelConfigCache configCache;
-    private final LangChain4jModelFactory chatModelFactory;
+    private final HttpModelFactory chatModelFactory;
+    private final ModelHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final ProviderAdapterRegistry adapterRegistry;
     private final FileStorageService fileStorageService;
+    private final ProtocolRegistry protocolRegistry;
 
     // ==================== 供应商管理 ====================
 
@@ -86,6 +88,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 .displayName(request.getDisplayName())
                 .baseUrl(request.getBaseUrl().trim())
                 .apiKey(request.getApiKey())
+                .apiProtocol(StrUtil.isNotBlank(request.getApiProtocol()) ? request.getApiProtocol() : "openai")
                 .endpoints(serializeEndpoints(mergedEndpoints))
                 .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                 .build();
@@ -141,6 +144,9 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 log.info("禁用供应商 {} 时自动禁用其下所有模型", id);
             }
             existing.setEnabled(request.getEnabled());
+        }
+        if (StrUtil.isNotBlank(request.getApiProtocol())) {
+            existing.setApiProtocol(request.getApiProtocol());
         }
 
         providerMapper.updateById(existing);
@@ -230,6 +236,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
                 .dimension(serializeDimension(request.getDimension()))
                 .customUrl(request.getCustomUrl())
+                .apiProtocol(request.getApiProtocol())
                 .build();
 
         try {
@@ -263,44 +270,47 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             throw new ClientException("模型不存在：" + id);
         }
 
-        String oldProviderId = existing.getProviderId();
+        LambdaUpdateWrapper<AiModelDO> wrapper = new LambdaUpdateWrapper<AiModelDO>()
+                .eq(AiModelDO::getId, id);
 
-        if (StrUtil.isNotBlank(request.getProviderId()) && !request.getProviderId().equals(oldProviderId)) {
+        if (StrUtil.isNotBlank(request.getProviderId()) && !request.getProviderId().equals(existing.getProviderId())) {
             AiProviderDO provider = providerMapper.selectById(request.getProviderId());
             if (provider == null) {
                 throw new ClientException("供应商不存在：" + request.getProviderId());
             }
-            existing.setProviderId(request.getProviderId());
+            wrapper.set(AiModelDO::getProviderId, request.getProviderId());
         }
         if (StrUtil.isNotBlank(request.getModelName())) {
-            existing.setModelName(request.getModelName().trim());
+            wrapper.set(AiModelDO::getModelName, request.getModelName().trim());
         }
         if (StrUtil.isNotBlank(request.getCapability())) {
-            existing.setCapability(request.getCapability().toUpperCase());
+            wrapper.set(AiModelDO::getCapability, request.getCapability().toUpperCase());
         }
         if (request.getPriority() != null) {
-            existing.setPriority(request.getPriority());
+            wrapper.set(AiModelDO::getPriority, request.getPriority());
         }
         if (request.getEnabled() != null) {
-            existing.setEnabled(request.getEnabled());
+            wrapper.set(AiModelDO::getEnabled, request.getEnabled());
         }
         if (request.getSupportsThinking() != null) {
-            existing.setSupportsThinking(request.getSupportsThinking());
+            wrapper.set(AiModelDO::getSupportsThinking, request.getSupportsThinking());
         }
         if (request.getSupportsMultimodal() != null) {
-            existing.setSupportsMultimodal(request.getSupportsMultimodal());
+            wrapper.set(AiModelDO::getSupportsMultimodal, request.getSupportsMultimodal());
         }
         if (request.getDimension() != null) {
-            existing.setDimension(serializeDimension(request.getDimension()));
+            wrapper.set(AiModelDO::getDimension, serializeDimension(request.getDimension()));
         }
         if (request.getCustomUrl() != null) {
-            existing.setCustomUrl(request.getCustomUrl());
+            wrapper.set(AiModelDO::getCustomUrl, request.getCustomUrl().isBlank() ? null : request.getCustomUrl().trim());
+        }
+        if (request.getApiProtocol() != null) {
+            wrapper.set(AiModelDO::getApiProtocol, request.getApiProtocol().isBlank() ? null : request.getApiProtocol().trim());
         }
 
-        modelMapper.updateById(existing);
+        modelMapper.update(null, wrapper);
         log.info("更新 AI 模型: id={}, modelId={}", id, existing.getModelId());
 
-        // 清除该模型的 LangChain4j 实例缓存
         chatModelFactory.evict(existing.getModelId());
         configCache.reload();
     }
@@ -657,43 +667,54 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     /**
-     * 检查 EMBEDDING 模型的连通性：通过 LangChain4j 发送真实向量化探测请求
-     * <p>使用 "你好" 作为探测文本，走 EmbeddingModel.embed() 完整链路，
-     * 验证模型 API 正常、响应包含有效向量数据。探测完成后立即从缓存中清除，
-     * 避免影响后续真实 Embedding 调用。</p>
+     * 检查 EMBEDDING 模型的连通性
      */
     private ConnectivityResultVO checkEmbeddingModelConnectivity(AiModelDO model, AiProviderDO provider,
                                                                   String baseUrl, String apiKey,
                                                                   Map<String, String> endpoints) {
         Instant start = Instant.now();
         try {
+            String protocol = StrUtil.isNotBlank(model.getApiProtocol())
+                    ? model.getApiProtocol()
+                    : StrUtil.isNotBlank(provider.getApiProtocol())
+                            ? provider.getApiProtocol()
+                            : "openai";
+
             DynamicModelConfig.ModelEntry entry = DynamicModelConfig.ModelEntry.builder()
-                    .id(model.getModelId())
-                    .provider(provider.getName())
-                    .model(model.getModelId())
-                    .build();
+                    .id(model.getModelId()).provider(provider.getName()).model(model.getModelId())
+                    .protocol(protocol).build();
             DynamicModelConfig.ProviderEntry providerEntry = DynamicModelConfig.ProviderEntry.builder()
-                    .name(provider.getName())
-                    .url(baseUrl)
-                    .apiKey(apiKey)
+                    .name(provider.getName()).url(baseUrl).apiKey(apiKey)
                     .endpoints(endpoints != null ? endpoints : new HashMap<>())
-                    .build();
+                    .protocol(protocol).build();
             ModelTarget target = new ModelTarget(model.getModelId(), entry, providerEntry);
 
-            EmbeddingModel embeddingModel = chatModelFactory.getOrCreateEmbeddingModel(target);
-            Response<Embedding> response = embeddingModel.embed("你好");
+            ModelProtocol proto = protocolRegistry.get(target.protocolName());
+            String url = chatModelFactory.resolveEmbeddingUrl(target);
+
+            Object requestBody = proto.buildEmbeddingRequest(model.getModelId(), List.of("test"), null);
+            String body = objectMapper.writeValueAsString(requestBody);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header(proto.authHeaderName(), proto.authHeaderValue(apiKey))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .timeout(Duration.ofSeconds(30))
+                    .build();
+
+            HttpResponse<String> response = modelCheckHttpClient.send(request, HttpResponse.BodyHandlers.ofString());
             long latencyMs = Duration.between(start, Instant.now()).toMillis();
 
-            if (response != null && response.content() != null) {
+            if (response.statusCode() == 200) {
                 return new ConnectivityResultVO(true, latencyMs, null);
+            } else {
+                String errorMsg = extractError(response.body());
+                return new ConnectivityResultVO(false, latencyMs, "HTTP " + response.statusCode() + ": " + errorMsg);
             }
-            return new ConnectivityResultVO(false, latencyMs, "Embedding 返回空结果");
         } catch (Exception e) {
             long latencyMs = Duration.between(start, Instant.now()).toMillis();
             return new ConnectivityResultVO(false, latencyMs, e.getMessage());
-        } finally {
-            // 清除缓存，防止本次探测创建的 EmbeddingModel（可能缺失端点配置）被后续真实请求复用
-            chatModelFactory.evict(model.getModelId());
         }
     }
 
@@ -884,7 +905,12 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 update.setSupportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0);
                 update.setSupportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0);
                 update.setDimension(serializeDimension(request.getDimension()));
-                update.setCustomUrl(request.getCustomUrl());
+                if (request.getCustomUrl() != null) {
+                    update.setCustomUrl(request.getCustomUrl());
+                }
+                if (request.getApiProtocol() != null) {
+                    update.setApiProtocol(request.getApiProtocol());
+                }
                 modelMapper.updateById(update);
                 ids.add(existing.getId());
                 log.info("模型已重新启用: id={}, modelId={}", existing.getId(), request.getModelId());
@@ -911,6 +937,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                         .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
                         .dimension(serializeDimension(request.getDimension()))
                         .customUrl(request.getCustomUrl())
+                        .apiProtocol(request.getApiProtocol())
                         .build();
 
                 modelMapper.insert(model);

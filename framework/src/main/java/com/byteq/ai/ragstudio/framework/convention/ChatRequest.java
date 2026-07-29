@@ -8,6 +8,7 @@ import lombok.Builder.Default;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 通用大模型请求对象
@@ -42,6 +43,10 @@ public class ChatRequest {
      */
     @Default
     private List<ChatMessage> messages = new ArrayList<>();
+
+    /** function calling 工具定义列表 */
+    @Default
+    private List<Map<String, Object>> tools = new ArrayList<>();
 
     // ================== 模型控制参数 ==================
 

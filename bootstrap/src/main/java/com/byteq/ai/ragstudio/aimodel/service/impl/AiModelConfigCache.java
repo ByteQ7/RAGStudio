@@ -102,6 +102,7 @@ public class AiModelConfigCache implements ModelConfigProvider {
                     .url(p.getBaseUrl())
                     .apiKey(p.getApiKey())
                     .endpoints(endpoints)
+                    .protocol(StrUtil.isNotBlank(p.getApiProtocol()) ? p.getApiProtocol() : "openai")
                     .build();
             providerMap.put(p.getName(), entry);
             idToName.put(p.getId(), p.getName());
@@ -133,6 +134,7 @@ public class AiModelConfigCache implements ModelConfigProvider {
                             .supportsMultimodal(m.getSupportsMultimodal() != null && m.getSupportsMultimodal() == 1)
                             .isDefault(m.getIsDefault() != null && m.getIsDefault() == 1)
                             .capability(m.getCapability())
+                            .protocol(StrUtil.isNotBlank(m.getApiProtocol()) ? m.getApiProtocol() : null)
                             .build();
                 })
                 .collect(Collectors.toList());

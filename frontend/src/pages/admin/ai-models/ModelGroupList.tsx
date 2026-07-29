@@ -177,7 +177,7 @@ export function ModelGroupList({
               >
                 <meta.icon className={cn("h-3.5 w-3.5", meta.color)} />
                 {meta.label}
-                <span className="ml-0.5 rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 tabular-nums">
+                <span className="ml-0.5 rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-500 tabular-nums">
                   {count}
                 </span>
               </TabsTrigger>
@@ -214,12 +214,12 @@ export function ModelGroupList({
                         {model.modelName}
                       </span>
                       {model.supportsThinking === 1 && (
-                        <Badge className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[10px] text-violet-600">
+                        <Badge className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[11px] text-violet-600">
                           深度思考
                         </Badge>
                       )}
                       {model.supportsMultimodal === 1 && (
-                        <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-2 py-0 text-[10px] text-emerald-600">
+                        <Badge className="rounded-full border-emerald-200 bg-emerald-50 px-2 py-0 text-[11px] text-emerald-600">
                           多模态
                         </Badge>
                       )}
@@ -234,7 +234,7 @@ export function ModelGroupList({
 
                   {/* 优先级 */}
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-gray-400">优先级</span>
+                    <span className="text-[12px] text-gray-400">优先级</span>
                     <Input
                       type="number"
                       className={cn(
@@ -276,7 +276,7 @@ export function ModelGroupList({
                         ) : (
                           <WifiOff className="h-3 w-3" />
                         )}
-                        <span className="text-[11px] font-medium whitespace-nowrap">
+                        <span className="text-[12px] font-medium whitespace-nowrap">
                           {connResult.success
                             ? `${connResult.latencyMs ?? "?"}ms`
                             : "失败"}

@@ -16,18 +16,19 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   );
 
   return (
-    <header className="sticky top-0 z-20 border-b border-gray-100 bg-white/90 backdrop-blur-md">
+    <header className="sticky top-0 z-20 border-b" style={{ borderColor: 'var(--color-border-secondary)', background: 'var(--color-bg-elevated)' }}>
       <div className="flex h-14 items-center gap-3 px-5">
         <Button
           variant="ghost"
           size="icon"
           onClick={onToggleSidebar}
           aria-label="切换侧边栏"
-          className="h-9 w-9 rounded-lg text-gray-400 hover:bg-gray-50 hover:text-gray-600 lg:hidden"
+          className="h-9 w-9 rounded-lg lg:hidden"
+          style={{ color: 'var(--color-text-secondary)' }}
         >
           <Menu className="h-[18px] w-[18px]" />
         </Button>
-        <h2 className="text-[14px] font-semibold text-gray-800 tracking-tight truncate max-w-[280px]">
+        <h2 className="text-[14px] font-semibold tracking-tight truncate max-w-[280px]" style={{ color: 'var(--color-text)' }}>
           {currentSession?.title || "新会话"}
         </h2>
       </div>

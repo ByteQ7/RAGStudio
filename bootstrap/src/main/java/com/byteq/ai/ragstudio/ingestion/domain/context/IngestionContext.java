@@ -142,4 +142,11 @@ public class IngestionContext {
      */
     @Builder.Default
     private boolean skipIndexerWrite = false;
+
+    /**
+     * 是否支持图像嵌入
+     * 标记当前嵌入模型是否为多模态，用于 ChunkerNode 决定是否生成图像块
+     */
+    @Builder.Default
+    private boolean supportsImageEmbedding = false;
 }

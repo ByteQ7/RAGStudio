@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
+import { RoleBadge } from "@/components/common/RoleBadge";
 
 import {
   AlertDialog,
@@ -125,7 +126,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     setAvatarFailed(false);
   }, [user?.avatar, user?.userId]);
 
-  // 侧边栏关闭时退出选择模式
   React.useEffect(() => {
     if (!isOpen) exitSelectMode();
   }, [isOpen]);
@@ -152,7 +152,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     setBatchDeleting(true);
     try {
       await batchDeleteSessions(Array.from(selectedIds));
-      // 从本地 store 中移除已删除的会话
       useChatStore.setState((state) => ({
         sessions: state.sessions.filter((s) => !selectedIds.has(s.id)),
         currentSessionId: selectedIds.has(state.currentSessionId || "")
@@ -209,25 +208,30 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       />
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen w-[260px] flex-shrink-0 flex-col border-r border-gray-200/50 transition-transform lg:static lg:h-screen lg:translate-x-0",
-          "bg-white/80 backdrop-blur-2xl backdrop-saturate-150",
-          "shadow-[0_0_0_1px_rgba(0,0,0,0.02),_2px_0_12px_rgba(0,0,0,0.04)]",
+          "fixed left-0 top-0 z-40 flex h-screen w-[260px] flex-shrink-0 flex-col border-r transition-transform lg:static lg:h-screen lg:translate-x-0",
+          "bg-[var(--sidebar-bg)] backdrop-blur-2xl backdrop-saturate-150",
+          "shadow-tertiary",
+          "border-[var(--color-border-secondary)]",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Top: logo bar */}
         <div className="flex items-center gap-2.5 px-4 pt-5 pb-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: '#e9ecef', color: '#495057' }}>
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-xl"
+            style={{ background: 'var(--color-fill-quaternary)', color: 'var(--color-text-secondary)' }}
+          >
             <RAGStudioLogo className="h-6 w-6" />
           </div>
-          <span className="flex-1 text-[14px] font-bold text-gray-900">
+          <span className="flex-1 text-[14px] font-bold" style={{ color: 'var(--color-text)' }}>
             知识助手
           </span>
           {user?.role === "admin" ? (
             <div className="relative group">
               <button
                 type="button"
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-all hover:bg-indigo-50 hover:text-indigo-600 hover:shadow-sm"
+                className="flex h-9 w-9 items-center justify-center rounded-lg transition-all hover:bg-[var(--color-fill-tertiary)]"
+                style={{ color: 'var(--color-text-secondary)' }}
                 onClick={() => {
                   window.open("/admin", "_blank");
                   onClose();
@@ -237,9 +241,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               >
                 <Settings className="h-5 w-5" />
               </button>
-              <div className="pointer-events-none absolute top-full left-1/2 z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100">
+              <div className="pointer-events-none absolute top-full left-1/2 z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[var(--color-bg-spotlight)] px-3 py-1.5 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
                 后台管理
-                <div className="absolute -top-1 left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900" />
+                <div className="absolute -top-1 left-1/2 -translate-x-1/2 border-4 border-transparent border-b-[var(--color-bg-spotlight)]" />
               </div>
             </div>
           ) : null}
@@ -249,8 +253,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="px-3 pb-2">
           <button
             type="button"
-            className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[13px] font-semibold text-white shadow-sm transition-all duration-200 hover:shadow-md active:scale-[0.97]"
-            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+            className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-[14px] font-semibold text-white transition-all duration-200 hover:opacity-90 active:scale-[0.97]"
+            style={{ background: 'hsl(var(--primary))' }}
             onClick={() => {
               createSession().catch(() => null);
               navigate("/chat");
@@ -265,8 +269,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Search / Select Mode */}
         <div className="px-3 pb-1">
           {selectMode ? (
-            <div className="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5">
-              <span className="text-[12px] font-medium text-rose-600">
+            <div className="flex items-center justify-between rounded-lg border px-3 py-1.5"
+              style={{ borderColor: 'var(--color-text-quaternary)', background: 'var(--color-fill-quaternary)' }}
+            >
+              <span className="text-[14px] font-medium" style={{ color: 'var(--color-text-secondary)' }}>
                 已选 {selectedIds.size} 项
               </span>
               <div className="flex items-center gap-1">
@@ -274,7 +280,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   type="button"
                   onClick={handleBatchDelete}
                   disabled={selectedIds.size === 0 || batchDeleting}
-                  className="inline-flex items-center gap-1 rounded-md bg-rose-500 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-40"
+                  style={{ background: 'hsl(var(--destructive))' }}
                 >
                   <Trash2 className="h-3 w-3" />
                   {batchDeleting ? "删除中..." : "删除"}
@@ -282,7 +289,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 <button
                   type="button"
                   onClick={exitSelectMode}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-rose-400 hover:bg-rose-100 hover:text-rose-600"
+                  className="flex h-6 w-6 items-center justify-center rounded-md transition-colors"
+                  style={{ color: 'var(--color-text-tertiary)' }}
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -290,12 +298,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </div>
           ) : (
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-300" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: 'var(--color-text-tertiary)' }} />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="搜索对话..."
-                className="h-9 w-full rounded-xl border border-gray-200/60 bg-gray-100/50 pl-9 pr-3 text-[13px] text-gray-700 placeholder:text-gray-400 transition-all duration-200 focus:border-indigo-300/50 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.06)] focus:outline-none"
+                className="h-9 w-full rounded-xl border pl-9 pr-3 text-[14px] transition-all duration-200 focus:outline-none"
+                style={{
+                  borderColor: 'var(--color-border-secondary)',
+                  background: 'var(--color-bg-container-secondary)',
+                  color: 'var(--color-text)'
+                }}
               />
             </div>
           )}
@@ -304,19 +317,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Session list */}
         <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1 sidebar-scroll">
           {sessions.length === 0 && (!sessionsLoaded || isLoading) ? (
-            <div className="flex h-full items-center justify-center text-gray-300">
+            <div className="flex h-full items-center justify-center" style={{ color: 'var(--color-text-tertiary)' }}>
               <Loading label="加载会话中" />
             </div>
           ) : filteredSessions.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-gray-300">
+            <div className="flex h-full flex-col items-center justify-center" style={{ color: 'var(--color-text-tertiary)' }}>
               <MessageSquare className="h-10 w-10" strokeWidth={1.5} />
-              <p className="mt-2 text-[13px]">暂无对话记录</p>
+              <p className="mt-2 text-[14px]">暂无对话记录</p>
             </div>
           ) : (
             <div className="py-1">
               {groupedSessions.map((group, index) => (
                 <div key={group.label} className={cn(index === 0 ? "" : "mt-3")}>
-                  <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-300">
+                  <p className="mb-1 px-3 text-[12px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-tertiary)' }}>
                     {group.label}
                   </p>
                   {group.items.map((session) => {
@@ -325,16 +338,44 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                       <div
                         key={session.id}
                         className={cn(
-                          "group flex min-h-[38px] cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-[13px] transition-all duration-150",
+                          "group flex min-h-[38px] cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-[14px] transition-all duration-100",
                           selectMode
                             ? isSelected
-                              ? "bg-rose-50 text-rose-700"
-                              : "text-gray-500 hover:bg-gray-100"
+                              ? "font-medium"
+                              : ""
                             : currentSessionId === session.id
-                              ? "font-medium shadow-sm"
-                              : "text-gray-600 hover:text-gray-900"
-                            , currentSessionId === session.id && !selectMode ? "bg-indigo-50/80 text-indigo-700 border border-indigo-100/50" : "hover:bg-gray-50/70"
+                              ? "font-medium"
+                              : ""
                         )}
+                        style={{
+                          background: selectMode
+                            ? isSelected
+                              ? 'var(--color-fill-secondary)'
+                              : 'transparent'
+                            : currentSessionId === session.id
+                              ? 'var(--color-fill-quaternary)'
+                              : 'transparent',
+                          color: selectMode && isSelected
+                            ? 'var(--color-text)'
+                            : currentSessionId === session.id
+                              ? 'var(--color-text)'
+                              : 'var(--color-text-secondary)',
+                          borderColor: currentSessionId === session.id && !selectMode
+                            ? 'var(--color-border-secondary)'
+                            : 'transparent',
+                          borderWidth: 1,
+                          borderStyle: 'solid'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!selectMode && currentSessionId !== session.id) {
+                            e.currentTarget.style.background = 'var(--color-fill-quaternary)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!selectMode && currentSessionId !== session.id) {
+                            e.currentTarget.style.background = 'transparent';
+                          }
+                        }}
                         role="button"
                         tabIndex={0}
                         onClick={() => {
@@ -366,9 +407,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             className={cn(
                               "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition-colors",
                               isSelected
-                                ? "border-rose-500 bg-rose-500 text-white"
-                                : "border-gray-300 bg-white"
+                                ? "text-white"
+                                : ""
                             )}
+                            style={{
+                              background: isSelected ? 'hsl(var(--primary))' : 'transparent',
+                              borderColor: isSelected ? 'hsl(var(--primary))' : 'var(--color-border)'
+                            }}
                           >
                             {isSelected && <Check className="h-3 w-3" strokeWidth={3} />}
                           </div>
@@ -392,7 +437,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             onBlur={() => {
                               commitRename().catch(() => null);
                             }}
-                            className="h-6 flex-1 rounded border border-indigo-200 bg-white px-2 text-[13px] text-gray-900 focus:border-indigo-400 focus:outline-none"
+                            className="h-6 flex-1 rounded border px-2 text-[14px] focus:outline-none"
+                            style={{
+                              borderColor: 'hsl(var(--ring))',
+                              background: 'var(--color-bg-container)',
+                              color: 'var(--color-text)'
+                            }}
                           />
                         ) : (
                           <span className={cn("min-w-0 flex-1 truncate", isSelected && "font-medium")}>
@@ -405,7 +455,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                               <button
                                 type="button"
                                 className={cn(
-                                  "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-opacity duration-150 hover:bg-gray-100",
+                                  "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-opacity duration-100",
+                                  "hover:bg-[var(--color-fill-quaternary)]",
                                   currentSessionId === session.id
                                     ? "pointer-events-auto opacity-100"
                                     : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -413,19 +464,18 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                                 onClick={(event) => event.stopPropagation()}
                                 aria-label="会话操作"
                               >
-                                <MoreHorizontal className="h-3.5 w-3.5 text-gray-400" />
+                                <MoreHorizontal className="h-3.5 w-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                               align="start"
-                              className="min-w-[130px] rounded-xl border border-gray-100 bg-white p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+                              className="min-w-[130px]"
                             >
                               <DropdownMenuItem
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   startRename(session.id, session.title || "新对话");
                                 }}
-                                className="rounded-lg px-3 py-2 text-[13px] text-gray-700 focus:bg-gray-50 focus:text-gray-700 data-[highlighted]:bg-gray-50 data-[highlighted]:text-gray-700"
                               >
                                 <Pencil className="mr-2 h-3.5 w-3.5" />
                                 重命名
@@ -438,18 +488,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                                     title: session.title || "新对话"
                                   });
                                 }}
-                                className="rounded-lg px-3 py-2 text-[13px] text-rose-500 focus:bg-rose-50 focus:text-rose-500 data-[highlighted]:bg-rose-50 data-[highlighted]:text-rose-500"
+                                className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 className="mr-2 h-3.5 w-3.5" />
                                 删除
                               </DropdownMenuItem>
-                              <div className="my-1 border-t border-gray-100" />
+                              <div className="my-1 border-t" style={{ borderColor: 'var(--color-border-secondary)' }} />
                               <DropdownMenuItem
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   setSelectMode(true);
                                 }}
-                                className="rounded-lg px-3 py-2 text-[13px] text-gray-500 focus:bg-gray-50 data-[highlighted]:bg-gray-50"
                               >
                                 <Check className="mr-2 h-3.5 w-3.5" />
                                 批量管理
@@ -467,15 +516,16 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         </div>
 
         {/* Bottom: user menu */}
-        <div className="border-t border-gray-100 px-3 py-3">
+        <div className="border-t px-3 py-3" style={{ borderColor: 'var(--color-border-secondary)' }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/80 data-[state=open]:bg-white/80"
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
+                style={{ color: 'var(--color-text)' }}
                 aria-label="用户菜单"
               >
-                <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-indigo-100 text-indigo-600">
+                <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full" style={{ background: 'var(--color-fill-quaternary)', color: 'hsl(var(--primary))' }}>
                   {showAvatar ? (
                     <img
                       src={avatarUrl}
@@ -487,17 +537,20 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     <span className="text-xs font-semibold">{avatarFallback}</span>
                   )}
                 </div>
-                <span className="flex-1 truncate text-[13px] font-medium text-gray-700">
-                  {(() => {
-                    const fallback = user?.username || user?.userId || "用户";
-                    return /^\d+$/.test(fallback) ? "用户" : fallback;
-                  })()}
-                </span>
-                <MoreHorizontal className="h-3.5 w-3.5 text-gray-300" />
+                <div className="flex-1 min-w-0">
+                  <div className="truncate text-[14px] font-medium">
+                    {(() => {
+                      const fallback = user?.username || user?.userId || "用户";
+                      return /^\d+$/.test(fallback) ? "用户" : fallback;
+                    })()}
+                  </div>
+                  <RoleBadge role={(user?.role as "admin" | "user") || "user"} />
+                </div>
+                <MoreHorizontal className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-44 rounded-xl border border-gray-100 shadow-lg">
-              <DropdownMenuItem onClick={() => logout()} className="text-rose-500 focus:text-rose-500">
+            <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-44">
+              <DropdownMenuItem onClick={() => logout()} className="text-destructive focus:text-destructive">
                 <LogOut className="mr-2 h-4 w-4" />
                 退出登录
               </DropdownMenuItem>

@@ -41,6 +41,18 @@ public class RetrievalContext {
     private List<RetrievedChunk> chunks;
 
     /**
+     * 图片块解析后的 Base64 data URI 列表
+     * 用于多模态 LLM 直接查看检索到的图片
+     */
+    private List<String> imageDataUris;
+
+    /**
+     * 图片块的 S3 URL 列表
+     * 用于持久化（存入 DB 比 base64 短），下次对话时由 HttpModelFactory 转为 base64
+     */
+    private List<String> s3ImageUrls;
+
+    /**
      * 检查是否存在 MCP 上下文
      *
      * @return true 表示有 MCP 上下文数据

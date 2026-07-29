@@ -87,6 +87,14 @@ public interface StreamCallback {
     }
 
     /**
+     * Agent 从知识库检索到的图片 S3 URL 列表
+     * <p>
+     * 用于将检索图片附到 assistant 回复上持久化到对话历史。
+     */
+    default void setRetrievedImageUrls(java.util.List<String> s3Urls) {
+    }
+
+    /**
      * 流式推送过程中出现异常
      * <p>
      * 常见场景：

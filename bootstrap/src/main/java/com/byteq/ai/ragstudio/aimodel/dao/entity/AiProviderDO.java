@@ -63,6 +63,11 @@ public class AiProviderDO {
     private String iconUrl;
 
     /**
+     * API 协议类型：openai / dashscope / anthropic
+     */
+    private String apiProtocol;
+
+    /**
      * 是否启用：1-启用，0-禁用
      */
     private Integer enabled;

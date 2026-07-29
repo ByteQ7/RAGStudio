@@ -87,6 +87,11 @@ public class AiModelDO {
     private String customUrl;
 
     /**
+     * API 协议类型覆盖（可选，覆盖供应商的 apiProtocol）：openai / dashscope / anthropic
+     */
+    private String apiProtocol;
+
+    /**
      * 创建时间（由 MyBatis-Plus 自动填充）
      */
     @TableField(fill = FieldFill.INSERT)

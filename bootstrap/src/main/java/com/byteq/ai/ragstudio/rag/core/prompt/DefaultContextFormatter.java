@@ -36,7 +36,7 @@ public class DefaultContextFormatter implements ContextFormatter {
             return "";
         }
 
-        int limit = topK > 0 ? topK : Integer.MAX_VALUE;
+        int limit = topK > 0 ? Math.min(topK, 200) : 50;
         List<RetrievedChunk> chunks = new ArrayList<>();
         for (List<RetrievedChunk> list : chunksByKey.values()) {
             if (CollUtil.isEmpty(list)) {
@@ -56,9 +56,16 @@ public class DefaultContextFormatter implements ContextFormatter {
             return "";
         }
 
-        // 给每个 Chunk 加上 [^chunk_{id}] 前缀，方便 LLM 引用和溯源
+        // 给每个 Chunk 加上 [^chunk_{idx}] 前缀（使用顺序编号 1、2、3... 而非原始 DB ID，
+        // 避免长数字 Snowflake ID 导致 LLM 编造/截断引用编号）
+        final int[] idx = {0};
         String body = chunks.stream()
-                .map(chunk -> "[^chunk_" + (chunk.getId() != null ? chunk.getId() : "unknown") + "] " + chunk.getText())
+                .map(chunk -> {
+                    if (chunk.isImage()) {
+                        return "[^chunk_" + (++idx[0]) + "] [相关图片已随消息附上]";
+                    }
+                    return "[^chunk_" + (++idx[0]) + "] " + chunk.getText();
+                })
                 .collect(Collectors.joining("\n"));
         return renderKbSection("", body);
     }

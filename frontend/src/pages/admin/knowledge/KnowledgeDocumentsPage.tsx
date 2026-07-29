@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Check, FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X } from "lucide-react";
+import { Check, Eye, FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X } from "lucide-react";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 
+import { DocumentPreviewModal } from "@/components/chat/DocumentPreviewModal";
 import { cn } from "@/lib/utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -133,6 +134,7 @@ export function KnowledgeDocumentsPage() {
   const [detailStrategies, setDetailStrategies] = useState<ChunkStrategyOption[]>([]);
   const [detailPipelines, setDetailPipelines] = useState<IngestionPipeline[]>([]);
   const [detailConfigValues, setDetailConfigValues] = useState<Record<string, string>>({});
+  const [previewDoc, setPreviewDoc] = useState<KnowledgeDocument | null>(null);
   const [detailNoChunk, setDetailNoChunk] = useState(false);
   const [detailOriginalChunkSize, setDetailOriginalChunkSize] = useState("512");
   const [detailSourceLocation, setDetailSourceLocation] = useState("");
@@ -615,6 +617,14 @@ export function KnowledgeDocumentsPage() {
                         <Button
                           size="icon"
                           variant="ghost"
+                          onClick={() => setPreviewDoc(doc)}
+                          title="预览"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
                           className="text-destructive hover:text-destructive"
                           onClick={() => setDeleteTarget(doc)}
                           title="删除"
@@ -657,6 +667,7 @@ export function KnowledgeDocumentsPage() {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         kbId={kbId || ""}
+        supportsImageEmbedding={kb?.supportsImageEmbedding}
         onSuccess={async () => {
           setUploadOpen(false);
           setCurrent(1);
@@ -983,6 +994,13 @@ export function KnowledgeDocumentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DocumentPreviewModal
+        docId={previewDoc?.id || ""}
+        docName={previewDoc?.docName || ""}
+        fileType={previewDoc?.fileType || ""}
+        open={Boolean(previewDoc)}
+        onClose={() => setPreviewDoc(null)}
+      />
     </div>
   );
 }
@@ -992,6 +1010,7 @@ interface UploadDialogProps {
   onOpenChange: (open: boolean) => void;
   kbId: string;
   onSuccess: () => Promise<void>;
+  supportsImageEmbedding?: number;
 }
 
 const uploadSchema = z
@@ -1076,7 +1095,7 @@ const uploadSchema = z
 
 type UploadFormValues = z.infer<typeof uploadSchema>;
 
-function UploadDialog({ open, onOpenChange, kbId, onSuccess }: UploadDialogProps) {
+function UploadDialog({ open, onOpenChange, kbId, onSuccess, supportsImageEmbedding }: UploadDialogProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1494,6 +1513,11 @@ function UploadDialog({ open, onOpenChange, kbId, onSuccess }: UploadDialogProps
             ) : null}
 
             <div className="space-y-3 rounded-lg border p-3">
+              {supportsImageEmbedding === 1 && (
+                <div className="rounded-md bg-purple-50 px-3 py-2 text-xs text-purple-700">
+                  该知识库使用多模态 Embedding 模型，上传图片 / PDF 时将自动采取页面级直接向量化
+                </div>
+              )}
               <FormField
                 control={form.control}
                 name="processMode"

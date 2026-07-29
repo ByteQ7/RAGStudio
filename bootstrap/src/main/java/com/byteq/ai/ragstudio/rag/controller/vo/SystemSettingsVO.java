@@ -101,6 +101,7 @@ public class SystemSettingsVO {
             private Integer priority;
             private Boolean enabled;
             private Boolean supportsThinking;
+            private Boolean supportsMultimodal;
         }
 
         @Data

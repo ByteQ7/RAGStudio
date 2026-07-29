@@ -136,6 +136,9 @@ rag:
       open-duration-ms: 30000
     stream:
       message-chunk-size: 1
+    http:
+      connect-timeout-seconds: 10
+      read-timeout-seconds: 120
 
 rustfs:
   url: ${RUSTFS_URL}

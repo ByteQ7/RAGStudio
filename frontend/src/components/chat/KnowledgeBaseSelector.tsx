@@ -101,7 +101,7 @@ export function KnowledgeBaseSelector({
           <BookOpen className="h-3.5 w-3.5" />
           知识库
           {selectedKnowledgeBaseIds.length > 0 && (
-            <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">
+            <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[11px] font-bold text-white">
               {selectedKnowledgeBaseIds.length}
             </span>
           )}

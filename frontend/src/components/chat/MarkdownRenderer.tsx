@@ -359,34 +359,36 @@ interface MarkdownRendererProps {
 export function MarkdownRenderer({ content, compact = false, citations }: MarkdownRendererProps) {
   const theme = useThemeStore((state) => state.theme);
 
-  // 将 [^chunk_{id}] 转为可点击的 markdown 链接 [N](#cite:xxx)
+  // 将 [^chunk_{id}] 转为可读的编号格式，无论 citations 数据是否存在
   const processedContent = React.useMemo(() => {
     let md = content;
 
-    if (citations && citations.length > 0) {
-      // ---- Assistant messages: citations data is available ----
-      // Convert [^chunk_id] inline markers to clickable [N] links
-      const numMap: Record<string, number> = {};
-      let numIdx = 0;
-      const scanRe = /\[\^chunk_(\w+)\]/g;
-      let m;
-      while ((m = scanRe.exec(md)) !== null) {
-        if (!(m[1] in numMap)) numMap[m[1]] = ++numIdx;
-      }
+    // ---- 1. 始终转换 [^chunk_id] 标记 ----
+    const hasCitations = Array.isArray(citations) && citations.length > 0;
+    const numMap: Record<string, number> = {};
+    let numIdx = 0;
+    const scanRe = /\[\^chunk_(\w+)\]/g;
+    let m;
+    while ((m = scanRe.exec(md)) !== null) {
+      if (!(m[1] in numMap)) numMap[m[1]] = ++numIdx;
+    }
+    if (numIdx > 0) {
       md = md.replace(/\[\^chunk_(\w+)\]/g, (_, id) => {
         const num = numMap[id] || '?';
-        return `[${num}](#cite:${id})`;
+        if (hasCitations) {
+          return `[${num}](#cite:${id})`;
+        }
+        return `[${num}]`;
       });
-      // Strip ALL [QUOTE:...] markers (with or without quotes) —
-      // citation data is already conveyed via [N] links + CitationList
+    }
+
+    // ---- 2. 处理 [QUOTE:...] 标记 ----
+    if (hasCitations) {
+      // citations 已通过 [N] 链接和 CitationList 展示，清理所有 QUOTE 标记
       md = md.replace(/\[QUOTE:\w+\](?:\s*"[^"]*"|\s+[^\n]*)?/g, '').trim();
     } else {
-      // ---- User messages: no citations data ----
-      // Strip LLM quoted [QUOTE:id] "text" (residual from AI responses)
       md = md.replace(/\[QUOTE:(\w+)\]\s*"([^"]*)"/g, '');
-      // Convert user-typed [QUOTE:id] text → visual citation badge (non-clickable)
       md = md.replace(/\[QUOTE:(\w+)\]\s+([^\n]*)/g, (_, id, text) => `**📎 \`${id}\`** ${text}`);
-      // Strip any remaining bare [QUOTE:id]
       md = md.replace(/\[QUOTE:\w+\]/g, '');
       md = md.trim();
     }
@@ -437,7 +439,7 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
               <span className={cn(
                 "font-mono font-semibold uppercase tracking-wider",
                 "text-[#57606a] dark:text-[#8b949e]",
-                compact ? "text-[10px]" : "text-[11px]",
+                compact ? "text-[11px]" : "text-[12px]",
               )}>
                 {displayLang}
               </span>
@@ -461,7 +463,7 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
           className={cn(
             "rounded font-mono bg-[#f6f8fa] text-[#24292f]",
             "dark:bg-[#161b22] dark:text-[#c9d1d9]",
-            compact ? "px-1 py-0.5 text-[12px]" : "px-1.5 py-0.5 text-[13px]",
+            compact ? "px-1 py-0.5 text-[13px]" : "px-1.5 py-0.5 text-[14px]",
             className,
           )}
           {...props}
@@ -697,7 +699,7 @@ function FallbackCode({ value, compact }: { value: string; compact?: boolean }) 
       className={cn(
         "m-0 overflow-x-auto whitespace-pre font-mono",
         "text-[#24292f] dark:text-[#c9d1d9]",
-        compact ? "p-2.5 text-[12px] leading-[1.45]" : "p-3 text-[13px] leading-relaxed",
+        compact ? "p-2.5 text-[13px] leading-[1.45]" : "p-3 text-[14px] leading-relaxed",
       )}
       style={{ tabSize: 4 }}
     >

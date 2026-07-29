@@ -49,7 +49,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
      * <p>
      * 注意：直接查 Mapper 而非 {@link ConversationMessageService#listMessages}，
      * 以避免 imageUrls 中的 s3:// 协议被替换为预签名 HTTP URL。
-     * 保留原始 s3:// URL，让 {@code LangChain4jModelFactory.resolveImageDataUri}
+     * 保留原始 s3:// URL，让 {@code HttpModelFactory.resolveImageDataUri}
      * 能识别并下载为 base64 发送给 LLM。
      * </p>
      */
@@ -171,7 +171,8 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
     // 判断消息是否为有效的历史记录消息（有内容或图片即为有效）
     private boolean isHistoryMessage(ChatMessage message) {
         if (message == null) return false;
-        if (message.getRole() != ChatMessage.Role.USER && message.getRole() != ChatMessage.Role.ASSISTANT) return false;
+        if (message.getRole() != ChatMessage.Role.USER && message.getRole() != ChatMessage.Role.ASSISTANT
+                && message.getRole() != ChatMessage.Role.OBSERVATION) return false;
         return StrUtil.isNotBlank(message.getContent())
                 || (message.getImageUrls() != null && !message.getImageUrls().isEmpty());
     }

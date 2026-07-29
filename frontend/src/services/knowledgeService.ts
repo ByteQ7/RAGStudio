@@ -8,6 +8,7 @@ export interface KnowledgeBase {
   embeddingProvider?: string | null;
   dimension?: number;
   collectionName: string;
+  supportsImageEmbedding?: number;
   createdBy?: string | null;
   documentCount?: number;
   createTime?: string;

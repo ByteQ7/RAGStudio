@@ -23,7 +23,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * <p>
  * <b>模型管理说明：</b>
  * 所有 AI 模型实例（ChatLanguageModel / StreamingChatLanguageModel / EmbeddingModel）
- * 由 LangChain4jModelFactory 动态创建并缓存，以支持多提供商、多候选模型的路由切换架构。
+ * 由 HttpModelFactory 提供 URL 解析和请求体构建，支持多提供商、多候选模型的路由切换架构。
  * </p>
  */
 @SpringBootApplication(exclude = {

@@ -40,6 +40,7 @@ public class RetrievalEngine {
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final MultiChannelRetrievalEngine multiChannelRetrievalEngine;
     private final ContextCropper contextCropper;
+    private final ImageChunkResolver imageChunkResolver;
 
     /**
      * 根据知识库 ID 列表执行检索
@@ -55,23 +56,33 @@ public class RetrievalEngine {
      */
     public RetrievalContext retrieveByKnowledgeBases(List<String> knowledgeBaseIds, RewriteResult rewriteResult, int topK) {
         if (CollUtil.isEmpty(knowledgeBaseIds)) {
-            return RetrievalContext.builder().build();
+            return RetrievalContext.builder().chunks(List.of()).build();
         }
 
         List<RetrievedChunk> chunks = doRetrieve(knowledgeBaseIds, rewriteResult, topK);
 
         String kbContext = "";
         if (CollUtil.isNotEmpty(chunks)) {
-            // 语义裁剪：只保留与用户问题相关的句子，减少 LLM 上下文噪音
             contextCropper.crop(rewriteResult.rewrittenQuestion(), chunks);
-            int finalTopK = topK > 0 ? topK : searchProperties.getDefaultTopK();
-            kbContext = contextFormatter.formatKbContext(Map.of(MULTI_CHANNEL_KEY, chunks), finalTopK);
+            kbContext = contextFormatter.formatKbContext(Map.of(MULTI_CHANNEL_KEY, chunks), Integer.MAX_VALUE);
         }
+
+        List<String> imageDataUris = imageChunkResolver.resolve(chunks);
+
+        List<String> s3ImageUrls = chunks.stream()
+                .filter(RetrievedChunk::isImage)
+                .map(c -> c.getMetadata() != null ? c.getMetadata().get("image_url") : null)
+                .filter(url -> url instanceof String)
+                .map(Object::toString)
+                .distinct()
+                .toList();
 
         return RetrievalContext.builder()
                 .mcpContext("")
                 .kbContext(kbContext)
                 .chunks(chunks)
+                .imageDataUris(imageDataUris)
+                .s3ImageUrls(s3ImageUrls)
                 .build();
     }
 

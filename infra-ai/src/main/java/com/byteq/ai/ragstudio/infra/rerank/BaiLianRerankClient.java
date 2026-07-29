@@ -13,7 +13,8 @@ import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
 import com.byteq.ai.ragstudio.infra.http.ModelClientException;
 import com.byteq.ai.ragstudio.infra.http.ModelUrlResolver;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
-import lombok.RequiredArgsConstructor;
+import com.byteq.ai.ragstudio.infra.protocol.ModelProtocol;
+import com.byteq.ai.ragstudio.infra.protocol.ProtocolRegistry;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -50,11 +51,17 @@ import java.util.Set;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class BaiLianRerankClient implements RerankClient {
 
     @Qualifier("syncHttpClient")
     private final OkHttpClient httpClient;
+    private final ProtocolRegistry protocolRegistry;
+
+    public BaiLianRerankClient(@Qualifier("syncHttpClient") OkHttpClient httpClient,
+                                ProtocolRegistry protocolRegistry) {
+        this.httpClient = httpClient;
+        this.protocolRegistry = protocolRegistry;
+    }
 
     @Override
     public String provider() {
@@ -115,6 +122,7 @@ public class BaiLianRerankClient implements RerankClient {
      */
     private List<RetrievedChunk> doRerank(String query, List<RetrievedChunk> candidates, int topN, ModelTarget target) {
         DynamicModelConfig.ProviderEntry provider = HttpResponseHelper.requireProvider(target, provider());
+        ModelProtocol protocol = protocolRegistry.get(target.protocolName());
 
         // 参数合法性校验，避免无效请求
         if (candidates == null || candidates.isEmpty() || topN <= 0) {
@@ -143,11 +151,17 @@ public class BaiLianRerankClient implements RerankClient {
         reqBody.add("input", input);
         reqBody.add("parameters", parameters);
 
-        // 构建 HTTP 请求，携带 Bearer Token 认证头
+        // 构建 HTTP 请求，使用协议感知的认证头和 URL
+        String url;
+        try {
+            url = ModelUrlResolver.resolveUrl(provider, target.candidate(), ModelCapability.RERANK);
+        } catch (IllegalStateException e) {
+            url = provider.getUrl().replaceAll("/+$", "") + protocol.resolveRerankUrlFallback();
+        }
         Request request = new Request.Builder()
-                .url(ModelUrlResolver.resolveUrl(provider, target.candidate(), ModelCapability.RERANK))
+                .url(url)
                 .post(RequestBody.create(reqBody.toString(), okhttp3.MediaType.get("application/json; charset=utf-8")))
-                .addHeader("Authorization", "Bearer " + provider.getApiKey())
+                .addHeader(protocol.authHeaderName(), protocol.authHeaderValue(provider.getApiKey()))
                 .build();
 
         JsonObject respJson;
@@ -207,7 +221,11 @@ public class BaiLianRerankClient implements RerankClient {
 
             // 如果 API 返回了评分则创建新的 RetrievedChunk 带上评分，否则直接复用原始块
             RetrievedChunk hit = score != null
-                    ? RetrievedChunk.builder().id(src.getId()).text(src.getText()).score(score).build()
+                    ? RetrievedChunk.builder()
+                            .id(src.getId()).text(src.getText()).score(score)
+                            .contentType(src.getContentType()).metadata(src.getMetadata())
+                            .kbName(src.getKbName()).docName(src.getDocName())
+                            .build()
                     : src;
             reranked.add(hit);
             addedIds.add(src.getId());

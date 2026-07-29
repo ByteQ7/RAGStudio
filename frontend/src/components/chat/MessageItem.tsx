@@ -85,7 +85,8 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
                   key={idx}
                   type="button"
                   onClick={() => setExpandedImage(url)}
-                  className="overflow-hidden rounded-lg border border-gray-200 transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="overflow-hidden rounded-lg border transition-shadow hover:shadow-tertiary focus:outline-none focus:ring-2 focus:ring-ring"
+                  style={{ borderColor: 'var(--color-border-secondary)' }}
                 >
                   <img
                     src={url}
@@ -117,7 +118,8 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
             <button
               type="button"
               onClick={() => setExpandedImage(null)}
-              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors"
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors"
+              style={{ background: 'rgba(255,255,255,0.15)' }}
             >
               <X className="h-5 w-5" />
             </button>
@@ -142,7 +144,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   return (
     <div className="group">
       <div className="flex gap-2.5">
-        <div className="flex mt-0.5 h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
+        <div className="flex mt-0.5 h-10 w-10 shrink-0 items-center justify-center rounded-lg border" style={{ borderColor: 'var(--color-border-secondary)', background: 'var(--color-fill-quaternary)' }}>
           <RAGStudioLogo className="h-6 w-6 text-indigo-500" />
         </div>
         <div className="min-w-0 max-w-[92%] space-y-3">
@@ -160,7 +162,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
               </div>
             ) : null}
             {hasContent ? (
-              <div ref={contentRef} className="text-[15px] leading-relaxed text-gray-800">
+              <div ref={contentRef} className="text-[15px] leading-relaxed" style={{ color: 'var(--color-text)' }}>
                 <MarkdownRenderer content={cleanContent} citations={message.citations} />
                 {/* 位置请求组件：仅当这是最后一条消息时才触发 */}
                 {/* 历史消息中的 [LOCATION_REQUEST] 已有后续位置回复，不再重定位 */}

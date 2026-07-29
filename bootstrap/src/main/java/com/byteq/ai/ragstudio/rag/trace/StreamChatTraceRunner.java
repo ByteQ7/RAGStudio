@@ -4,6 +4,7 @@ import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
+import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.infra.chat.ForwardingStreamCallback;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
@@ -42,11 +43,9 @@ public class StreamChatTraceRunner {
 
     private static final String TRACE_NAME = "rag-stream-chat";
 
-    private static final String STATUS_RUNNING = "RUNNING";
-
-    private static final String STATUS_SUCCESS = "SUCCESS";
-
-    private static final String STATUS_ERROR = "ERROR";
+    private static final String STATUS_RUNNING = TraceStatus.RUNNING.name();
+    private static final String STATUS_SUCCESS = TraceStatus.SUCCESS.name();
+    private static final String STATUS_ERROR = TraceStatus.ERROR.name();
 
     private static final String USER_TTFT_NODE_NAME = "user-first-packet";
 
@@ -120,13 +119,11 @@ public class StreamChatTraceRunner {
             // 执行业务逻辑（pipeline），传入增强后的 callback
             businessLogic.accept(traceAwareCallback);
         } catch (Throwable ex) {
-            // 同步阶段抛出异常时，通过 callback.onError 触发收尾
-            // 复用 ForwardingStreamCallback 内部的 CAS 逻辑，防止与异步线程的终态重复收尾
             log.warn("执行流式对话失败（同步阶段），会话ID：{}，任务ID：{}", conversationId, taskId, ex);
             try {
                 traceAwareCallback.onError(ex);
             } catch (Throwable ignored) {
-                // 确保 trace 不会因为 callback.onError 自身异常而悬挂
+                finishRun(traceId, false, ex, startMillis);
             }
         } finally {
             // 同步阶段结束立即清理当前线程的 ThreadLocal
