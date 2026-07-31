@@ -96,7 +96,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         // 发送真实向量化探测，校验 Embedding 模型可用
         if (StringUtils.hasText(requestParam.getEmbeddingModel())) {
             try {
-                embeddingService.embed("你好", requestParam.getEmbeddingModel());
+                embeddingService.embedDirect("你好", requestParam.getEmbeddingModel());
             } catch (Exception e) {
                 log.warn("Embedding 模型探测失败，拒绝创建知识库: modelId={}", requestParam.getEmbeddingModel(), e);
                 String rootCause = e.getMessage() != null ? e.getMessage() : "未知错误";

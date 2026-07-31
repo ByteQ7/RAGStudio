@@ -71,6 +71,20 @@ public interface EmbeddingService {
     List<Float> embed(String text, String modelId, Integer dimension);
 
     /**
+     * 直接调用指定模型做嵌入，绕过进程内缓存。
+     * <p>
+     * 仅用于模型可用性探测等「必须真实请求远程服务」的场景（如创建知识库前的连通性校验），
+     * 避免命中缓存导致探测结果失真。正常业务检索请使用 {@link #embed(String, String, Integer)}。
+     * </p>
+     *
+     * @param text    待嵌入的文本
+     * @param modelId 指定的模型 ID
+     * @return 文本的向量表示
+     * @throws RemoteException 当模型不可用或调用失败时抛出
+     */
+    List<Float> embedDirect(String text, String modelId);
+
+    /**
      * 批量将多个文本转换为嵌入向量（使用默认模型路由）
      * <p>
      * 一次性处理多个文本的向量化转换，优先利用模型的批处理能力提高效率。

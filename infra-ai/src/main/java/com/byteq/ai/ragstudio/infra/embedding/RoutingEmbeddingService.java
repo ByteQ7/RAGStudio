@@ -45,14 +45,17 @@ public class RoutingEmbeddingService implements EmbeddingService {
 
     private final ModelSelector selector;
     private final ModelRoutingExecutor executor;
+    private final EmbeddingCache embeddingCache;
     private final Map<String, EmbeddingClient> clientsByProvider;
 
     public RoutingEmbeddingService(
             ModelSelector selector,
             ModelRoutingExecutor executor,
+            EmbeddingCache embeddingCache,
             List<EmbeddingClient> clients) {
         this.selector = selector;
         this.executor = executor;
+        this.embeddingCache = embeddingCache;
         // 将客户端列表转换为 provider -> client 的映射，便于路由时快速查找
         this.clientsByProvider = clients.stream()
                 .collect(Collectors.toMap(
@@ -79,7 +82,9 @@ public class RoutingEmbeddingService implements EmbeddingService {
                 ModelCapability.EMBEDDING,
                 selector.selectEmbeddingCandidates(),
                 this::resolveClient,
-                (client, target) -> client.embed(text, target)
+                (client, target) -> embeddingCache.compute(
+                        target.id(), target.candidate().getDimension(), text,
+                        () -> client.embed(text, target))
         );
     }
 
@@ -100,7 +105,9 @@ public class RoutingEmbeddingService implements EmbeddingService {
                 ModelCapability.EMBEDDING,
                 List.of(resolveTarget(modelId)),
                 this::resolveClient,
-                (client, target) -> client.embed(text, target)
+                (client, target) -> embeddingCache.compute(
+                        target.id(), target.candidate().getDimension(), text,
+                        () -> client.embed(text, target))
         );
     }
 
@@ -111,6 +118,19 @@ public class RoutingEmbeddingService implements EmbeddingService {
         }
         List<List<Float>> batch = embedBatch(List.of(text), modelId, dimension);
         return batch.isEmpty() ? List.of() : batch.get(0);
+    }
+
+    /**
+     * 绕过缓存的直接调用（仅用于模型可用性探测，避免命中缓存导致探测失真）
+     */
+    @Override
+    public List<Float> embedDirect(String text, String modelId) {
+        return executor.executeWithFallback(
+                ModelCapability.EMBEDDING,
+                List.of(resolveTarget(modelId)),
+                this::resolveClient,
+                (client, target) -> client.embed(text, target)
+        );
     }
 
     /**
@@ -128,7 +148,9 @@ public class RoutingEmbeddingService implements EmbeddingService {
                 ModelCapability.EMBEDDING,
                 selector.selectEmbeddingCandidates(),
                 this::resolveClient,
-                (client, target) -> client.embedBatch(texts, target)
+                (client, target) -> embeddingCache.computeBatch(
+                        target.id(), target.candidate().getDimension(), texts,
+                        missing -> client.embedBatch(missing, target))
         );
     }
 
@@ -145,7 +167,9 @@ public class RoutingEmbeddingService implements EmbeddingService {
                 ModelCapability.EMBEDDING,
                 List.of(resolveTarget(modelId)),
                 this::resolveClient,
-                (client, target) -> client.embedBatch(texts, target)
+                (client, target) -> embeddingCache.computeBatch(
+                        target.id(), target.candidate().getDimension(), texts,
+                        missing -> client.embedBatch(missing, target))
         );
     }
 
@@ -175,7 +199,9 @@ public class RoutingEmbeddingService implements EmbeddingService {
                 ModelCapability.EMBEDDING,
                 List.of(target),
                 this::resolveClient,
-                (client, t) -> client.embedBatch(texts, t)
+                (client, t) -> embeddingCache.computeBatch(
+                        t.id(), t.candidate().getDimension(), texts,
+                        missing -> client.embedBatch(missing, t))
         );
     }
 

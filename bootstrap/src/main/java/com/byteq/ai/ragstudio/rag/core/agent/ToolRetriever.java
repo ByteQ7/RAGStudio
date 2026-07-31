@@ -122,7 +122,7 @@ public class ToolRetriever {
                 .filter(t -> modelId.equals(t.id()))
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("未找到模型: " + modelId));
-        embeddingService.embed("你好", modelId);
+        embeddingService.embedDirect("你好", modelId);
     }
 
     public List<String> retrieve(String question, int topK) {

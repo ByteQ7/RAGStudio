@@ -7,8 +7,12 @@
 支持 FP16 / INT8 量化，INT8 模式下内存占用约 1-1.5GB。
 
 环境变量:
-    QUANTIZE=fp16|int8    量化模式 (默认: fp16 GPU / fp32 CPU)
-    CUDA_VISIBLE_DEVICES=  GPU 选择
+    QUANTIZE=fp16|int8      量化模式 (默认: fp16 GPU / fp32 CPU)
+    CUDA_VISIBLE_DEVICES=   GPU 选择
+    HIGHLIGHT_BATCH_SIZE    单个 chunk 内句子批量大小 (默认: 2，CPU+INT8 下实测最优)
+    HIGHLIGHT_WORKERS       chunk 级并发线程数 (默认: min(8, cpu核心数)，1 表示串行)
+    HIGHLIGHT_TORCH_THREADS 每个并发任务的 torch intra-op 线程数
+                            (默认: cpu核心数 // HIGHLIGHT_WORKERS，避免多线程超订)
 
 启动:
     # GPU FP16 (默认)
@@ -29,6 +33,7 @@ import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import torch
@@ -43,10 +48,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger("highlight")
 
+# ── 可调参数（环境变量）──────────────────────────────
+# CPU + INT8 下实测：batch_size=2 明显优于 16/32（qint8 内核在小 batch 下更快）
+HIGHLIGHT_BATCH_SIZE = int(os.environ.get("HIGHLIGHT_BATCH_SIZE", "2"))
+# chunk 级并发：多个 chunk 的模型前向在独立线程并行（torch 计算会释放 GIL）
+_default_workers = max(1, min(8, os.cpu_count() or 4))
+HIGHLIGHT_WORKERS = int(os.environ.get("HIGHLIGHT_WORKERS", str(_default_workers)))
+
+# 并发时的 torch intra-op 线程数：默认均分到各 worker，避免线程超订；显式设置了
+# OMP_NUM_THREADS 时尊重外部配置。仅在并行模式（workers>1）生效。
+if HIGHLIGHT_WORKERS > 1 and not os.environ.get("OMP_NUM_THREADS"):
+    _per_worker = max(1, (os.cpu_count() or 4) // HIGHLIGHT_WORKERS)
+    torch.set_num_threads(int(os.environ.get("HIGHLIGHT_TORCH_THREADS", str(_per_worker))))
+
 # ── FastAPI ───────────────────────────────────────────
 app = FastAPI(
     title="Semantic Highlight Service",
-    version="1.0.0",
+    version="1.1.0",
     description="基于 zilliz/semantic-highlight-bilingual-v1 的语义高亮与重排序服务",
 )
 
@@ -54,6 +72,17 @@ app = FastAPI(
 _model: Optional[AutoModel] = None
 _device: str = "cpu"
 _quantize_mode: str = "fp16"  # fp16 / int8
+_executor: Optional[ThreadPoolExecutor] = None
+
+
+def _get_executor() -> Optional[ThreadPoolExecutor]:
+    """惰性创建 chunk 级并发线程池（避免启动时无谓创建）"""
+    global _executor
+    if HIGHLIGHT_WORKERS <= 1:
+        return None
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=HIGHLIGHT_WORKERS)
+    return _executor
 
 
 def load_model() -> None:
@@ -124,8 +153,8 @@ def load_model() -> None:
 
     elapsed = time.time() - t0
     logger.info(
-        "模型加载完成，耗时 %.2fs，设备=%s，量化=%s",
-        elapsed, _device, _quantize_mode,
+        "模型加载完成，耗时 %.2fs，设备=%s，量化=%s，batch_size=%s，workers=%s",
+        elapsed, _device, _quantize_mode, HIGHLIGHT_BATCH_SIZE, HIGHLIGHT_WORKERS,
     )
 
 
@@ -244,7 +273,7 @@ def _process_chunk(question: str, text: str, threshold: float) -> dict:
             threshold=threshold,
             return_sentence_metrics=True,
             return_sentence_texts=True,
-            batch_size=2,
+            batch_size=HIGHLIGHT_BATCH_SIZE,
         )
     except Exception:
         result = _model.process(
@@ -253,7 +282,7 @@ def _process_chunk(question: str, text: str, threshold: float) -> dict:
             threshold=threshold,
             return_sentence_metrics=True,
             return_sentence_texts=True,
-            batch_size=2,
+            batch_size=HIGHLIGHT_BATCH_SIZE,
             sentence_splitter=_custom_splitter,
         )
 
@@ -281,6 +310,33 @@ def _process_chunk(question: str, text: str, threshold: float) -> dict:
     }
 
 
+def _process_chunk_safe(question: str, text: str, threshold: float) -> dict:
+    """带异常兜底的 chunk 处理（并发时调用）"""
+    try:
+        return _process_chunk(question, text, threshold)
+    except Exception as e:
+        logger.error("Chunk 处理失败: %s", e)
+        return {"sentences": [], "scores": [],
+                "highlighted_indices": [], "highlighted_sentences": []}
+
+
+def _run_highlight_parallel(question: str, pending: list[tuple[str, str]],
+                            threshold: float) -> dict[str, dict]:
+    """并发处理多个 chunk，返回 chunk_id -> 处理结果 的映射"""
+    executor = _get_executor()
+    if executor is None or len(pending) <= 1:
+        return {cid: _process_chunk_safe(question, text, threshold)
+                for cid, text in pending}
+    future_map = {
+        executor.submit(_process_chunk_safe, question, text, threshold): cid
+        for cid, text in pending
+    }
+    result: dict[str, dict] = {}
+    for future, cid in future_map.items():
+        result[cid] = future.result()
+    return result
+
+
 # ── 端点 ─────────────────────────────────────────────
 
 
@@ -290,6 +346,8 @@ def health():
         "status": "ok",
         "model_loaded": _model is not None,
         "device": _device,
+        "batch_size": HIGHLIGHT_BATCH_SIZE,
+        "workers": HIGHLIGHT_WORKERS,
     }
 
 
@@ -302,6 +360,12 @@ def highlight(req: HighlightRequest):
     results: list[ChunkHighlightResult] = []
     question = req.question[:3000] if req.question else ""
 
+    # 过滤空文本 chunk（空 chunk 直接返回空结果，保持与输入一一对应）
+    pending = [(chunk.id, chunk.text[:5000]) for chunk in req.chunks]
+    pending = [(cid, text) for cid, text in pending if text.strip()]
+
+    proc_by_id = _run_highlight_parallel(question, pending, req.threshold)
+
     for chunk in req.chunks:
         if not chunk.text.strip():
             results.append(ChunkHighlightResult(
@@ -309,19 +373,13 @@ def highlight(req: HighlightRequest):
                 highlighted_indices=[], highlighted_sentences=[],
             ))
             continue
-        text = chunk.text[:5000]
-        try:
-            proc = _process_chunk(question, text, req.threshold)
-        except Exception as e:
-            logger.error("Chunk %s 处理失败: %s", chunk.id, e)
-            proc = {"sentences": [], "scores": [],
-                    "highlighted_indices": [], "highlighted_sentences": []}
+        proc = proc_by_id.get(chunk.id) or {}
         results.append(ChunkHighlightResult(
             chunk_id=chunk.id,
-            sentences=proc["sentences"],
-            scores=proc["scores"],
-            highlighted_indices=proc["highlighted_indices"],
-            highlighted_sentences=proc["highlighted_sentences"],
+            sentences=proc.get("sentences", []),
+            scores=proc.get("scores", []),
+            highlighted_indices=proc.get("highlighted_indices", []),
+            highlighted_sentences=proc.get("highlighted_sentences", []),
         ))
 
     elapsed = time.time() - t0
@@ -338,17 +396,16 @@ def rerank(req: RerankRequest):
     t0 = time.time()
     scored: list[RerankItem] = []
 
+    pending = [(chunk.id, chunk.text) for chunk in req.chunks if chunk.text.strip()]
+    proc_by_id = _run_highlight_parallel(req.question, pending, 0.0)
+
     for idx, chunk in enumerate(req.chunks):
         if not chunk.text.strip():
             scored.append(RerankItem(id=chunk.id, score=0.0, index=idx))
             continue
-        try:
-            proc = _process_chunk(req.question, chunk.text, threshold=0.0)
-            scores = proc["scores"]
-            max_score = max(scores) if scores else 0.0
-        except Exception as e:
-            logger.error("Rerank chunk %s 失败: %s", chunk.id, e)
-            max_score = 0.0
+        proc = proc_by_id.get(chunk.id) or {}
+        scores = proc.get("scores") or []
+        max_score = max(scores) if scores else 0.0
         scored.append(RerankItem(id=chunk.id, score=round(max_score, 6), index=idx))
 
     scored.sort(key=lambda x: x.score, reverse=True)

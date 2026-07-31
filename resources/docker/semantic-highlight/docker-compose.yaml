@@ -9,6 +9,8 @@ services:
     environment:
       QUANTIZE: int8
       HF_HUB_OFFLINE: "1"
+      # chunk 级并发数（默认 min(8, cpu核心数)，CPU 上并行处理多 chunk 可省约 30%+ 时间）
+      HIGHLIGHT_WORKERS: "8"
     restart: unless-stopped
     mem_limit: 8g
     mem_reservation: 4g

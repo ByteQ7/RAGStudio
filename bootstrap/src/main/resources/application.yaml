@@ -61,6 +61,11 @@ rag:
     connect-timeout: 5s
     read-timeout: ${SEMANTIC_HIGHLIGHT_READ_TIMEOUT:120s}
 
+  embedding-cache:
+    # embedding 结果缓存：true 时启用 Redis 二级缓存（跨服务重启/多实例共享），false 仅本地内存
+    # Redis 不可用时自动降级为纯本地缓存，不影响检索
+    redis-enabled: ${EMBEDDING_CACHE_REDIS:false}
+
   vector:
     type: pg
 

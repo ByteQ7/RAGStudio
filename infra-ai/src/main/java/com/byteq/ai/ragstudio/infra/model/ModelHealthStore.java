@@ -1,7 +1,12 @@
 package com.byteq.ai.ragstudio.infra.model;
 
 import com.byteq.ai.ragstudio.infra.config.ModelRoutingProperties;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RTopic;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -26,15 +31,25 @@ import java.util.function.BiConsumer;
  *   <li><b>HALF_OPEN（半开）</b>：冷却时间结束，允许一个探测请求通过</li>
  * </ul>
  * </p>
+ * <p>
+ * <b>跨实例共享：</b>本实例熔断（OPEN）时通过 Redis Topic 广播，其他实例收到后立即将
+ * 本地状态置为 OPEN，避免多实例各自探测/重试故障模型。恢复走各实例本地冷却时间，
+ * 冷却结束后各自进入 HALF_OPEN 探测。Redis 不可用时自动退化为纯本地熔断。
+ * </p>
  *
  * @author byteq
  * @see ModelRoutingExecutor
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class ModelHealthStore {
 
+    /** 熔断事件广播 Topic：负载为 modelId */
+    private static final String BREAKER_OPEN_TOPIC = "RAGStudio:aimodel:breaker:open";
+
     private final ModelRoutingProperties routingProperties;
+    private final RedissonClient redisson;
 
     /** 模型健康状态缓存，key 为模型 ID，value 为健康状态对象 */
     private final Map<String, ModelHealth> healthById = new ConcurrentHashMap<>();
@@ -44,6 +59,78 @@ public class ModelHealthStore {
      * <p>用于告警系统感知熔断事件</p>
      */
     private BiConsumer<String, Integer> onOpenCallback;
+
+    private int listenerId = -1;
+    private volatile boolean publishWarned = false;
+
+    @PostConstruct
+    public void init() {
+        subscribe();
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if (listenerId != -1) {
+            try {
+                redisson.getTopic(BREAKER_OPEN_TOPIC).removeListener(listenerId);
+            } catch (Exception e) {
+                log.debug("取消熔断事件订阅失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 订阅其他实例的熔断广播，收到后立即将本地状态置为 OPEN
+     */
+    private void subscribe() {
+        try {
+            RTopic topic = redisson.getTopic(BREAKER_OPEN_TOPIC);
+            listenerId = topic.addListener(String.class, (channel, modelId) -> {
+                if (modelId == null || modelId.isBlank()) {
+                    return;
+                }
+                log.warn("收到其他实例熔断广播，模型 {} 置为断开状态（冷却 {}ms）",
+                        modelId, routingProperties.getSelection().getOpenDurationMs());
+                markOpenFromRemote(modelId);
+            });
+            log.info("模型熔断事件跨实例广播订阅成功");
+        } catch (Exception e) {
+            log.warn("订阅模型熔断事件广播失败，跨实例熔断共享不可用: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 根据远程熔断广播将本地状态置为 OPEN（冷却时间按本实例配置独立计算）
+     */
+    private void markOpenFromRemote(String id) {
+        long now = System.currentTimeMillis();
+        healthById.compute(id, (k, v) -> {
+            if (v == null) {
+                v = new ModelHealth();
+            }
+            v.state = State.OPEN;
+            v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
+            v.consecutiveFailures = 0;
+            v.halfOpenInFlight = false;
+            return v;
+        });
+    }
+
+    /**
+     * 广播本实例熔断事件（Redis 不可用时静默降级）
+     */
+    private void publishOpen(String modelId) {
+        try {
+            redisson.getTopic(BREAKER_OPEN_TOPIC).publish(modelId);
+        } catch (Exception e) {
+            if (!publishWarned) {
+                publishWarned = true;
+                log.warn("发布模型熔断广播失败（跨实例熔断共享不可用）: {}", e.getMessage());
+            } else {
+                log.debug("发布模型熔断广播失败: {}", e.getMessage());
+            }
+        }
+    }
 
     /**
      * 判断模型当前是否不可用
@@ -224,6 +311,9 @@ public class ModelHealthStore {
         });
         if (changedToOpen.get() && onOpenCallback != null) {
             onOpenCallback.accept(id, failureCount.get());
+        }
+        if (changedToOpen.get()) {
+            publishOpen(id);
         }
     }
 

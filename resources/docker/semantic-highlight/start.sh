@@ -5,6 +5,8 @@
 # 环境变量:
 #   CUDA_VISIBLE_DEVICES=  GPU 选择
 #   QUANTIZE=int8         量化模式 (fp16/int8, 默认 int8)
+#   HIGHLIGHT_WORKERS     chunk 级并发线程数 (默认 min(8, cpu核心数))
+#   HIGHLIGHT_BATCH_SIZE  单个 chunk 内句子批量大小 (默认 2)
 
 cd "$(dirname "$0")"
 

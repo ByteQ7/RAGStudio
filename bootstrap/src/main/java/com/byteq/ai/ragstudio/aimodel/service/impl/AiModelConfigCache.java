@@ -11,8 +11,11 @@ import com.byteq.ai.ragstudio.infra.config.ModelConfigProvider;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RTopic;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
@@ -29,7 +32,8 @@ import java.util.stream.Collectors;
  * 在内存中维护一份全量快照，供 {@link com.byteq.ai.ragstudio.infra.model.ModelSelector} 读取。
  * </p>
  * <p>
- * 采用"写后刷新"策略：每次 CRUD 操作后调用 {@link #reload()} 重新加载。
+ * 采用"写后刷新"策略：每次 CRUD 操作后调用 {@link #reloadAndNotify()} 重新加载，
+ * 并通过 Redis Topic 通知其他实例同步刷新（多实例部署时配置变更实时生效）。
  * 使用 {@link ReentrantReadWriteLock} 保证读写安全，读操作不加锁（volatile 引用替换）。
  * </p>
  */
@@ -38,14 +42,20 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AiModelConfigCache implements ModelConfigProvider {
 
+    /** 模型配置变更通知 Topic：写操作后发布，其他实例订阅后刷新本地缓存 */
+    private static final String CONFIG_CHANGED_TOPIC = "RAGStudio:aimodel:config:changed";
+
     private final AiProviderMapper providerMapper;
     private final AiModelMapper modelMapper;
     private final ObjectMapper objectMapper;
+    private final RedissonClient redisson;
 
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     /** 当前配置快照（volatile 保证多线程可见性） */
     private volatile DynamicModelConfig currentConfig;
+
+    private int listenerId = -1;
 
     @PostConstruct
     public void init() {
@@ -55,6 +65,34 @@ public class AiModelConfigCache implements ModelConfigProvider {
                     currentConfig.getProviders().size(), currentConfig.getModels().size());
         } else {
             log.warn("AI 模型配置缓存初始化失败（数据库不可用），将在下次 reload 时重试");
+        }
+        subscribe();
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if (listenerId != -1) {
+            try {
+                redisson.getTopic(CONFIG_CHANGED_TOPIC).removeListener(listenerId);
+            } catch (Exception e) {
+                log.debug("取消模型配置变更订阅失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 订阅配置变更通知：其他实例写操作后会发布消息，收到后刷新本地缓存
+     */
+    private void subscribe() {
+        try {
+            RTopic topic = redisson.getTopic(CONFIG_CHANGED_TOPIC);
+            listenerId = topic.addListener(String.class, (channel, msg) -> {
+                log.info("收到模型配置变更通知，刷新本地缓存");
+                reload();
+            });
+            log.info("AI 模型配置变更订阅成功（跨实例同步已启用）");
+        } catch (Exception e) {
+            log.warn("订阅模型配置变更通知失败，跨实例配置同步不可用: {}", e.getMessage());
         }
     }
 
@@ -72,6 +110,21 @@ public class AiModelConfigCache implements ModelConfigProvider {
             log.error("刷新 AI 模型配置缓存失败", e);
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * 写操作后调用：刷新本地缓存，并通过 Redis 通知其他实例同步刷新。
+     * <p>
+     * Redis 不可用时仅影响跨实例同步，本地刷新不受影响。
+     * </p>
+     */
+    public void reloadAndNotify() {
+        reload();
+        try {
+            redisson.getTopic(CONFIG_CHANGED_TOPIC).publish("changed");
+        } catch (Exception e) {
+            log.warn("发布模型配置变更通知失败（仅影响跨实例同步）: {}", e.getMessage());
         }
     }
 

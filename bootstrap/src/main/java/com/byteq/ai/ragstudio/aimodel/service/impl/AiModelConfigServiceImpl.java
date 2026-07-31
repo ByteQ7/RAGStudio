@@ -107,7 +107,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
         log.info("创建 AI 供应商: id={}, name={}", provider.getId(), provider.getName());
 
-        configCache.reload();
+        configCache.reloadAndNotify();
         return provider.getId();
     }
 
@@ -154,7 +154,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
         // 清除该供应商下所有模型的 Spring AI 实例缓存
         evictModelsByProvider(id);
-        configCache.reload();
+        configCache.reloadAndNotify();
     }
 
     @Override
@@ -180,7 +180,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
         // 清除该供应商下所有模型的 Spring AI 实例缓存
         evictModelsByProvider(id);
-        configCache.reload();
+        configCache.reloadAndNotify();
     }
 
     @Override
@@ -259,7 +259,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
         log.info("创建 AI 模型: id={}, modelId={}, capability={}", model.getId(), model.getModelId(), model.getCapability());
 
-        configCache.reload();
+        configCache.reloadAndNotify();
         return model.getId();
     }
 
@@ -312,7 +312,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         log.info("更新 AI 模型: id={}, modelId={}", id, existing.getModelId());
 
         chatModelFactory.evict(existing.getModelId());
-        configCache.reload();
+        configCache.reloadAndNotify();
     }
 
     @Override
@@ -329,7 +329,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         log.info("删除 AI 模型: id={}, modelId={}", id, existing.getModelId());
 
         chatModelFactory.evict(existing.getModelId());
-        configCache.reload();
+        configCache.reloadAndNotify();
     }
 
     @Override
@@ -392,7 +392,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         modelMapper.updateById(model);
         log.info("设置默认模型: modelId={}, capability={}", model.getModelId(), model.getCapability());
 
-        configCache.reload();
+        configCache.reloadAndNotify();
     }
 
     @Override
@@ -414,7 +414,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
         log.info("批量更新模型优先级: count={}", items.size());
 
-        configCache.reload();
+        configCache.reloadAndNotify();
     }
 
     // ==================== 内部方法 ====================
@@ -958,7 +958,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
 
         log.info("批量创建模型完成: 请求={} 成功={}", requests.size(), ids.size());
-        configCache.reload();
+        configCache.reloadAndNotify();
         return ids;
     }
 
@@ -975,6 +975,6 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         providerMapper.updateById(existing);
         log.info("更新供应商图标: id={}, iconUrl={}", providerId, iconUrl);
 
-        configCache.reload();
+        configCache.reloadAndNotify();
     }
 }
