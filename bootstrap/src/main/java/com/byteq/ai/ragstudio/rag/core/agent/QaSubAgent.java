@@ -63,7 +63,7 @@ public class QaSubAgent implements SubAgent {
     private final Supplier<Boolean> cancellationChecker;
     private final List<String> knowledgeBaseIds;
     private final String kbSummaryText;
-    private final Map<String, String> collectionNameToKbId;
+    private final String rewrittenQuery;
 
     private final com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService;
 
@@ -89,7 +89,7 @@ public class QaSubAgent implements SubAgent {
             Supplier<Boolean> cancellationChecker,
             List<String> knowledgeBaseIds,
             String kbSummaryText,
-            Map<String, String> collectionNameToKbId,
+            String rewrittenQuery,
             com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService,
             ToolRetriever toolRetriever
     ) {
@@ -106,7 +106,7 @@ public class QaSubAgent implements SubAgent {
         this.cancellationChecker = cancellationChecker;
         this.knowledgeBaseIds = knowledgeBaseIds != null ? knowledgeBaseIds : List.of();
         this.kbSummaryText = kbSummaryText;
-        this.collectionNameToKbId = collectionNameToKbId != null ? collectionNameToKbId : Map.of();
+        this.rewrittenQuery = rewrittenQuery;
         this.traceRecordService = traceRecordService;
         this.toolRetriever = toolRetriever;
     }
@@ -181,20 +181,18 @@ public class QaSubAgent implements SubAgent {
         }
         registry.register(new TimeTool());
 
-        if (CollUtil.isNotEmpty(knowledgeBaseIds)) {
-            RagSearchTool ragTool = new RagSearchTool(retrievalEngine, searchProperties, knowledgeBaseIds, kbSummaryText, collectionNameToKbId);
-            ragTool.setChunksConsumer(chunks -> {
-                // 多次 rag_search 调用累积 chunks，按 id 去重，不覆盖之前的检索结果
-                for (RetrievedChunk chunk : chunks) {
-                    if (chunk.getId() != null) {
-                        boolean exists = retrievedChunks.stream()
-                                .anyMatch(c -> chunk.getId().equals(c.getId()));
-                        if (!exists) retrievedChunks.add(chunk);
-                    }
+        RagSearchTool ragTool = new RagSearchTool(retrievalEngine, searchProperties,
+                knowledgeBaseIds, kbSummaryText, question, rewrittenQuery);
+        ragTool.setChunksConsumer(chunks -> {
+            for (RetrievedChunk chunk : chunks) {
+                if (chunk.getId() != null) {
+                    boolean exists = retrievedChunks.stream()
+                            .anyMatch(c -> chunk.getId().equals(c.getId()));
+                    if (!exists) retrievedChunks.add(chunk);
                 }
-            });
-            registry.register(ragTool);
-        }
+            }
+        });
+        registry.register(ragTool);
 
         registry.register(new ToolReaderTool(skillLoader, mcpToolRegistry));
 
@@ -203,12 +201,11 @@ public class QaSubAgent implements SubAgent {
             registry.register(new SkillTool(def, syncHttpClient, sandboxExecutor));
         }
 
-        log.info("Q&A Agent 工具: MCP={}/{}, RAG={}, SKILL={}/{}, 内置=1, 总计={}",
+        log.info("Q&A Agent 工具: MCP={}/{}, RAG=1, SKILL={}/{}, 内置=1, 总计={}",
                 mcpToolRegistry.listAllExecutors().stream()
                         .filter(e -> !hasRetrieval || relevantTools.contains(e.getToolDefinition().name()))
                         .count(),
                 mcpToolRegistry.size(),
-                CollUtil.isNotEmpty(knowledgeBaseIds) ? 1 : 0,
                 skills.stream().filter(s -> !hasRetrieval || relevantTools.contains(s.getName())).count(),
                 skills.size(), registry.size());
         return registry;

@@ -10,7 +10,7 @@ import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.rag.config.MemoryProperties;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentContext;
-import com.byteq.ai.ragstudio.rag.core.agent.KbRelevanceChecker;
+import com.byteq.ai.ragstudio.rag.core.agent.KbEmbeddingSelector;
 import com.byteq.ai.ragstudio.rag.core.agent.OrchestratorAgent;
 import com.byteq.ai.ragstudio.rag.core.agent.QaSubAgent;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActPromptBuilder;
@@ -21,6 +21,7 @@ import com.byteq.ai.ragstudio.rag.core.agent.ToolRetriever;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
 import com.byteq.ai.ragstudio.rag.core.prompt.RAGPromptService;
 import com.byteq.ai.ragstudio.rag.core.rewrite.QueryRewriteService;
+import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
 import com.byteq.ai.ragstudio.rag.core.skill.SandboxExecutor;
 import okhttp3.OkHttpClient;
@@ -40,9 +41,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -140,8 +141,11 @@ public class StreamChatPipeline {
     /** 工具语义检索器，按用户问题筛选相关工具注入 Prompt */
     private final ToolRetriever toolRetriever;
 
-    /** 知识库相关性判断器，Agent 模式下用于判断问题是否与所选知识库相关 */
-    private final KbRelevanceChecker kbRelevanceChecker;
+    /** 知识库语义选择器（嵌入模型，多模态），按用户问题自动选择相关知识库 */
+    private final KbEmbeddingSelector kbEmbeddingSelector;
+
+    /** HTTP 模型工厂，用于将 S3 图片 URL 转为 data URI（多模态选库用） */
+    private final com.byteq.ai.ragstudio.infra.http.HttpModelFactory httpModelFactory;
 
     /** 知识库 DAO，用于查询知识库名称和描述 */
     private final KnowledgeBaseMapper knowledgeBaseMapper;
@@ -191,76 +195,86 @@ public class StreamChatPipeline {
     // ==================== Agent 模式 ====================
 
     /**
-     * Agent 模式执行流程：记忆加载 → 相关性判断 → 条件检索 → AgentLoop
+     * Agent 模式执行流程：记忆加载 → 查询改写 → 相关性判断+KB过滤 → AgentLoop
      */
     private void doExecuteAgent(StreamChatContext ctx) {
+        String userOriginalQuestion = ctx.getQuestion();
+
         traceNode("记忆加载", "MEMORY", () -> {
             loadMemory(ctx);
             return null;
         });
         checkCancellation(ctx);
 
-        // 1. 相关性判断 + KB 过滤
+        // 1. 查询改写（用于检索阶段，不影响原始问题保留给重排序）
+        RewriteResult rewriteResult = traceNode("查询改写", "REWRITE", () ->
+                queryRewriteService.rewriteWithSplit(userOriginalQuestion, ctx.getHistory(), ctx.getKnowledgeBaseIds()));
+        checkCancellation(ctx);
+        String rewrittenQuestion = rewriteResult.rewrittenQuestion();
+        if (StrUtil.isBlank(rewrittenQuestion)) rewrittenQuestion = userOriginalQuestion;
+        final String effectiveRewrittenQuestion = rewrittenQuestion;
+
+        // 2. 加载知识库列表（名称 + collection + 描述），供语义选择和后续 LLM 上下文使用
         List<String> effectiveKbIds = ctx.getKnowledgeBaseIds();
         boolean kbRelevant = false;
+        java.util.Map<String, KnowledgeBaseDO> kbMapById = new java.util.HashMap<>();
         if (CollUtil.isNotEmpty(ctx.getKnowledgeBaseIds())) {
-            KbRelevanceChecker.KbInfoProvider infoProvider = kbIds -> {
-                if (CollUtil.isEmpty(kbIds)) return List.of();
-                List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
-                        com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
-                                .in(KnowledgeBaseDO::getId, kbIds));
-                return kbList.stream()
-                        .map(kb -> new KbRelevanceChecker.KbInfo(
-                                kb.getId(), kb.getName(), kb.getDescription(), kb.getCollectionName()))
-                        .toList();
-            };
+            List<KnowledgeBaseDO> allKbs = knowledgeBaseMapper.selectList(
+                    com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
+                            .in(KnowledgeBaseDO::getId, ctx.getKnowledgeBaseIds()));
+            for (KnowledgeBaseDO kb : allKbs) {
+                kbMapById.put(kb.getId(), kb);
+            }
 
-            KbRelevanceChecker.RelevanceResult relevance = traceNode("相关性判断", "KB_RELEVANCE", () ->
-                    kbRelevanceChecker.check(ctx.getQuestion(), ctx.getKnowledgeBaseIds(), infoProvider));
+            // 用户问题附带图片时，转为 data URI 供多模态嵌入选库
+            List<String> imageDataUris = new ArrayList<>();
+            for (String url : ctx.getImageUrls()) {
+                String dataUri = httpModelFactory.resolveImageDataUri(url);
+                if (StrUtil.isNotBlank(dataUri)) {
+                    imageDataUris.add(dataUri);
+                }
+            }
+
+            List<KbEmbeddingSelector.KbInfo> kbInfos = ctx.getKnowledgeBaseIds().stream()
+                    .map(kbMapById::get)
+                    .filter(Objects::nonNull)
+                    .map(kb -> new KbEmbeddingSelector.KbInfo(
+                            kb.getId(), kb.getName(), kb.getDescription(), kb.getCollectionName()))
+                    .toList();
+
+            // 使用嵌入模型（多模态）按语义相似度选择相关知识库，高于阈值的全部命中
+            KbEmbeddingSelector.SelectionResult selection = traceNode("知识库选择", "KB_SELECT", () ->
+                    kbEmbeddingSelector.select(userOriginalQuestion, imageDataUris, kbInfos));
             checkCancellation(ctx);
 
-            kbRelevant = relevance.relevant();
-            // LLM 指定了具体的相关知识库 → 只检索这些
-            if (relevance.hasSpecificCollections()) {
-                List<String> relevantCollections = relevance.relevantCollectionNames();
-                // 从原始 KB IDs 中过滤出 collection 匹配的
-                List<KnowledgeBaseDO> allKbs = knowledgeBaseMapper.selectList(
-                        com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
-                                .in(KnowledgeBaseDO::getId, ctx.getKnowledgeBaseIds()));
-                effectiveKbIds = allKbs.stream()
-                        .filter(kb -> relevantCollections.contains(kb.getCollectionName()))
-                        .map(KnowledgeBaseDO::getId)
+            kbRelevant = selection.relevant();
+            if (selection.hasSpecificCollections()) {
+                effectiveKbIds = selection.selected().stream()
+                        .map(KbEmbeddingSelector.SelectedKb::id)
                         .toList();
-                if (effectiveKbIds.isEmpty()) {
-                    log.warn("LLM 指定的相关知识库未匹配到任何 KB，降级使用全部");
-                    effectiveKbIds = ctx.getKnowledgeBaseIds();
-                }
-                log.info("知识库相关性判断: relevant=true, 过滤后检索 {} 个知识库: {}",
-                        effectiveKbIds.size(), relevantCollections);
             } else {
-                log.info("知识库相关性判断: relevant={}, reasoning='{}'", kbRelevant, relevance.reasoning());
+                effectiveKbIds = List.of();
             }
+            log.info("知识库语义选择: relevant={}, reasoning='{}', 最终{}个相关KB",
+                    kbRelevant, selection.reasoning(), effectiveKbIds.size());
         } else {
             log.info("未选择知识库，跳过检索");
         }
 
-        // 2. 构建知识库概要文本（名称 + collection + 描述），供 LLM 了解知识库内容
+        // 3. 构建知识库概要文本（仅使用过滤后相关的 KB）
+        if (CollUtil.isEmpty(effectiveKbIds)) {
+            kbRelevant = false;
+        }
         List<String> finalKbIds = effectiveKbIds;
         final String kbSummaryText;
-        final java.util.Map<String, String> collectionToKbId;
         if (CollUtil.isNotEmpty(finalKbIds)) {
-            List<KnowledgeBaseDO> selectedKbs = knowledgeBaseMapper.selectList(
-                    com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeBaseDO.class)
-                            .in(KnowledgeBaseDO::getId, finalKbIds));
-            // 构建 collectionName → kbId 映射，供 AI 指定 collection 时精确检索
-            collectionToKbId = new java.util.HashMap<>();
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < selectedKbs.size(); i++) {
-                KnowledgeBaseDO kb = selectedKbs.get(i);
-                if (StrUtil.isNotBlank(kb.getCollectionName())) {
-                    collectionToKbId.put(kb.getCollectionName(), kb.getId());
-                }
-                sb.append("  ").append(i + 1).append(". ").append(kb.getName());
+            int idx = 0;
+            for (String kbId : finalKbIds) {
+                KnowledgeBaseDO kb = kbMapById.get(kbId);
+                if (kb == null) continue;
+                idx++;
+                sb.append("  ").append(idx).append(". ").append(kb.getName());
                 if (StrUtil.isNotBlank(kb.getCollectionName())) {
                     sb.append(" [collection: ").append(kb.getCollectionName()).append("]");
                 }
@@ -272,10 +286,9 @@ public class StreamChatPipeline {
             kbSummaryText = sb.length() > 0 ? sb.toString().stripTrailing() : "";
         } else {
             kbSummaryText = "";
-            collectionToKbId = java.util.Map.of();
         }
 
-        // 3. 构建 Agent 注册中心
+        // 4. 构建 Agent 注册中心
         OrchestratorAgent orchestrator = new OrchestratorAgent();
 
         // Q&A Agent
@@ -284,7 +297,7 @@ public class StreamChatPipeline {
                 mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor,
                 reactResponseParser, reactPromptBuilder, promptTemplateLoader,
                 () -> taskManager.isCancelled(ctx.getTaskId()),
-                finalKbIds, kbSummaryText, collectionToKbId,
+                finalKbIds, kbSummaryText, effectiveRewrittenQuestion,
                 traceRecordService, toolRetriever
         ));
         orchestrator.register(qaSubAgent);
@@ -309,9 +322,9 @@ public class StreamChatPipeline {
 
         checkCancellation(ctx);
 
-        // 4. 构建 AgentContext
+        // 5. 构建 AgentContext
         AgentContext agentCtx = new AgentContext(
-                ctx.getQuestion(),
+                userOriginalQuestion,
                 ctx.getHistory(),
                 "",
                 kbRelevant,

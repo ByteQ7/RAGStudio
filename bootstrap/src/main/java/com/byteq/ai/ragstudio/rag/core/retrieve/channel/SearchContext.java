@@ -17,7 +17,7 @@ import java.util.Map;
 public class SearchContext {
 
     /**
-     * 原始问题
+     * 原始问题（LLM 生成的检索查询文本，可能经过关键词扩写等改写）
      */
     private String originalQuestion;
 
@@ -25,6 +25,11 @@ public class SearchContext {
      * 重写后的问题
      */
     private String rewrittenQuestion;
+
+    /**
+     * 用户的原始提问（未经任何改写，用于重排序阶段）
+     */
+    private String userOriginalQuestion;
 
     /**
      * 子问题列表

@@ -57,15 +57,17 @@ public class MultiChannelRetrievalEngine {
     /**
      * 执行多通道检索（基于知识库 Collection 名称）
      *
-     * @param collectionNames 知识库向量集合名称列表
-     * @param subQuestions    子问题列表
-     * @param mainQuestion    主问题
-     * @param topK            期望返回的结果数量
+     * @param collectionNames      知识库向量集合名称列表
+     * @param subQuestions         子问题列表
+     * @param mainQuestion         主问题（可能经过改写，用于检索）
+     * @param topK                 期望返回的结果数量
+     * @param userOriginalQuestion 用户原始提问（未经改写，用于重排序）
      * @return 检索到的 Chunk 列表
      */
     @RagTraceNode(name = "multi-channel-retrieval", type = "RETRIEVE_CHANNEL")
-    public List<RetrievedChunk> retrieveKnowledgeChannels(List<String> collectionNames, List<String> subQuestions, String mainQuestion, int topK) {
-        SearchContext context = buildSearchContext(collectionNames, mainQuestion, subQuestions, topK);
+    public List<RetrievedChunk> retrieveKnowledgeChannels(List<String> collectionNames, List<String> subQuestions,
+                                                           String mainQuestion, int topK, String userOriginalQuestion) {
+        SearchContext context = buildSearchContext(collectionNames, mainQuestion, subQuestions, topK, userOriginalQuestion);
 
         // 【阶段1：多通道并行检索】
         List<SearchChannelResult> channelResults = executeSearchChannels(context);
@@ -229,10 +231,12 @@ public class MultiChannelRetrievalEngine {
     /**
      * 构建检索上下文
      */
-    private SearchContext buildSearchContext(List<String> collectionNames, String mainQuestion, List<String> subQuestions, int topK) {
+    private SearchContext buildSearchContext(List<String> collectionNames, String mainQuestion,
+                                            List<String> subQuestions, int topK, String userOriginalQuestion) {
         return SearchContext.builder()
                 .originalQuestion(mainQuestion)
                 .rewrittenQuestion(mainQuestion)
+                .userOriginalQuestion(userOriginalQuestion)
                 .subQuestions(subQuestions)
                 .selectedCollectionNames(collectionNames)
                 .topK(topK)

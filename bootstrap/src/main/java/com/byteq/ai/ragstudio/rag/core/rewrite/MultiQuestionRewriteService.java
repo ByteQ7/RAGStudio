@@ -94,7 +94,8 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
 
         String normalizedQuestion = queryTermMappingService.normalize(userQuestion, knowledgeBaseIds);
 
-        return callLLMRewriteAndSplit(normalizedQuestion, userQuestion, history);
+        return completeFollowUpIfNeeded(callLLMRewriteAndSplit(normalizedQuestion, userQuestion, history),
+                userQuestion, history);
     }
 
     /**
@@ -144,6 +145,51 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
 
         // 统一兜底逻辑
         return new RewriteResult(normalizedQuestion, List.of(normalizedQuestion));
+    }
+
+    /**
+     * 上下文补全兜底：LLM 改写结果仍是弱追问短语（如"再试试呢"、"继续"）时，
+     * 取最近一轮用户问题作为完整检索查询，保证检索不落入字面追问词。
+     */
+    private RewriteResult completeFollowUpIfNeeded(RewriteResult result,
+                                                   String userQuestion,
+                                                   List<ChatMessage> history) {
+        if (result == null) {
+            return null;
+        }
+        if (!FollowUpQueryUtil.isWeakFollowUp(result.rewrittenQuestion())) {
+            return result;
+        }
+        String base = findLastUserQuestion(history);
+        if (StrUtil.isBlank(base)) {
+            return result;
+        }
+        log.info("改写结果仍为弱追问短语'{}'，使用历史上一轮用户问题补全: '{}'",
+                result.rewrittenQuestion(), base);
+        return new RewriteResult(base, List.of(base));
+    }
+
+    // 从历史中提取最近一轮（除当前问题外）的纯用户问题
+    private String findLastUserQuestion(List<ChatMessage> history) {
+        if (CollUtil.isEmpty(history)) {
+            return null;
+        }
+        for (int i = history.size() - 1; i >= 0; i--) {
+            ChatMessage msg = history.get(i);
+            if (msg.getRole() != ChatMessage.Role.USER) {
+                continue;
+            }
+            String content = msg.getContent() != null ? msg.getContent().trim() : "";
+            if (StrUtil.isBlank(content)) {
+                continue;
+            }
+            if (content.startsWith("Observation:") || content.startsWith("{\"query\"")
+                    || content.contains("[^chunk_")) {
+                continue;
+            }
+            return content;
+        }
+        return null;
     }
 
     // 构建查询改写的 LLM 请求，组装系统提示词、最近两轮对话历史和用户问题

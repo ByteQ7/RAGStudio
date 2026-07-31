@@ -74,6 +74,8 @@ public class RAGSettingsController {
 
     private final ToolRetriever toolRetriever;
 
+    private final com.byteq.ai.ragstudio.rag.core.agent.KbEmbeddingSelector kbEmbeddingSelector;
+
     private final DefaultModelConfigService defaultModelConfigService;
 
     @Value("${spring.servlet.multipart.max-file-size:50MB}")
@@ -219,20 +221,26 @@ public class RAGSettingsController {
     }
 
     /**
-     * 设置工具选择嵌入模型
-     * <p>切换前探测模型可用性，成功后自动重建工具检索索引。</p>
+     * 设置语义选择嵌入模型
+     * <p>
+     * 该模型同时承担两类语义筛选职责：
+     * <ol>
+     *   <li>工具选择：按用户问题对工具做语义筛选，仅 TopK 相关工具注入 Prompt</li>
+     *   <li>知识库选择：将用户问题（含图片）与知识库语义比对，自动选出相关知识库</li>
+     * </ol>
+     * 切换前探测模型可用性，成功后自动重建工具检索索引，并同步切换知识库选择模型。
      *
      * @param request 包含 toolRoutingModel 字段（null 或 "" 表示使用系统默认）
      * @return 操作结果
      */
-    @PostMapping("/rag/settings/tool-routing-model")
-    public Result<Void> setToolRoutingModel(@RequestBody SelectionUpdateRequest request) {
+    @PostMapping("/rag/settings/selection-embedding-model")
+    public Result<Void> setSelectionEmbeddingModel(@RequestBody SelectionUpdateRequest request) {
         String modelId = request.getToolRoutingModel();
         if (modelId != null && !modelId.isBlank()) {
             try {
                 toolRetriever.probeModel(modelId);
             } catch (Exception e) {
-                throw new ServiceException("工具选择嵌入模型 \"" + modelId + "\" 不可用: " + e.getMessage());
+                throw new ServiceException("语义选择嵌入模型 \"" + modelId + "\" 不可用: " + e.getMessage());
             }
             defaultModelConfigService.updateConfig("tool_selector", modelId);
         } else {
@@ -240,7 +248,17 @@ public class RAGSettingsController {
         }
         String effective = modelId != null && !modelId.isBlank() ? modelId : null;
         toolRetriever.setModelAndRebuild(effective);
-        log.info("工具选择嵌入模型已切换: {}", effective != null ? effective : "不使用（使用系统默认）");
+        kbEmbeddingSelector.setModelAndRebuild(effective);
+        log.info("语义选择嵌入模型已切换: {}（用于工具筛选与知识库选择）",
+                effective != null ? effective : "不使用（使用系统默认）");
         return Results.success(null);
+    }
+
+    /**
+     * 兼容旧端点（工具选择嵌入模型 → 语义选择嵌入模型）
+     */
+    @PostMapping("/rag/settings/tool-routing-model")
+    public Result<Void> setToolRoutingModelLegacy(@RequestBody SelectionUpdateRequest request) {
+        return setSelectionEmbeddingModel(request);
     }
 }

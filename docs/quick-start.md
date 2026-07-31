@@ -57,7 +57,7 @@ bootstrap/src/main/java/com/byteq/ai/ragstudio/rag/core/agent/
 ├── ToolResult.java                 # 工具执行结果
 ├── McpToolAdapter.java             # MCP 协议 → 通用 Tool 适配器
 ├── RagSearchTool.java              # 知识库检索工具
-└── KbRelevanceChecker.java         # KB 相关性判断
+└── KbEmbeddingSelector.java        # 知识库语义选择（多模态 Embedding）
 ```
 
 ### 检索系统

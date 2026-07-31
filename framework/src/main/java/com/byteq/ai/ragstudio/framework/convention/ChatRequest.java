@@ -108,4 +108,14 @@ public class ChatRequest {
      * </p>
      */
     private Boolean enableTools;
+
+    /**
+     * 响应格式约束
+     * <p>
+     * 对于 OpenAI 兼容协议：{@code "json_object"} 强制模型输出合法 JSON。
+     * 对于 DashScope 协议：{@code "json"} 等价于设置 result_format = "json"。
+     * 若为 {@code null} 则不设置，由模型自行决定输出格式。
+     * </p>
+     */
+    private String responseFormat;
 }

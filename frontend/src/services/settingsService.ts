@@ -77,10 +77,14 @@ export async function getSystemSettings(): Promise<SystemSettings> {
   return api.get<SystemSettings, SystemSettings>("/rag/settings");
 }
 
-export async function setToolRoutingModel(
-  toolRoutingModel: string | null
+/**
+ * 设置语义选择嵌入模型
+ * 该模型同时承担「工具语义筛选」与「知识库语义选择」两类职责。
+ */
+export async function setSelectionEmbeddingModel(
+  modelId: string | null
 ): Promise<void> {
-  return api.post<void, void>("/rag/settings/tool-routing-model", {
-    toolRoutingModel
+  return api.post<void, void>("/rag/settings/selection-embedding-model", {
+    toolRoutingModel: modelId
   });
 }

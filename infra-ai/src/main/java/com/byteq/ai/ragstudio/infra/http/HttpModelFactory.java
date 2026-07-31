@@ -157,7 +157,7 @@ public class HttpModelFactory {
 
         return protocol.buildChatRequest(target.candidate().getModel(), messages, stream,
                 request.getTemperature(), request.getTopP(), request.getMaxTokens(),
-                reasoningParams, tools);
+                reasoningParams, tools, request.getResponseFormat());
     }
 
     public Map<String, Object> buildRequestBody(ChatRequest request, ModelTarget target) {

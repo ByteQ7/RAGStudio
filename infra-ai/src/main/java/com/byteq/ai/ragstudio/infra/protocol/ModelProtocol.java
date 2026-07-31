@@ -37,6 +37,13 @@ public interface ModelProtocol {
                                           Double temperature, Double topP, Integer maxTokens,
                                           Map<String, Object> reasoningParams, List<Map<String, Object>> tools);
 
+    default Map<String, Object> buildChatRequest(String modelId, List<ChatMessage> messages, boolean stream,
+                                                  Double temperature, Double topP, Integer maxTokens,
+                                                  Map<String, Object> reasoningParams, List<Map<String, Object>> tools,
+                                                  String responseFormat) {
+        return buildChatRequest(modelId, messages, stream, temperature, topP, maxTokens, reasoningParams, tools);
+    }
+
     default String extractChatContent(JsonNode response) {
         JsonNode msg = response.path("choices").path(0).path("message");
         if (msg.has("content") && !msg.get("content").isNull()) {
@@ -103,7 +110,7 @@ public interface ModelProtocol {
     }
 
     default Map<String, Object> buildRerankRequest(String modelId, String query, List<String> documents) {
-        throw new UnsupportedOperationException("Protocol " + name() + " does not support rerank");
+        return Map.of("model", modelId, "query", query, "documents", documents);
     }
 
     default List<Float> extractRerankScores(JsonNode response) {

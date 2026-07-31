@@ -88,6 +88,23 @@ public class ReActResponseParser {
         String json = extractJson(text);
         if (json == null) return null;
 
+        AgentStep step = parseJsonObject(json, iteration);
+        if (step != null) return step;
+
+        // Gson 解析失败，尝试修复 thought/final_answer 字段中嵌入的 ASCII 双引号
+        String repaired = repairEmbeddedQuotes(json);
+        if (repaired != null) {
+            step = parseJsonObject(repaired, iteration);
+            if (step != null) {
+                log.debug("JSON 修复成功，thought 中嵌入了未转义的双引号");
+                return step;
+            }
+        }
+
+        return null;
+    }
+
+    private AgentStep parseJsonObject(String json, int iteration) {
         try {
             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
             String thought = getString(obj, "thought");
@@ -126,9 +143,71 @@ public class ReActResponseParser {
             }
             return AgentStep.toolCall(iteration, thought, action, toolInput);
         } catch (Exception e) {
-            log.debug("JSON 解析失败: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 修复 JSON 字符串字段（如 thought、final_answer）中嵌入的 ASCII 双引号。
+     * <p>
+     * LLM 有时会在字符串值中直接使用 " 引用用户原句，导致 JSON 解析失败。
+     * 利用结构化字段（如 action、action_input）作为边界，定位并转义问题引号。
+     * </p>
+     */
+    private String repairEmbeddedQuotes(String json) {
+        // 已知的结构化字段边界特征（不含前导逗号，避免重建时重复）
+        String[] structuralPatterns = {
+                "\"action\": \"", "\"action\":\"",
+                "\"plan\": \"", "\"plan\":\"",
+                "\"action_input\":"
+        };
+
+        for (String boundary : structuralPatterns) {
+            int boundaryPos = json.indexOf(boundary);
+            if (boundaryPos < 0) continue;
+
+            // 检查是否在 key: 之前的 thought/final_answer 字段中有问题引号
+            // 用反引号(Backward)从 boundary 位置往前扫描，找到 "thought": " 或 "final_answer": " 开头
+            int thoughtStart = json.lastIndexOf("\"thought\"", boundaryPos);
+            int answerStart = json.lastIndexOf("\"final_answer\"", boundaryPos);
+            int planStart = json.lastIndexOf("\"plan\"", boundaryPos);
+            int targetStart = Math.max(Math.max(thoughtStart, answerStart), planStart);
+            if (targetStart < 0) continue;
+
+            // 找到 ": " 之后的值的起始位置
+            int colonPos = json.indexOf(':', targetStart);
+            if (colonPos < 0) continue;
+            int quoteStart = json.indexOf('"', colonPos + 1);
+            if (quoteStart < 0 || quoteStart >= boundaryPos) continue;
+
+            // 提取值内容（从 quoteStart+1 到 boundaryPos）
+            String rawValue = json.substring(quoteStart + 1, boundaryPos);
+            // 移除值尾部可能存在的 ", （JSON 字段分隔符）
+            int trailing = rawValue.length();
+            while (trailing > 0 && (rawValue.charAt(trailing - 1) == ' ' || rawValue.charAt(trailing - 1) == ',')) {
+                trailing--;
+            }
+            if (trailing > 0 && rawValue.charAt(trailing - 1) == '"') {
+                // 去掉尾部闭合引号（如果存在的话，有些情况可能没有）
+                trailing--;
+            }
+            rawValue = rawValue.substring(0, trailing);
+
+            // 转义值内部的 ASCII 双引号
+            String escaped = rawValue.replace("\"", "\\\"");
+
+            if (escaped.equals(rawValue)) continue; // 没有变化，无需修复
+
+            log.debug("修复 JSON 字符串字段: 转义 {} 个双引号", 
+                    rawValue.length() - escaped.replace("\\\"", "").length());
+
+            // 重建 JSON：前缀 + 转义后的值 + 后缀
+            String prefix = json.substring(0, quoteStart);
+            // 提取 `"` 闭合符 + 字段分隔符 "," 之后的后缀
+            String suffix = json.substring(boundaryPos);
+            return prefix + "\"" + escaped + "\", " + suffix;
+        }
+        return null;
     }
 
     private String extractJson(String text) {

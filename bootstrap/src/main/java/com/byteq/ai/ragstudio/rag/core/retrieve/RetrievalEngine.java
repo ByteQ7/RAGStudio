@@ -49,17 +49,19 @@ public class RetrievalEngine {
      * 将结果封装到 RetrievalContext 中。MCP 上下文由外部决策阶段控制调用。
      * </p>
      *
-     * @param knowledgeBaseIds 知识库 ID 列表
-     * @param rewriteResult    改写结果，包含改写后的问题和子问题列表
-     * @param topK             期望返回的结果数量
+     * @param knowledgeBaseIds     知识库 ID 列表
+     * @param rewriteResult        改写结果，包含改写后的问题和子问题列表
+     * @param topK                 期望返回的结果数量
+     * @param userOriginalQuestion 用户原始提问（未经改写，用于重排序阶段）
      * @return 检索上下文，包含 KB 检索结果
      */
-    public RetrievalContext retrieveByKnowledgeBases(List<String> knowledgeBaseIds, RewriteResult rewriteResult, int topK) {
+    public RetrievalContext retrieveByKnowledgeBases(List<String> knowledgeBaseIds, RewriteResult rewriteResult,
+                                                      int topK, String userOriginalQuestion) {
         if (CollUtil.isEmpty(knowledgeBaseIds)) {
             return RetrievalContext.builder().chunks(List.of()).build();
         }
 
-        List<RetrievedChunk> chunks = doRetrieve(knowledgeBaseIds, rewriteResult, topK);
+        List<RetrievedChunk> chunks = doRetrieve(knowledgeBaseIds, rewriteResult, topK, userOriginalQuestion);
 
         String kbContext = "";
         if (CollUtil.isNotEmpty(chunks)) {
@@ -86,11 +88,9 @@ public class RetrievalEngine {
                 .build();
     }
 
-    /**
-     * 执行多通道向量检索，获取 Chunk 并回填知识库/文档名称
-     */
     @RagTraceNode(name = "向量检索", type = "RETRIEVE")
-    List<RetrievedChunk> doRetrieve(List<String> knowledgeBaseIds, RewriteResult rewriteResult, int topK) {
+    List<RetrievedChunk> doRetrieve(List<String> knowledgeBaseIds, RewriteResult rewriteResult,
+                                    int topK, String userOriginalQuestion) {
         int finalTopK = topK > 0 ? topK : searchProperties.getDefaultTopK();
 
         List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
@@ -117,7 +117,7 @@ public class RetrievalEngine {
                 ? rewriteResult.subQuestions()
                 : List.of(rewriteResult.rewrittenQuestion());
         List<RetrievedChunk> chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(
-                collectionNames, subQuestions, rewriteResult.rewrittenQuestion(), finalTopK);
+                collectionNames, subQuestions, rewriteResult.rewrittenQuestion(), finalTopK, userOriginalQuestion);
         if (CollUtil.isEmpty(chunks)) {
             return chunks;
         }

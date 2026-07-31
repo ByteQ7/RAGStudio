@@ -76,9 +76,30 @@ public class RoutingRerankService implements RerankService {
         return executor.executeWithFallback(
                 ModelCapability.RERANK,
                 selector.selectRerankCandidates(),
-                // 根据目标模型的提供商名称查找对应的客户端实现
                 target -> clientsByProvider.get(target.candidate().getProvider()),
-                // 使用查到的客户端执行重排序调用
+                (client, target) -> client.rerank(query, candidates, topN, target)
+        );
+    }
+
+    /**
+     * 使用用户指定的模型 ID 执行重排序
+     * <p>
+     * 将指定的 modelId 排在候选列表首位（优先尝试），
+     * 如果指定模型不可用则降级至其他可用模型。
+     * </p>
+     *
+     * @param query      用户查询文本
+     * @param candidates 待排序的候选文档列表
+     * @param topN       返回前 N 个最相关的结果
+     * @param modelId    用户配置的默认重排序模型 ID
+     * @return 重排序后的文档片段列表
+     */
+    @Override
+    public List<RetrievedChunk> rerankWithModel(String query, List<RetrievedChunk> candidates, int topN, String modelId) {
+        return executor.executeWithFallback(
+                ModelCapability.RERANK,
+                selector.selectRerankCandidate(modelId),
+                target -> clientsByProvider.get(target.candidate().getProvider()),
                 (client, target) -> client.rerank(query, candidates, topN, target)
         );
     }

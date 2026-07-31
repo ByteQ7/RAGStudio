@@ -105,6 +105,25 @@ rag:
   search:
     default-top-k: ${DEFAULT_TOP_K:10}
 
+    # 重排后动态 TopK（分数簇感知）
+    # - 存在显著落差（相邻分数差 ≥ max(0.15, 15%×最高分)）→ 截断在落差处，避免硬塞满 base-max 浪费 token
+    # - 分数接近（无显著落差）→ 按接近度扩量，最多 overflow-cap 个，避免截断丢弃同等相关的正确 chunk
+    max-final-chunks: 5          # 基准目标值
+    rerank-min-score: 0.3        # 绝对底线，低于此分数直接丢弃
+    dynamic-top-k-enabled: true
+    dynamic-top-k-score-gap: 0.15       # 绝对落差阈值
+    dynamic-top-k-tie-band-ratio: 0.15  # 相对接近度比例（相对最高分）
+    dynamic-top-k-overflow-cap: 10      # 分数接近时的扩量上限
+    dynamic-top-k-min-chunks: 3         # 缩量保底：判出明显落差也至少保留 3 条（避免答案群被截在带外）
+    dynamic-top-k-cliff-ratio: 1.5      # 悬崖比值阈值：相邻分数比值 ≥1.5 且差值达阈值才算悬崖（对分数尺度鲁棒）
+
+    # 粗召层 per-KB 融合（同一套分数簇感知截断，在 rerank 之前）
+    # - 每个知识库先融合到 overflow-cap（15 条），再由分数分布决定实际进入 rerank 的数量
+    # - 分数接近 → 保留更多（避免正确 chunk 在粗召阶段被硬截丢失）
+    # - 有明显落差 → 保留更少（弱相关库不硬凑 per-kb-chunk-limit 条）
+    per-kb-chunk-limit: 5        # per-KB 基准目标值
+    per-kb-overflow-cap: 15      # per-KB 扩量上限（粗召候选池上限）
+
     channels:
       # 向量全局检索（当前已禁用：VectorGlobalSearchChannel.isEnabled() 返回 false）
       vector-global:

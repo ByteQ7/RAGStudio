@@ -1,5 +1,7 @@
 -- ============================================
 -- Migration: 新增 api_protocol 字段支持多协议
+-- 注意：字段的数据值（dashscope 覆盖）在 init_data_pg.sql 末尾设置，
+--       保证与种子数据同一批次导入（本脚本在 init 之前执行时 UPDATE 不生效）。
 -- ============================================
 
 -- 1. t_ai_provider 新增 api_protocol
@@ -9,8 +11,3 @@ COMMENT ON COLUMN t_ai_provider.api_protocol IS 'API 协议类型: openai / dash
 -- 2. t_ai_model 新增 api_protocol（可覆盖供应商级协议）
 ALTER TABLE t_ai_model ADD COLUMN IF NOT EXISTS api_protocol VARCHAR(32);
 COMMENT ON COLUMN t_ai_model.api_protocol IS 'API 协议类型覆盖: openai / dashscope / anthropic，NULL=继承供应商';
-
--- 3. 供应商不设 dashscope，只在多模态 Embedding 模型级覆盖
--- （bailian 的普通文本模型仍用 OpenAI 兼容模式）
-UPDATE t_ai_model SET api_protocol = 'dashscope'
-WHERE model_id = 'qwen3-vl-embedding' AND capability = 'EMBEDDING';

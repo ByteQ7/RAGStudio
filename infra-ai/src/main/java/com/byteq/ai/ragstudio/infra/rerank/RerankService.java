@@ -47,4 +47,19 @@ public interface RerankService {
      * @throws RemoteException 当所有候选重排序模型均不可用或调用失败时抛出
      */
     List<RetrievedChunk> rerank(String query, List<RetrievedChunk> candidates, int topN);
+
+    /**
+     * 使用指定模型 ID 执行重排序
+     * <p>
+     * 优先使用用户配置的重排序模型，若指定模型不可用则降级到自动路由。
+     * </p>
+     *
+     * @param query      用户查询文本
+     * @param candidates 待排序的候选文档列表
+     * @param topN       返回前 N 个最相关的结果
+     * @param modelId    指定使用的模型 ID（来自默认模型配置）
+     * @return 重排序后的文档片段列表
+     * @throws RemoteException 当所有候选重排序模型均不可用或调用失败时抛出
+     */
+    List<RetrievedChunk> rerankWithModel(String query, List<RetrievedChunk> candidates, int topN, String modelId);
 }

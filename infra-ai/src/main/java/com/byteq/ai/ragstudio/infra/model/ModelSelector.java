@@ -102,6 +102,25 @@ public class ModelSelector {
         return selectCandidates(group, group.getDefaultModel(), false, config.getProviders());
     }
 
+    /**
+     * 选择指定 modelId 的 Rerank 模型候选（用户配置优先）
+     * <p>
+     * 将指定 modelId 排在候选列表首位，其余按优先级排列，供路由执行器尝试。
+     * 如果 modelId 不存在或不可用，则降级为普通 rerank 候选选择。
+     * </p>
+     *
+     * @param modelId 用户配置的默认重排序模型 ID
+     * @return 指定模型优先的候选列表
+     */
+    public List<ModelTarget> selectRerankCandidate(String modelId) {
+        DynamicModelConfig config = configProvider.getConfig();
+        DynamicModelConfig.ModelGroup group = config.getRerankGroup();
+        if (group == null || group.getCandidates().isEmpty()) {
+            return List.of();
+        }
+        return selectCandidates(group, modelId, false, config.getProviders());
+    }
+
     private String resolveFirstChoiceModel(DynamicModelConfig.ModelGroup group, boolean deepThinking) {
         String defaultModel = group.getDefaultModel();
         if (deepThinking && defaultModel != null) {

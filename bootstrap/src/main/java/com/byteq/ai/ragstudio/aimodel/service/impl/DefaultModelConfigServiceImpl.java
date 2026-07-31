@@ -74,6 +74,16 @@ public class DefaultModelConfigServiceImpl implements DefaultModelConfigService,
             throw new ClientException("模型不存在或已禁用：" + modelId);
         }
 
+        // Rerank 场景校验模型能力
+        if ("rerank".equals(configKey) && !"RERANK".equalsIgnoreCase(model.getCapability())) {
+            throw new ClientException("该模型不支持重排序能力：" + modelId);
+        }
+
+        // 语义选择（工具筛选 + 知识库选择）场景校验 Embedding 能力
+        if ("tool_selector".equals(configKey) && !"EMBEDDING".equalsIgnoreCase(model.getCapability())) {
+            throw new ClientException("语义选择模型必须为 Embedding 模型：" + modelId);
+        }
+
         DefaultModelConfigDO config = mapper.selectOne(
                 new LambdaQueryWrapper<DefaultModelConfigDO>()
                         .eq(DefaultModelConfigDO::getConfigKey, configKey)

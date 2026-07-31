@@ -623,7 +623,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         return switch (capability.toUpperCase()) {
             case "CHAT" -> checkChatModelConnectivity(baseUrl, apiKey, model.getModelId(), endpoints);
             case "EMBEDDING" -> checkEmbeddingModelConnectivity(model, provider, baseUrl, apiKey, endpoints);
-            case "RERANK" -> checkRerankModelConnectivity(baseUrl, apiKey, model.getModelId(), endpoints);
+            case "RERANK" -> checkRerankModelConnectivity(model, provider, baseUrl, apiKey, endpoints);
             default -> {
                 log.warn("未知的模型能力类型: {}，使用 CHAT 方式兜底", model.getCapability());
                 yield checkChatModelConnectivity(baseUrl, apiKey, model.getModelId(), endpoints);
@@ -719,20 +719,29 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     /**
-     * 检查 RERANK 模型的连通性：发送一个轻量级的 rerank 请求
+     * 检查 RERANK 模型的连通性：发送一个轻量级的 rerank 请求，协议感知
      */
-    private ConnectivityResultVO checkRerankModelConnectivity(String baseUrl, String apiKey, String modelId,
+    private ConnectivityResultVO checkRerankModelConnectivity(AiModelDO model, AiProviderDO provider,
+                                                              String baseUrl, String apiKey,
                                                               Map<String, String> endpoints) {
         Instant start = Instant.now();
         try {
-            String path = endpoints != null ? endpoints.getOrDefault("rerank", "/v1/rerank") : "/v1/rerank";
-            String url = resolveEndpointUrl(baseUrl, endpoints, "rerank", "/v1/rerank");
-            String body = String.format(
-                    "{\"model\":\"%s\",\"query\":\"test\",\"documents\":[\"test document\"]}", modelId);
+            String protocolName = StrUtil.isNotBlank(model.getApiProtocol())
+                    ? model.getApiProtocol()
+                    : StrUtil.isNotBlank(provider.getApiProtocol())
+                            ? provider.getApiProtocol()
+                            : "openai";
+
+            ModelProtocol proto = protocolRegistry.get(protocolName);
+            String url = proto.resolveRerankUrl(baseUrl);
+
+            Map<String, Object> requestBody = proto.buildRerankRequest(
+                    model.getModelId(), "test", List.of("test document"));
+            String body = objectMapper.writeValueAsString(requestBody);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .header("Authorization", "Bearer " + apiKey)
+                    .header(proto.authHeaderName(), proto.authHeaderValue(apiKey))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .timeout(Duration.ofSeconds(30))

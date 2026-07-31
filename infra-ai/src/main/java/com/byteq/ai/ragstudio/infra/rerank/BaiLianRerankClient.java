@@ -97,12 +97,9 @@ public class BaiLianRerankClient implements RerankClient {
             }
         }
 
-        // 如果去重后数量不超过 topN，无需调用远程 rerank 服务，直接返回
-        if (topN <= 0 || dedup.size() <= topN) {
-            return dedup;
-        }
-
-        // 去重后数量仍超过 topN，需要调用远程服务进行精确重排序
+        // 注意：即使去重后数量不超过 topN 也必须调用 API 打分。
+        // 调用方（RerankPostProcessor）依赖完整的 relevance_score 分布做动态 TopK 决策，
+        // 直接返回会导致重排永远不生效、分数停留在 RRF 融合量级（~0.03）。
         return doRerank(query, dedup, topN, target);
     }
 
@@ -137,9 +134,26 @@ public class BaiLianRerankClient implements RerankClient {
         JsonObject input = new JsonObject();
         input.addProperty("query", query);
 
+        boolean hasImage = candidates.stream().anyMatch(RetrievedChunk::isImage);
+
         JsonArray documentsArray = new JsonArray();
         for (RetrievedChunk each : candidates) {
-            documentsArray.add(each.getText() == null ? "" : each.getText());
+            if (hasImage && each.isImage()) {
+                JsonObject imageDoc = new JsonObject();
+                imageDoc.addProperty("type", "image_url");
+                JsonObject imgUrlObj = new JsonObject();
+                String imageUrl = extractImageUrl(each);
+                imgUrlObj.addProperty("url", imageUrl != null ? imageUrl : "");
+                imageDoc.add("image_url", imgUrlObj);
+                documentsArray.add(imageDoc);
+            } else if (hasImage) {
+                JsonObject textDoc = new JsonObject();
+                textDoc.addProperty("type", "text");
+                textDoc.addProperty("text", each.getText() == null ? "" : each.getText());
+                documentsArray.add(textDoc);
+            } else {
+                documentsArray.add(each.getText() == null ? "" : each.getText());
+            }
         }
         input.add("documents", documentsArray);
 
@@ -274,5 +288,12 @@ public class BaiLianRerankClient implements RerankClient {
             throw new ModelClientException(provider() + " rerank 响应缺少 results", ModelClientErrorType.INVALID_RESPONSE, null);
         }
         return output;
+    }
+
+    private String extractImageUrl(RetrievedChunk chunk) {
+        if (chunk.getMetadata() == null) return null;
+        Object url = chunk.getMetadata().get("image_url");
+        if (url instanceof String s && !s.isBlank()) return s;
+        return null;
     }
 }

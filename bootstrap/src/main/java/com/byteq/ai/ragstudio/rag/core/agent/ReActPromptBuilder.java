@@ -41,6 +41,14 @@ public class ReActPromptBuilder {
     private static final String KB_RELEVANT_NOTE =
             "> ⚠️ 用户已选择知识库且问题与知识库相关。**你的第一轮行动必须调用 rag_search 工具检索知识库**，然后基于检索结果回答。不得仅凭自身知识直接回答。";
 
+    /** rag_search 可用时的检索优先规则 */
+    private static final String SEARCH_PRIORITY_WITH_RAG =
+            "先 `rag_search`，不够再 `web_search` 或其他";
+
+    /** rag_search 不可用时的检索优先规则 */
+    private static final String SEARCH_PRIORITY_WITHOUT_RAG =
+            "使用可用工具搜索相关数据";
+
     private final PromptTemplateLoader templateLoader;
 
     public ReActPromptBuilder(PromptTemplateLoader templateLoader) {
@@ -67,16 +75,22 @@ public class ReActPromptBuilder {
                 : NO_KB_TEXT;
 
         String relevanceNote = "";
+        boolean hasRagSearch = toolRegistry != null && toolRegistry.contains("rag_search");
         if (!kbRelevant && StrUtil.isBlank(kbContext)) {
             relevanceNote = KB_IRRELEVANT_NOTE;
-        } else if (kbRelevant && StrUtil.isBlank(kbContext)) {
+        } else if (kbRelevant && StrUtil.isBlank(kbContext) && hasRagSearch) {
             relevanceNote = KB_RELEVANT_NOTE;
         }
+
+        String searchPriorityRule = hasRagSearch
+                ? SEARCH_PRIORITY_WITH_RAG
+                : SEARCH_PRIORITY_WITHOUT_RAG;
 
         String filled = PromptTemplateUtils.fillSlots(template, Map.of(
                 "tool_definitions", toolDefs,
                 "kb_context", kbSection,
-                "kb_relevance_note", relevanceNote
+                "kb_relevance_note", relevanceNote,
+                "search_priority_rule", searchPriorityRule
         ));
 
         return ChatMessage.system(PromptTemplateUtils.cleanupPrompt(filled));

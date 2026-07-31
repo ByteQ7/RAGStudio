@@ -18,7 +18,7 @@ import {
   updateDefault
 } from "@/services/defaultModelConfigService";
 import { listProviders } from "@/services/aiModelConfigService";
-import { getSystemSettings, setToolRoutingModel } from "@/services/settingsService";
+import { getSystemSettings, setSelectionEmbeddingModel } from "@/services/settingsService";
 import { getErrorMessage } from "@/utils/error";
 
 // 配置键 → 中文描述
@@ -27,7 +27,8 @@ const CONFIG_KEY_LABELS: Record<string, string> = {
   summary: "摘要默认模型",
   title: "话题命名默认模型",
   multimodal: "图片多模态默认模型",
-  doc_image: "文档图片解析默认模型"
+  doc_image: "文档图片解析默认模型",
+  rerank: "重排序默认模型"
 };
 
 // 配置键 → 说明文字
@@ -36,12 +37,14 @@ const CONFIG_KEY_DESCRIPTIONS: Record<string, string> = {
   summary: "对话历史摘要压缩时使用的模型",
   title: "自动生成对话标题时使用的模型",
   multimodal: "聊天中用户上传图片时使用的模型（需支持多模态）",
-  doc_image: "文档入库时，提取嵌入图片中的文字（需支持多模态）"
+  doc_image: "文档入库时，提取嵌入图片中的文字（需支持多模态）",
+  rerank: "知识库检索后对Chunk进行语义重排序的模型（需支持Rerank能力，建议使用多模态Rerank模型以支持图片Chunk重排序）"
 };
 
 export function DefaultModelConfigPage() {
   const [configs, setConfigs] = useState<DefaultModelConfig[]>([]);
   const [chatModels, setChatModels] = useState<AiModel[]>([]);
+  const [rerankModels, setRerankModels] = useState<AiModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [dirty, setDirty] = useState<Record<string, string>>({});
@@ -54,14 +57,16 @@ export function DefaultModelConfigPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [defaults, models, providers, settings] = await Promise.all([
+      const [defaults, models, rerank, providers, settings] = await Promise.all([
         listDefaults(),
         listModels("CHAT"),
+        listModels("RERANK"),
         listProviders(),
         getSystemSettings()
       ]);
       setConfigs(defaults);
       setChatModels(models);
+      setRerankModels(rerank);
       setAllProviders(providers.map((p) => ({ name: p.name, apiKey: p.apiKey ?? null })));
       const embModels = await listModels("EMBEDDING");
       setEmbeddingModels(embModels);
@@ -88,6 +93,23 @@ export function DefaultModelConfigPage() {
     }
     return map;
   }, [allProviders]);
+
+  // 语义选择需要多模态嵌入模型（支持带图提问时"看图选库"）；无多模态模型时回退为全部嵌入模型
+  const selectableEmbeddingModels = useMemo(() => {
+    const enabled = embeddingModels.filter((m) => m.enabled === 1);
+    const multimodal = enabled.filter((m) => m.supportsMultimodal === 1);
+    const base = multimodal.length > 0 ? multimodal : enabled;
+    if (toolRoutingModel && !base.some((m) => m.modelId === toolRoutingModel)) {
+      const current = embeddingModels.find((m) => m.modelId === toolRoutingModel);
+      if (current) return [current, ...base];
+    }
+    return base;
+  }, [embeddingModels, toolRoutingModel]);
+
+  const hasMultimodalEmbedding = useMemo(
+    () => embeddingModels.some((m) => m.enabled === 1 && m.supportsMultimodal === 1),
+    [embeddingModels]
+  );
 
   // ==================== 模型选择变更 ====================
 
@@ -130,12 +152,13 @@ export function DefaultModelConfigPage() {
     return configs.filter(
       (c) => {
         const modelId = dirty[c.configKey] || c.modelId;
-        const model = chatModels.find((m) => m.modelId === modelId);
+        const models = c.configKey === "rerank" ? rerankModels : chatModels;
+        const model = models.find((m) => m.modelId === modelId);
         const providerName = model?.providerName || c.providerName;
         return !providerApiKeyMap.get(providerName);
       }
     );
-  }, [configs, dirty, chatModels, providerApiKeyMap]);
+  }, [configs, dirty, chatModels, rerankModels, providerApiKeyMap]);
 
   // ==================== 渲染 ====================
 
@@ -181,7 +204,8 @@ export function DefaultModelConfigPage() {
           <ul className="mt-1.5 space-y-1">
             {missingApiKeyItems.map((item) => {
               const modelId = dirty[item.configKey] || item.modelId;
-              const model = chatModels.find((m) => m.modelId === modelId);
+              const models = item.configKey === "rerank" ? rerankModels : chatModels;
+              const model = models.find((m) => m.modelId === modelId);
               const providerName = model?.providerName || item.providerName;
               return (
                 <li key={item.configKey} className="flex items-center gap-2 text-xs text-amber-600">
@@ -206,7 +230,9 @@ export function DefaultModelConfigPage() {
           .filter((c) => c.configKey !== "tool_selector")
           .map((config) => {
           const selectedModelId = getSelectedModelId(config);
-          const selectedModel = chatModels.find((m) => m.modelId === selectedModelId);
+          const isRerank = config.configKey === "rerank";
+          const models = isRerank ? rerankModels : chatModels;
+          const selectedModel = models.find((m) => m.modelId === selectedModelId);
           const isDirty = config.configKey in dirty;
           const isSaving = savingKey === config.configKey;
           const apiKeyOk = selectedModel
@@ -240,13 +266,12 @@ export function DefaultModelConfigPage() {
                           <SelectValue placeholder="选择模型" />
                         </SelectTrigger>
                         <SelectContent>
-                          {chatModels
+                          {models
                             .filter((m) => m.enabled === 1)
                             .sort((a, b) => a.priority - b.priority)
                             .map((model) => {
-                              // 多模态模型过滤提示：doc_image 和 multimodal 建议选 supportsMultimodal=1
                               const isMultimodalScene =
-                                config.configKey === "multimodal" || config.configKey === "doc_image";
+                                !isRerank && (config.configKey === "multimodal" || config.configKey === "doc_image");
                               return (
                                 <SelectItem
                                   key={model.modelId}
@@ -263,6 +288,11 @@ export function DefaultModelConfigPage() {
                                   {isMultimodalScene && model.supportsMultimodal !== 1 && (
                                     <span className="ml-2 text-[11px] text-amber-400">
                                       不支持多模态
+                                    </span>
+                                  )}
+                                  {isRerank && model.supportsMultimodal === 1 && (
+                                    <span className="ml-2 text-[11px] text-indigo-400">
+                                      多模态
                                     </span>
                                   )}
                                 </SelectItem>
@@ -310,16 +340,23 @@ export function DefaultModelConfigPage() {
           );
         })}
 
-        {/* 工具选择嵌入模型 */}
+        {/* 语义选择嵌入模型（工具筛选 + 知识库选择） */}
         <div className="ui-card">
           <div className="ui-card-content">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 flex-1">
-                <h3 className="ui-card-title">工具选择嵌入模型</h3>
+                <h3 className="ui-card-title">语义选择嵌入模型</h3>
                 <p className="mt-0.5 text-sm text-gray-500">
-                  用户提问时用该模型对工具做语义筛选，仅 TopK 相关工具注入 Prompt。
+                  该默认模型承担两类语义选择职责：① 用户提问时对工具做语义筛选，仅 TopK
+                  相关工具注入 Prompt；② 将用户问题（含图片）与知识库语义比对，自动选出相关知识库参与检索。
+                  建议使用<b>多模态</b>嵌入模型，以支持带图片提问时的知识库选择。
                   不设置则使用系统默认 Embedding 模型。
                 </p>
+                {!hasMultimodalEmbedding && (
+                  <p className="mt-1 text-xs text-amber-500">
+                    当前没有可用的多模态嵌入模型，带图片提问时将无法进行"看图选库"。
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-3">
@@ -332,14 +369,14 @@ export function DefaultModelConfigPage() {
                       const name = effective
                         ? embeddingModels.find((m) => m.modelId === effective)?.modelName || effective
                         : "不使用";
-                      if (!window.confirm(`切换工具选择嵌入模型为「${name}」，将重建工具检索索引，是否确认？`)) {
+                      if (!window.confirm(`切换语义选择嵌入模型为「${name}」，将重建工具检索与知识库选择索引，是否确认？`)) {
                         // force re-render to keep Select showing previous value
                         return;
                       }
                       setToolRoutingBusy(true);
                       setToolRoutingModelState(effective);
-                      setToolRoutingModel(effective || null)
-                        .then(() => toast.success(`工具选择嵌入模型已切换为「${name}」，索引已重建`))
+                      setSelectionEmbeddingModel(effective || null)
+                        .then(() => toast.success(`语义选择嵌入模型已切换为「${name}」，索引已重建`))
                         .catch((error) => {
                           toast.error(getErrorMessage(error, "切换失败"));
                           setToolRoutingModelState(toolRoutingModel); // revert
@@ -353,13 +390,17 @@ export function DefaultModelConfigPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">不使用（使用系统默认）</SelectItem>
-                      {embeddingModels
-                        .filter((m) => m.enabled === 1)
+                      {selectableEmbeddingModels
                         .sort((a, b) => a.priority - b.priority)
                         .map((model) => (
                           <SelectItem key={model.modelId} value={model.modelId}>
                             <span className="font-mono text-sm">{model.modelName}</span>
                             <span className="ml-2 text-xs text-gray-400">{model.providerName}</span>
+                            {model.supportsMultimodal === 1 && (
+                              <span className="ml-2 text-[11px] text-indigo-400">
+                                多模态
+                              </span>
+                            )}
                           </SelectItem>
                         ))}
                     </SelectContent>

@@ -161,12 +161,12 @@ public class ToolRetriever {
         if (now - lastAlertTs < ALERT_COOLDOWN_MS) return;
         lastAlertTs = now;
         String model = toolRoutingModel != null ? toolRoutingModel : "default";
-        log.warn("⚠️ 工具选择嵌入模型不可用 (model={}), 已降级为全量注册。错误: {}", model, error);
+        log.warn("⚠️ 语义选择嵌入模型不可用 (model={}), 已降级为全量注册。错误: {}", model, error);
         if (toolRoutingModel != null) {
             try {
                 String nowStr = LocalDateTime.now().format(DTF);
                 String html = emailService.buildToolRoutingFailedHtml(nowStr, toolRoutingModel, error);
-                emailService.sendAlert("RAG Studio · 工具选择嵌入模型不可用", html);
+                emailService.sendAlert("RAG Studio · 语义选择嵌入模型不可用", html);
             } catch (Exception e) {
                 log.warn("发送工具路由模型告警邮件失败", e);
             }

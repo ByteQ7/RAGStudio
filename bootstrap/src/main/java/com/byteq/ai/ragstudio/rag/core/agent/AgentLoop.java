@@ -11,9 +11,11 @@ import com.google.gson.Gson;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 
 /**
@@ -63,6 +65,24 @@ public class AgentLoop {
 
     /** 是否已调用过 rag_search（用于抑制 kb_forced 持续生效） */
     private boolean ragSearchCalled = false;
+
+    /** 相同工具调用缓存：key = 工具名+参数签名，value = Observation 文本（避免重复执行完全相同的调用） */
+    private final Map<String, String> toolCallCache = new HashMap<>();
+
+    /** 重复调用计数：key = 工具名+参数签名，value = 命中缓存的次数 */
+    private final Map<String, Integer> toolCallRepeatCount = new HashMap<>();
+
+    /** 同一工具最近一次 Observation（用于识别参数不同但结果相同的重复调用，如 rag_search） */
+    private final Map<String, String> lastObservationByTool = new HashMap<>();
+
+    /** 同一工具连续返回相同内容的次数（参数不同但结果相同） */
+    private final Map<String, Integer> identicalResultRepeatCount = new HashMap<>();
+
+    /** 相同（工具，参数）重复调用达到该次数后强制结束循环 */
+    private static final int MAX_REPEATED_CALLS = 1;
+
+    /** 相同工具连续返回相同内容达到该次数后强制结束循环 */
+    private static final int MAX_IDENTICAL_RESULTS = 2;
 
     public AgentLoop(LLMService llmService,
                      ToolRegistry toolRegistry,
@@ -148,6 +168,7 @@ public class AgentLoop {
                             .messages(new ArrayList<>(ctx.getMessages()))
                             .temperature(0.4)
                             .thinkingLevel(thinkingLevel)
+                            .responseFormat("json_object")
                             .build());
                 } catch (Exception e) {
                     // 用户取消时不刷 error
@@ -177,6 +198,7 @@ public class AgentLoop {
                                 .messages(new ArrayList<>(ctx.getMessages()))
                                 .temperature(0.4)
                                 .thinkingLevel(0)
+                                .responseFormat("json_object")
                                 .build());
                     } catch (Exception e2) {
                         log.warn("Agent 迭代 {} 重试也失败: {}", iteration, e2.getMessage());
@@ -210,6 +232,7 @@ public class AgentLoop {
                                 .messages(new ArrayList<>(ctx.getMessages()))
                                 .temperature(0.4)
                                 .thinkingLevel(0)
+                                .responseFormat("json_object")
                                 .build());
                     } catch (Exception e2) {
                         log.warn("格式校正重试也失败: {}", e2.getMessage());
@@ -250,7 +273,8 @@ public class AgentLoop {
                         try {
                             llmResponse = llmService.chat(ChatRequest.builder()
                                     .messages(new ArrayList<>(ctx.getMessages()))
-                                    .temperature(0.4).thinkingLevel(0).build());
+                                    .temperature(0.4).thinkingLevel(0)
+                                    .responseFormat("json_object").build());
                             step = responseParser.parse(llmResponse, iteration);
                         } catch (Exception e) { log.warn("FINISH 空回答重试失败: {}", e.getMessage()); }
                     }
@@ -266,21 +290,70 @@ public class AgentLoop {
                 }
 
                 if (step.getAction() == AgentAction.TOOL_CALL) {
-                    // 2e. 执行工具（失败时自动重试一次）
-                    log.info("Agent 调用工具: {}, params={}", step.getToolName(), step.getToolInput());
-                    ToolResult result = toolRegistry.execute(step.getToolName(), step.getToolInput());
-                    if (!result.isSuccess()) {
-                        log.warn("工具 {} 执行失败，自动重试一次: {}", step.getToolName(), result.getContent());
-                        result = toolRegistry.execute(step.getToolName(), step.getToolInput());
+                    String toolName = step.getToolName();
+                    String callKey = toolName + "|" + canonicalizeParams(step.getToolInput());
+
+                    // 2e.1 完全相同的调用（工具+参数）不再重复执行，直接复用缓存结果
+                    if (toolCallCache.containsKey(callKey)) {
+                        int repeats = toolCallRepeatCount.merge(callKey, 1, Integer::sum);
+                        String observation = toolCallCache.get(callKey);
+                        log.warn("Agent 检测到相同参数重复调用工具 {}，直接复用缓存结果（第 {} 次重复）",
+                                toolName, repeats);
+
+                        step.setObservation(observation);
+                        step.setDurationMs(0);
+                        pushStep(step, callback);
+                        ctx.addMessage(ChatMessage.observation(observation));
+
+                        if (repeats >= MAX_REPEATED_CALLS) {
+                            forceFinish(ctx, callback, iteration,
+                                    "你已经多次用完全相同的参数调用工具 " + toolName + "，系统未重复执行、直接返回了相同结果。");
+                            return;
+                        }
+                        ctx.addMessage(ChatMessage.system(
+                                "警告：你刚刚用与之前完全相同的参数再次调用了工具 " + toolName
+                                + "，系统未重复执行，直接返回了相同结果。请立即停止调用工具，"
+                                + "基于已有的 Observation 直接输出最终回答，不要再重复调用任何工具。"));
+                        continue;
                     }
-                    step.setObservation(result.toObservation());
+
+                    // 2e.2 执行工具（失败时自动重试一次）
+                    log.info("Agent 调用工具: {}, params={}", toolName, step.getToolInput());
+                    ToolResult result = toolRegistry.execute(toolName, step.getToolInput());
+                    if (!result.isSuccess()) {
+                        log.warn("工具 {} 执行失败，自动重试一次: {}", toolName, result.getContent());
+                        result = toolRegistry.execute(toolName, step.getToolInput());
+                    }
+                    String observation = result.toObservation();
+
+                    // 2e.3 参数不同但结果与上次完全相同（如 rag_search 换 query 仍返回同一批内容），视为无效循环
+                    String lastObs = lastObservationByTool.get(toolName);
+                    if (lastObs != null && lastObs.equals(observation)) {
+                        int identicalRepeats = identicalResultRepeatCount.merge(toolName, 1, Integer::sum);
+                        log.warn("Agent 工具 {} 返回与上次完全相同的结果（第 {} 次），疑似无效循环", toolName, identicalRepeats);
+                        if (identicalRepeats >= MAX_IDENTICAL_RESULTS) {
+                            step.setObservation(observation);
+                            step.setDurationMs(result.getDurationMs());
+                            pushStep(step, callback);
+                            ctx.addMessage(ChatMessage.observation(observation));
+                            forceFinish(ctx, callback, iteration,
+                                    "工具 " + toolName + " 多次返回与之前完全相同的结果，当前检索方式无法获取更多信息。");
+                            return;
+                        }
+                        ctx.addMessage(ChatMessage.system(
+                                "注意：工具 " + toolName + " 本次返回的结果与上次完全相同，说明当前检索方式无法获取新信息。"
+                                + "请立即停止调用工具，基于已有的 Observation 直接输出最终回答。"));
+                    }
+                    lastObservationByTool.put(toolName, observation);
+
+                    step.setObservation(observation);
                     step.setDurationMs(result.getDurationMs());
 
                     // 推送 Observation 更新
                     pushStep(step, callback);
 
                     // 将 Observation 追加到消息列表
-                    ChatMessage obsMsg = ChatMessage.observation(result.toObservation());
+                    ChatMessage obsMsg = ChatMessage.observation(observation);
                     if (CollUtil.isNotEmpty(result.getImageUrls())) {
                         obsMsg.setImageUrls(new java.util.ArrayList<>(result.getImageUrls()));
                     }
@@ -296,8 +369,11 @@ public class AgentLoop {
                         existing.addAll(result.getS3ImageUrls());
                     }
 
+                    // 缓存本次调用结果（成功与失败都缓存，避免 LLM 无脑重试同一调用）
+                    toolCallCache.put(callKey, observation);
+
                     // 首次 rag_search 执行后，抑制 kb_forced 持续生效，防止 Agent 重复搜索
-                    if ("rag_search".equals(step.getToolName()) && !ragSearchCalled) {
+                    if ("rag_search".equals(toolName) && !ragSearchCalled) {
                         ragSearchCalled = true;
                         ctx.addMessage(ChatMessage.system(
                                 "你已成功调用 rag_search 获取了知识库检索结果。"
@@ -436,6 +512,71 @@ public class AgentLoop {
     /** 检查工具注册表中是否有 rag_search */
     private boolean hasRagSearchTool() {
         return toolRegistry.contains("rag_search");
+    }
+
+    // ==================== 无效循环防护 ====================
+
+    /**
+     * 检测到 Agent 陷入无效重复调用（相同工具相同参数 / 工具结果完全不变）时，
+     * 强制要求 LLM 基于已有 Observation 直接给出最终回答，结束循环。
+     * <p>
+     * 若 LLM 仍未能产出合法 final_answer，则使用兜底回答结束。
+     * </p>
+     */
+    private void forceFinish(AgentContext ctx, StreamCallback callback, int iteration, String reason) {
+        log.warn("Agent 检测到无效重复调用，强制结束循环: {}", reason);
+        ctx.addMessage(ChatMessage.system(reason
+                + " 你必须立即停止调用任何工具，仅基于当前对话中已有的 Observation 给出最终回答。"
+                + " 请输出 JSON: {\"action\":\"finish\",\"final_answer\":\"你的最终回答\"}。"));
+        try {
+            String llmResponse = llmService.chat(ChatRequest.builder()
+                    .messages(new ArrayList<>(ctx.getMessages()))
+                    .temperature(0.4)
+                    .thinkingLevel(0)
+                    .responseFormat("json_object")
+                    .build());
+            if (StrUtil.isNotBlank(llmResponse)) {
+                AgentStep finalStep = responseParser.parse(llmResponse, iteration);
+                if (finalStep != null && finalStep.getAction() == AgentAction.FINISH
+                        && StrUtil.isNotBlank(finalStep.getFinalAnswer())) {
+                    ctx.addStep(finalStep);
+                    ctx.addMessage(ChatMessage.assistant(llmResponse));
+                    pushStep(finalStep, callback);
+                    pushStepsComplete(ctx, callback);
+                    streamFinalAnswer(finalStep.getFinalAnswer(), callback);
+                    return;
+                }
+            }
+            log.warn("强制结束重试未获得合法 final_answer: {}", llmResponse);
+        } catch (Exception e) {
+            log.warn("强制结束 LLM 调用失败: {}", e.getMessage());
+        }
+        pushStepsComplete(ctx, callback);
+        streamFallbackAnswer(
+                "抱歉，我没有找到足够的信息来回答这个问题。请尝试换一种方式提问，或检查知识库内容是否完整。",
+                callback);
+    }
+
+    /**
+     * 将工具参数规范化为字符串签名（按键排序，保证顺序无关的一致性）
+     */
+    private String canonicalizeParams(Map<String, Object> params) {
+        if (params == null || params.isEmpty()) {
+            return "";
+        }
+        TreeMap<String, Object> sorted = new TreeMap<>(params);
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Object> entry : sorted.entrySet()) {
+            sb.append(entry.getKey()).append('=');
+            Object value = entry.getValue();
+            if (value instanceof Map) {
+                sb.append(canonicalizeParams((Map<String, Object>) value));
+            } else {
+                sb.append(value == null ? "null" : value.toString());
+            }
+            sb.append(';');
+        }
+        return sb.toString();
     }
 
     // ==================== 流式输出 ====================

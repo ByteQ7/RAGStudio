@@ -20,8 +20,16 @@ public class DashScopeProtocol implements ModelProtocol {
 
     @Override
     public Map<String, Object> buildChatRequest(String modelId, List<ChatMessage> messages, boolean stream,
-                                                 Double temperature, Double topP, Integer maxTokens,
-                                                 Map<String, Object> reasoningParams, List<Map<String, Object>> tools) {
+                                                  Double temperature, Double topP, Integer maxTokens,
+                                                  Map<String, Object> reasoningParams, List<Map<String, Object>> tools) {
+        return buildChatRequest(modelId, messages, stream, temperature, topP, maxTokens, reasoningParams, tools, null);
+    }
+
+    @Override
+    public Map<String, Object> buildChatRequest(String modelId, List<ChatMessage> messages, boolean stream,
+                                                  Double temperature, Double topP, Integer maxTokens,
+                                                  Map<String, Object> reasoningParams, List<Map<String, Object>> tools,
+                                                  String responseFormat) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", modelId);
         body.put("stream", stream);
@@ -30,6 +38,7 @@ public class DashScopeProtocol implements ModelProtocol {
         if (maxTokens != null && maxTokens > 0) body.put("max_tokens", maxTokens);
         if (reasoningParams != null && !reasoningParams.isEmpty()) body.putAll(reasoningParams);
         if (tools != null && !tools.isEmpty()) body.put("tools", tools);
+        if (responseFormat != null) body.put("response_format", Map.of("type", responseFormat));
 
         List<Map<String, Object>> msgs = new ArrayList<>();
         for (ChatMessage msg : messages) {
@@ -144,6 +153,28 @@ public class DashScopeProtocol implements ModelProtocol {
     }
 
     // ---- Rerank ----
+
+    @Override
+    public Map<String, Object> buildRerankRequest(String modelId, String query, List<String> documents) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("query", query);
+        input.put("documents", documents != null ? documents : List.of());
+
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("top_n", 1);
+        parameters.put("return_documents", false);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", modelId);
+        body.put("input", input);
+        body.put("parameters", parameters);
+        return body;
+    }
+
+    @Override
+    public String resolveRerankUrl(String baseUrl) {
+        return baseUrl.replaceAll("/+$", "") + resolveRerankUrlFallback();
+    }
 
     @Override
     public String resolveRerankUrlFallback() {
