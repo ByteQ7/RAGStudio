@@ -30,7 +30,7 @@
 | **MCP Protocol** | Dynamic external tool discovery and autonomous Agent invocation |
 | **Deep Thinking** | Configurable reasoning depth (0–100%) with step-by-step chain-of-thought |
 | **Multi-Modal Chat** | Image upload (paste/file), S3 storage, presigned HTTP URLs for browser display |
-| **Retrieval Quality** | KB semantic selection with anti-miss safeguards + score-cluster dynamic TopK + multimodal Rerank (images sent as base64 data URIs) — **95% answer accuracy** on a 59-question eval set |
+| **Retrieval Quality** | KB semantic selection with anti-miss safeguards + score-cluster dynamic TopK + multimodal Rerank (images sent as base64 data URIs) — **95% answer accuracy** on a 65-question eval set |
 | **SKILL System** | YAML-defined custom tools loaded from `skills/` dir — no Java or MCP server required |
 | **Full-Chain Tracing** | Lightweight distributed tracing for every pipeline stage |
 | **Ingestion Pipeline** | Visual document processing pipeline: fetch → parse → chunk → enhance → index |
@@ -154,7 +154,7 @@ Two parallel search channels fused via RRF:
 
 RRF formula: `score = Σ 1/(60 + rank)` — no manual weight tuning needed.
 
-A post-processing chain (dedup → Rerank → dynamic TopK) refines the results: text and image chunks are jointly scored by a multimodal Rerank model (e.g. qwen3-vl-rerank), with images sent as base64 data URIs (no public URL required). Score-cluster-aware dynamic TopK decides how many chunks reach the LLM based on the score distribution. **95% answer accuracy** on a 59-question internal eval set.
+A post-processing chain (dedup → Rerank → dynamic TopK) refines the results: text and image chunks are jointly scored by a multimodal Rerank model (e.g. qwen3-vl-rerank), with images sent as base64 data URIs (no public URL required). Score-cluster-aware dynamic TopK decides how many chunks reach the LLM based on the score distribution. **95% answer accuracy** on a 65-question internal eval set.
 
 ### Knowledge Base & Documents
 
