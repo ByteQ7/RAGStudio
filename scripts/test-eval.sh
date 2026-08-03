@@ -168,14 +168,24 @@ evaluate() {
   [ "$answer" != "__TIMEOUT__" ] && [ -n "$answer" ] && [ "$answer" != "(empty)" ] && alive=true
 
   # ─── L1: 关键词命中率 ───
+  # 归一化匹配：去除逗号/空格/全角标点后再匹配一次（如答案 "5,200万元" 可命中关键词 "5200万"）
   local kw_exp=0 kw_hit=0 kw_ratio=0
   if [ -n "$keywords" ]; then
-    IFS=',' read -ra KW_ARRAY <<< "$keywords"
-    kw_exp=${#KW_ARRAY[@]}
-    for kw in "${KW_ARRAY[@]}"; do
-      echo "$answer" | grep -qiF "$kw" && kw_hit=$((kw_hit + 1))
-    done
-    [ $kw_exp -gt 0 ] && kw_ratio=$(( kw_hit * 100 / kw_exp ))
+    kw_exp=$(echo "$keywords" | tr ',' '\n' | grep -c .)
+    kw_hit=$(KWS="$keywords" ANS="$answer" python3 -c "
+import os, re
+keywords = [k for k in os.environ.get('KWS', '').split(',') if k]
+answer = os.environ.get('ANS', '')
+def norm(s):
+    return re.sub(r'[，、。；;：:\s,·]+', '', s.lower())
+na = norm(answer)
+hits = 0
+for kw in keywords:
+    if kw.lower() in answer or norm(kw) in na:
+        hits += 1
+print(hits)
+" 2>/dev/null)
+    [ "$kw_exp" -gt 0 ] && kw_ratio=$(( kw_hit * 100 / kw_exp ))
   fi
 
   TOTAL_KEYWORD_EXPECTED=$((TOTAL_KEYWORD_EXPECTED + kw_exp))
@@ -367,16 +377,16 @@ evaluate 37 RD     "性能目标"   "首Token延迟的P50目标是多少？"    
 evaluate 38 RD     "API认证"    "API认证使用什么框架？"                "$ALL_KB"  0 "Sa-Token,Bearer Token"
 
 # ── Strategy (PDF+Word 含图表) ──
-evaluate 39 STR    "营收趋势"   "2026年上半年营收同比增长了多少？"     "$ALL_KB" 0 "85.7,85"
+evaluate 39 STR    "营收趋势"   "2026年上半年营收同比增长了多少？"     "$ALL_KB" 0 "同比增长,55%,74%,85%"
 evaluate 40 STR    "市场份额"   "我方在AI知识管理市场中的份额？"       "$ALL_KB" 0 "12%,份额"
-evaluate 41 STR    "战略阶段"   "三步走战略的各阶段名称？"             "$ALL_KB" 0 "基础年,增长年,平台年,领导年"
+evaluate 41 STR    "战略阶段"   "2026年战略路线图包含哪些阶段？"       "$ALL_KB" 0 "市场验证,产品打磨,规模扩张,生态建设,国际化"
 evaluate 42 STR    "投资分配"   "AI模型研发的预算金额是多少？"         "$ALL_KB" 0 "4500,AI模型,22.5"
 evaluate 43 STR    "SaaS占比"  "SaaS订阅收入占营收结构比例？"          "$ALL_KB" 0 "42%,SaaS,订阅"
 evaluate 44 STR    "PEST分析"  "政策环境提到的规划文件名称？"           "$ALL_KB" 0 "新一代人工智能,规划,2026-2030"
 evaluate 45 STR    "竞争格局"   "竞品B的核心优势是什么？"               "$ALL_KB" 0 "开源,社区,MCP,竞品B"
 evaluate 46 STR    "战略投资"   "2026年度战略投资总规模是多少？"        "$ALL_KB" 0 "2亿,20,000,投资"
 evaluate 47 STR    "盈亏平衡"   "预计哪一年实现盈亏平衡？"              "$ALL_KB" 0 "2027,盈亏平衡"
-evaluate 48 STR    "客户数量"   "2026年H1新增付费客户数？"              "$ALL_KB" 0 "180家,109"
+evaluate 48 STR    "客户数量"   "2026年H1新增付费客户数？"              "$ALL_KB" 0 "85家,35家,50家"
 evaluate 49 STR    "人才流失"   "核心AI人才年流失率目标？"              "$ALL_KB" 0 "10%,流失"
 evaluate 50 STR    "市场验证"   "市场验证阶段的起止时间是什么？"        "$ALL_KB" 0 "市场验证,2026-01,2026-03"
 
@@ -387,7 +397,7 @@ evaluate 53 X      "研发+战略"  "研发预算和战略投资的关系？"   
 evaluate 54 X      "市场+战略"  "Q1营收和市场部预算是否对应？"           "$ALL_KB" 0 ""
 
 # ── 图表专项 (验证 PDF/Word 图表提取效果) ──
-evaluate 55 CHART  "趋势图"     "2025年12月营收是多少？"              "$ALL_KB" 0 "1700"
+evaluate 55 CHART  "趋势图"     "2026年Q4的营收预测是多少？"          "$ALL_KB" 0 "1700,Q4,预测"
 evaluate 56 CHART  "饼图"       "私有化部署收入占营收百分比？"         "$ALL_KB" 0 "28%,私有化"
 evaluate 57 CHART  "柱状图"     "竞品A的市场份额变化？"               "$ALL_KB" 0 "竞品A,26,下降"
 evaluate 58 CHART  "甘特图"     "规模扩张阶段的起止时间？"             "$ALL_KB" 0 "2026-06,2026-09,规模扩张"

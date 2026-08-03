@@ -19,6 +19,39 @@ public class ImageChunkResolver {
 
     private final FileStorageService fileStorageService;
 
+    /**
+     * 为图片 Chunk 预解析 rerank 可用的图片地址（写入 metadata 的 {@code rerank_image_url}）：
+     * <ul>
+     *   <li>已是 http(s)/data URI 的直接沿用</li>
+     *   <li>s3:// 内部 URI 下载并编码为 base64 data URI（百炼 rerank 无法访问内网/内部存储地址）</li>
+     *   <li>下载失败的跳过（rerank 阶段将自动排除该 Chunk）</li>
+     * </ul>
+     *
+     * @param chunks 待重排序的候选 Chunk 列表（原地修改 image chunk 的 metadata）
+     */
+    public void enrichRerankImageUrls(List<RetrievedChunk> chunks) {
+        for (RetrievedChunk chunk : chunks) {
+            if (!chunk.isImage()) continue;
+            Map<String, Object> meta = chunk.getMetadata();
+            if (meta == null) continue;
+
+            Object imageUrl = meta.get("image_url");
+            if (!(imageUrl instanceof String url) || url.isBlank()) continue;
+            if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
+                meta.put("rerank_image_url", url);
+                continue;
+            }
+            try {
+                String dataUri = downloadAndEncode(url);
+                if (dataUri != null) {
+                    meta.put("rerank_image_url", dataUri);
+                }
+            } catch (Exception e) {
+                log.warn("解析 rerank 图像块失败: chunkId={}, url={}", chunk.getId(), url, e);
+            }
+        }
+    }
+
     public List<String> resolve(List<RetrievedChunk> chunks) {
         List<String> imageDataUris = new ArrayList<>();
         for (RetrievedChunk chunk : chunks) {

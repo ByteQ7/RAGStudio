@@ -83,8 +83,24 @@ public class SearchChannelProperties {
 
     /**
      * 知识库语义选择最大数量
+     * <p>
+     * 默认覆盖用户选定的全部知识库（8 个以内不做剔除）：
+     * 选库相似度排序受嵌入模型稳定性影响较大（模型侧更新/缓存陈旧会导致排序翻转），
+     * 硬截断会把正确知识库整体排除、直接造成检索零召回。
+     * 相关度裁剪交给检索阶段的 rerank + 动态 TopK 完成，选库只做相关性判断。
+     * </p>
      */
-    private int kbSelectionTopK = 3;
+    private int kbSelectionTopK = 8;
+
+    /**
+     * 知识库语义选择分数接近度比例
+     * <p>
+     * 与已选中最后一个知识库分数差距在 {@code lastScore × (1 - ratio)} 内的候选库一并保留，
+     * 避免嵌入模型分数抖动导致正确知识库恰好被截在第 topK 名之外。
+     * 0 表示关闭该扩量逻辑。
+     * </p>
+     */
+    private double kbSelectionTieBandRatio = 0.10;
 
     /**
      * 检索通道配置

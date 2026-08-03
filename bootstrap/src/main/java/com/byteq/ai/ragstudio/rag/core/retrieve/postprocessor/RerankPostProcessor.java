@@ -8,6 +8,7 @@ import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.config.ModelConfigProvider;
 import com.byteq.ai.ragstudio.infra.rerank.RerankService;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
+import com.byteq.ai.ragstudio.rag.core.retrieve.ImageChunkResolver;
 import com.byteq.ai.ragstudio.rag.core.retrieve.ScoreClusterTopK;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannelResult;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchContext;
@@ -45,15 +46,18 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
     private final SearchChannelProperties searchProperties;
     private final DefaultModelConfigService defaultModelConfigService;
     private final ModelConfigProvider modelConfigProvider;
+    private final ImageChunkResolver imageChunkResolver;
 
     public RerankPostProcessor(RerankService rerankService,
                                SearchChannelProperties searchProperties,
                                DefaultModelConfigService defaultModelConfigService,
-                               ModelConfigProvider modelConfigProvider) {
+                               ModelConfigProvider modelConfigProvider,
+                               ImageChunkResolver imageChunkResolver) {
         this.rerankService = rerankService;
         this.searchProperties = searchProperties;
         this.defaultModelConfigService = defaultModelConfigService;
         this.modelConfigProvider = modelConfigProvider;
+        this.imageChunkResolver = imageChunkResolver;
     }
 
     @Override
@@ -95,6 +99,8 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
         String rerankQuery = resolveRerankQuery(context);
 
         if (modelSupportsMultimodal) {
+            // 预解析图片 Chunk 的可访问地址（s3:// → base64 data URI），供 rerank 服务下载
+            imageChunkResolver.enrichRerankImageUrls(chunks);
             return processWithMultimodalRerank(textChunks, imageChunks, rerankQuery, userRerankModelId);
         } else {
             return processWithTextRerank(textChunks, imageChunks, rerankQuery, userRerankModelId);

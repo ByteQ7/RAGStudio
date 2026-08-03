@@ -134,28 +134,52 @@ public class BaiLianRerankClient implements RerankClient {
         JsonObject input = new JsonObject();
         input.addProperty("query", query);
 
-        boolean hasImage = candidates.stream().anyMatch(RetrievedChunk::isImage);
+        // 多模态模型（如 qwen3-vl-rerank）支持 text/image 混合文档；
+        // 纯文本模型只能接收字符串文档，图片 Chunk 必须排除（否则服务端 400）
+        boolean multimodal = Boolean.TRUE.equals(
+                target.candidate() != null && target.candidate().getSupportsMultimodal());
 
+        // 构建 documents 数组，并记录每个 document 对应的候选 Chunk（响应中的 index 按此对齐）。
+        // 注意：百炼 rerank 的文档格式为字符串或 {"text": ...} / {"image": ...} / {"video": ...}，
+        // 并非 OpenAI 对话接口的 {"type": "image_url", "image_url": {"url": ...}} 结构。
+        List<RetrievedChunk> docCandidates = new ArrayList<>();
         JsonArray documentsArray = new JsonArray();
         for (RetrievedChunk each : candidates) {
-            if (hasImage && each.isImage()) {
+            if (each.isImage()) {
+                // 纯文本模型无法接收图片文档，直接跳过；多模态模型需可访问的图片 URL
+                if (!multimodal) {
+                    continue;
+                }
+                String imageUrl = extractRerankImageUrl(each);
+                if (imageUrl == null) {
+                    log.warn("rerank 跳过无有效图片地址的 IMAGE chunk: id={}", each.getId());
+                    continue;
+                }
                 JsonObject imageDoc = new JsonObject();
-                imageDoc.addProperty("type", "image_url");
-                JsonObject imgUrlObj = new JsonObject();
-                String imageUrl = extractImageUrl(each);
-                imgUrlObj.addProperty("url", imageUrl != null ? imageUrl : "");
-                imageDoc.add("image_url", imgUrlObj);
+                imageDoc.addProperty("image", imageUrl);
                 documentsArray.add(imageDoc);
-            } else if (hasImage) {
-                JsonObject textDoc = new JsonObject();
-                textDoc.addProperty("type", "text");
-                textDoc.addProperty("text", each.getText() == null ? "" : each.getText());
-                documentsArray.add(textDoc);
             } else {
-                documentsArray.add(each.getText() == null ? "" : each.getText());
+                String text = each.getText() == null ? "" : each.getText();
+                if (text.isBlank()) {
+                    log.warn("rerank 跳过空文本 chunk: id={}", each.getId());
+                    continue;
+                }
+                if (multimodal) {
+                    JsonObject textDoc = new JsonObject();
+                    textDoc.addProperty("text", text);
+                    documentsArray.add(textDoc);
+                } else {
+                    documentsArray.add(text);
+                }
             }
+            docCandidates.add(each);
         }
         input.add("documents", documentsArray);
+
+        // 没有可发送的文档（如纯文本模型 + 全部为图片 Chunk）时直接返回原始候选，避免空 documents 报错
+        if (docCandidates.isEmpty()) {
+            return candidates;
+        }
 
         // parameters 对象包含 top_n 和 return_documents 等控制参数
         JsonObject parameters = new JsonObject();
@@ -221,11 +245,11 @@ public class BaiLianRerankClient implements RerankClient {
             int idx = item.get("index").getAsInt();
 
             // 防御性校验：防止服务端返回的 index 越界
-            if (idx < 0 || idx >= candidates.size()) {
+            if (idx < 0 || idx >= docCandidates.size()) {
                 continue;
             }
 
-            RetrievedChunk src = candidates.get(idx);
+            RetrievedChunk src = docCandidates.get(idx);
 
             // 提取相关性得分，如果服务端未返回则使用原始分数
             Float score = null;
@@ -290,10 +314,26 @@ public class BaiLianRerankClient implements RerankClient {
         return output;
     }
 
-    private String extractImageUrl(RetrievedChunk chunk) {
+    /**
+     * 提取可被百炼 rerank 服务访问的图片地址：
+     * <ol>
+     *   <li>优先使用检索阶段预解析的 {@code rerank_image_url}（base64 data URI 或公网 HTTP URL）</li>
+     *   <li>回退使用 {@code image_url}，但仅当其为 http(s)/data URI 时可用（s3:// 内部 URI 无法被服务端下载）</li>
+     * </ol>
+     *
+     * @param chunk 候选 Chunk
+     * @return 可访问的图片地址；无有效地址时返回 null（调用方应跳过该 Chunk）
+     */
+    private String extractRerankImageUrl(RetrievedChunk chunk) {
         if (chunk.getMetadata() == null) return null;
+        Object rerankUrl = chunk.getMetadata().get("rerank_image_url");
+        if (rerankUrl instanceof String s && isFetchableImageUrl(s)) return s;
         Object url = chunk.getMetadata().get("image_url");
-        if (url instanceof String s && !s.isBlank()) return s;
+        if (url instanceof String s && isFetchableImageUrl(s)) return s;
         return null;
+    }
+
+    private boolean isFetchableImageUrl(String url) {
+        return url != null && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:"));
     }
 }

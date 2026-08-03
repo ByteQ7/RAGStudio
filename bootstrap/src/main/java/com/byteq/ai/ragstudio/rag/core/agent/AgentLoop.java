@@ -552,9 +552,74 @@ public class AgentLoop {
             log.warn("强制结束 LLM 调用失败: {}", e.getMessage());
         }
         pushStepsComplete(ctx, callback);
+
+        // 直接问答模式兜底：绕过 ReACT JSON 协议，仅基于已有 Observation 让 LLM 直接作答。
+        // 弱模型在 ReACT 协议下容易反复输出工具调用而非 final_answer，但同样的内容
+        // 在普通问答格式下可以正常作答，避免直接落入"未检索到"的兜底话术。
+        String directAnswer = tryDirectAnswerFromObservations(ctx);
+        if (StrUtil.isNotBlank(directAnswer)) {
+            streamFinalAnswer(directAnswer, callback);
+            return;
+        }
         streamFallbackAnswer(
                 "抱歉，我没有找到足够的信息来回答这个问题。请尝试换一种方式提问，或检查知识库内容是否完整。",
                 callback);
+    }
+
+    /**
+     * 直接问答兜底：收集循环中已产生的全部 Observation，以普通问答格式让 LLM 作答。
+     * 返回 null 表示仍无有效回答（上层继续使用兜底话术）。
+     */
+    private String tryDirectAnswerFromObservations(AgentContext ctx) {
+        StringBuilder evidence = new StringBuilder();
+        for (ChatMessage msg : ctx.getMessages()) {
+            if (msg.getRole() == ChatMessage.Role.OBSERVATION && StrUtil.isNotBlank(msg.getContent())) {
+                String content = msg.getContent().trim();
+                if (content.startsWith("Observation:")) {
+                    content = content.substring("Observation:".length()).trim();
+                }
+                evidence.append(content).append("\n\n");
+            }
+        }
+        if (evidence.length() == 0) {
+            log.warn("直接问答兜底跳过：无任何 Observation 内容");
+            return null;
+        }
+
+        String systemPrompt;
+        try {
+            systemPrompt = templateLoader.load("prompt/answer-chat-system.st");
+        } catch (Exception e) {
+            log.warn("直接问答兜底跳过：加载 answer-chat-system 模板失败: {}", e.getMessage());
+            return null;
+        }
+
+        String userContent = "【检索知识】\n" + evidence + "【用户问题】\n" + ctx.getQuestion();
+        try {
+            String response = llmService.chat(ChatRequest.builder()
+                    .messages(List.of(
+                            ChatMessage.system(systemPrompt),
+                            ChatMessage.user(userContent)))
+                    .temperature(0.3)
+                    .thinkingLevel(0)
+                    .build());
+            if (StrUtil.isBlank(response)) {
+                return null;
+            }
+            String text = response.trim();
+            // 防御：模型仍输出 JSON 包装时提取 final_answer / 文本
+            if (text.startsWith("{") && text.contains("\"final_answer\"")) {
+                String extracted = extractFinalAnswerFromRawJson(text);
+                if (extracted != null) {
+                    text = extracted;
+                }
+            }
+            log.info("直接问答兜底成功，回答长度: {}", text.length());
+            return text;
+        } catch (Exception e) {
+            log.warn("直接问答兜底调用失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**

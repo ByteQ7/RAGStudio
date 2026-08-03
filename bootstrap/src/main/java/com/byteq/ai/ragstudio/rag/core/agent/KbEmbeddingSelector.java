@@ -174,6 +174,39 @@ public class KbEmbeddingSelector {
             }
         }
 
+        // 4.5 分数接近度扩量：与最后一个入选知识库分数接近的候选一并保留。
+        // 嵌入模型输出存在抖动（服务端更新、缓存向量陈旧等），第 topK 名边缘的分数差
+        // 不构成可靠依据，硬截断可能把正确知识库排除在检索范围之外。
+        double bandRatio = searchProperties.getKbSelectionTieBandRatio();
+        if (bandRatio > 0 && !selected.isEmpty() && selected.size() < scored.size()) {
+            double lastScore = selected.get(selected.size() - 1).score();
+            double bandFloor = lastScore * (1 - bandRatio);
+            for (ScoredKb sk : scored) {
+                if (selected.size() >= scored.size()) {
+                    break;
+                }
+                if (sk.score < bandFloor) {
+                    break;
+                }
+                if (sk.score < threshold) {
+                    break;
+                }
+                boolean exists = false;
+                for (SelectedKb s : selected) {
+                    if (s.id().equals(sk.info.id())) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    selected.add(new SelectedKb(sk.info.id(), sk.info.name(), sk.score));
+                }
+            }
+            if (selected.size() > topK) {
+                log.info("知识库语义选择分数接近度扩量: topK={}, 扩量至 {} 个", topK, selected.size());
+            }
+        }
+
         // 5. 全部低于阈值时降级保留最佳知识库（分数不能太低），避免"不选知识库"
         if (selected.isEmpty() && !scored.isEmpty() && scored.get(0).score >= threshold * BEST_EFFORT_FLOOR_RATIO) {
             ScoredKb best = scored.get(0);

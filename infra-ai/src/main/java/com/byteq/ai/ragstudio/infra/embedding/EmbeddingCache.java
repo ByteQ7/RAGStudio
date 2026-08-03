@@ -49,7 +49,8 @@ import java.util.function.Supplier;
 public class EmbeddingCache {
 
     private static final int MAX_CACHE_SIZE = 2000;
-    private static final long CACHE_TTL_HOURS = 24;
+    /** 缓存 TTL（小时）。模型服务端更新/漂移时，过长的 TTL 会冻结陈旧向量导致选库/检索排名失真，默认 24h，建议 ≤ 6h */
+    private static final long DEFAULT_CACHE_TTL_HOURS = 24;
     private static final String REDIS_KEY_PREFIX = "ragstudio:embedding:";
     /** 超过该数量的批量请求不读写 Redis（大批次通常是索引任务，文本不会复用） */
     private static final int REDIS_BATCH_THRESHOLD = 16;
@@ -57,10 +58,16 @@ public class EmbeddingCache {
     @Setter
     private boolean redisEnabled = false;
 
-    private final Cache<String, List<Float>> values;
+    /** 缓存 TTL（小时），可通过 {@code rag.embedding-cache.ttl-hours} 覆盖 */
+    @Setter
+    private long ttlHours = DEFAULT_CACHE_TTL_HOURS;
+
     private final Map<String, CompletableFuture<List<Float>>> inFlight = new ConcurrentHashMap<>();
     private final RedisTemplate<String, byte[]> redisTemplate;
     private volatile boolean redisWarned = false;
+
+    /** 本地 Guava 缓存：构造时先按默认 TTL 创建，属性绑定后由 {@link #init()} 按配置 TTL 重建 */
+    private volatile Cache<String, List<Float>> values;
 
     /** Spring 构造：尝试获取 Redis 连接工厂（未配置时降级为纯本地缓存） */
     @Autowired
@@ -74,14 +81,26 @@ public class EmbeddingCache {
     }
 
     private EmbeddingCache(RedisTemplate<String, byte[]> redisTemplate) {
-        this.values = CacheBuilder.newBuilder()
+        this.values = buildLocalCache(DEFAULT_CACHE_TTL_HOURS);
+        this.redisTemplate = redisTemplate;
+        log.info("Embedding 缓存初始化完成: 本地容量={}, TTL={}h, Redis 连接可用={}",
+                MAX_CACHE_SIZE, DEFAULT_CACHE_TTL_HOURS, redisTemplate != null);
+    }
+
+    /** 属性绑定完成后按配置 TTL 重建本地缓存（@ConfigurationProperties 绑定发生在构造之后、init 之前） */
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        long ttl = ttlHours > 0 ? ttlHours : DEFAULT_CACHE_TTL_HOURS;
+        this.values = buildLocalCache(ttl);
+        log.info("Embedding 本地缓存 TTL 已按配置应用: {}h", ttl);
+    }
+
+    private static Cache<String, List<Float>> buildLocalCache(long ttlHours) {
+        return CacheBuilder.newBuilder()
                 .maximumSize(MAX_CACHE_SIZE)
-                .expireAfterWrite(CACHE_TTL_HOURS, TimeUnit.HOURS)
+                .expireAfterWrite(ttlHours, TimeUnit.HOURS)
                 .recordStats()
                 .build();
-        this.redisTemplate = redisTemplate;
-        log.info("Embedding 缓存初始化完成: 本地容量={}, Redis 连接可用={}",
-                MAX_CACHE_SIZE, redisTemplate != null);
     }
 
     private static RedisTemplate<String, byte[]> buildTemplate(RedisConnectionFactory factory) {
@@ -253,8 +272,9 @@ public class EmbeddingCache {
 
     private void redisSet(String cacheKey, List<Float> vec) {
         try {
+            long ttl = ttlHours > 0 ? ttlHours : DEFAULT_CACHE_TTL_HOURS;
             redisTemplate.opsForValue()
-                    .set(REDIS_KEY_PREFIX + cacheKey, serialize(vec), CACHE_TTL_HOURS, TimeUnit.HOURS);
+                    .set(REDIS_KEY_PREFIX + cacheKey, serialize(vec), ttl, TimeUnit.HOURS);
         } catch (Exception e) {
             warnRedis("写入", e);
         }

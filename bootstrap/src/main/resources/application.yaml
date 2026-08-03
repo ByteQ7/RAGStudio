@@ -65,6 +65,9 @@ rag:
     # embedding 结果缓存：true 时启用 Redis 二级缓存（跨服务重启/多实例共享），false 仅本地内存
     # Redis 不可用时自动降级为纯本地缓存，不影响检索
     redis-enabled: ${EMBEDDING_CACHE_REDIS:false}
+    # 缓存 TTL（小时）：模型服务端升级/输出漂移时，过长的 TTL 会冻结陈旧向量，导致
+    # 选库排序与检索相关性失真（曾因 24h TTL 配合模型更新引发选库系统性错选）。建议 ≤ 6h
+    ttl-hours: ${EMBEDDING_CACHE_TTL_HOURS:6}
 
   vector:
     type: pg
@@ -128,6 +131,14 @@ rag:
     # - 有明显落差 → 保留更少（弱相关库不硬凑 per-kb-chunk-limit 条）
     per-kb-chunk-limit: 5        # per-KB 基准目标值
     per-kb-overflow-cap: 15      # per-KB 扩量上限（粗召候选池上限）
+
+    # 知识库语义选择（嵌入相似度选库）
+    # - top-k 默认覆盖全部用户选定知识库：选库排序受嵌入模型稳定性影响，硬截断会把正确知识库
+    #   整体排除导致检索零召回；相关度裁剪交由检索阶段的 rerank + 动态 TopK 完成
+    # - tie-band-ratio：与第 topK 名分数接近（差距 ≤10%）的候选库一并保留，防模型分数抖动误截
+    kb-selection-top-k: 8
+    kb-selection-tie-band-ratio: 0.10
+    kb-selection-threshold: 0.30
 
     channels:
       # 向量全局检索（当前已禁用：VectorGlobalSearchChannel.isEnabled() 返回 false）
