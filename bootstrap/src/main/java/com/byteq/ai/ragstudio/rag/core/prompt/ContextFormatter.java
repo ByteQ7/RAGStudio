@@ -18,7 +18,21 @@ public interface ContextFormatter {
      * @param topK        每个 key 下保留的最大文档块数量
      * @return 格式化后的知识库上下文文本
      */
-    String formatKbContext(Map<String, List<RetrievedChunk>> chunksByKey, int topK);
+    default String formatKbContext(Map<String, List<RetrievedChunk>> chunksByKey, int topK) {
+        return formatKbContext(chunksByKey, topK, 0);
+    }
+
+    /**
+     * 格式化知识库检索上下文（带引用编号起始偏移）
+     *
+     * @param chunksByKey    按 key 分组的检索文档块
+     * @param topK           每个 key 下保留的最大文档块数量
+     * @param citationStartIndex 引用编号起始偏移（0 表示从头编号）。
+     *                           Agent 多次调用 rag_search 时，偏移为已累计的 chunk 数，
+     *                           使 [^chunk_N] 编号跨多次检索全局唯一，引用溯源才能按位置精确映射。
+     * @return 格式化后的知识库上下文文本
+     */
+    String formatKbContext(Map<String, List<RetrievedChunk>> chunksByKey, int topK, int citationStartIndex);
 
     /**
      * 格式化 MCP 工具调用上下文

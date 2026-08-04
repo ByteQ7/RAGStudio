@@ -69,6 +69,9 @@ public class QaSubAgent implements SubAgent {
 
     private final ToolRetriever toolRetriever;
 
+    /** ReACT 迭代流式化开关（final_answer 实时透出） */
+    private final boolean streamIterations;
+
     private final List<RetrievedChunk> retrievedChunks = new ArrayList<>();
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -91,7 +94,8 @@ public class QaSubAgent implements SubAgent {
             String kbSummaryText,
             String rewrittenQuery,
             com.byteq.ai.ragstudio.rag.service.RagTraceRecordService traceRecordService,
-            ToolRetriever toolRetriever
+            ToolRetriever toolRetriever,
+            boolean streamIterations
     ) {
         this.llmService = llmService;
         this.retrievalEngine = retrievalEngine;
@@ -109,6 +113,7 @@ public class QaSubAgent implements SubAgent {
         this.rewrittenQuery = rewrittenQuery;
         this.traceRecordService = traceRecordService;
         this.toolRetriever = toolRetriever;
+        this.streamIterations = streamIterations;
     }
 
     @Override
@@ -126,7 +131,7 @@ public class QaSubAgent implements SubAgent {
         AgentLoop agentLoop = new AgentLoop(
                 llmService, toolRegistry,
                 reactResponseParser, reactPromptBuilder, promptTemplateLoader,
-                cancellationChecker, ctx.getThinkingLevel()
+                cancellationChecker, ctx.getThinkingLevel(), streamIterations
         );
 
         // 3. 引用溯源回调（直接接收 streamFinalAnswer 中的 finalAnswer 参数，不依赖 callback.getAnswerString）
@@ -151,9 +156,17 @@ public class QaSubAgent implements SubAgent {
                 ctx.getSteps().stream().map(AgentStep::toString).toList()));
 
         // citations artifact（如有）
+        // retrievedChunks 保持与上下文编号严格对齐（含跨检索重复的 chunk），
+        // 输出 artifact 时按 chunk id 去重，避免同一 chunk 的引用重复展示
         if (!retrievedChunks.isEmpty()) {
+            java.util.LinkedHashMap<String, RetrievedChunk> distinct = new java.util.LinkedHashMap<>();
+            for (RetrievedChunk c : retrievedChunks) {
+                if (c.getId() != null) {
+                    distinct.putIfAbsent(c.getId(), c);
+                }
+            }
             artifacts.add(new Artifact(task.getId(), CARD.name(), "citations",
-                    retrievedChunks.stream().map(c -> Map.of(
+                    distinct.values().stream().map(c -> Map.of(
                             "id", c.getId(),
                             "text", c.getText(),
                             "score", c.getScore(),
@@ -183,15 +196,12 @@ public class QaSubAgent implements SubAgent {
 
         RagSearchTool ragTool = new RagSearchTool(retrievalEngine, searchProperties,
                 knowledgeBaseIds, kbSummaryText, question, rewrittenQuery);
-        ragTool.setChunksConsumer(chunks -> {
-            for (RetrievedChunk chunk : chunks) {
-                if (chunk.getId() != null) {
-                    boolean exists = retrievedChunks.stream()
-                            .anyMatch(c -> chunk.getId().equals(c.getId()));
-                    if (!exists) retrievedChunks.add(chunk);
-                }
-            }
-        });
+        // 引用溯源：chunks 与上下文 [^chunk_N] 编号按同一顺序追加，保持位置与编号严格对齐。
+        // 注意不能在这里去重：上下文编号按每次检索的完整列表顺序编号（跨检索可能重复），
+        // 去重会破坏编号到位置的映射，导致引用指向错误的 chunk。
+        ragTool.setChunksConsumer(chunks -> retrievedChunks.addAll(chunks));
+        // 编号起始偏移 = 已累计的 chunk 数，使 [^chunk_N] 跨多次检索全局唯一
+        ragTool.setCitationStartIndexSupplier(() -> retrievedChunks.size());
         registry.register(ragTool);
 
         registry.register(new ToolReaderTool(skillLoader, mcpToolRegistry));
@@ -224,6 +234,8 @@ public class QaSubAgent implements SubAgent {
             }
 
             List<Map<String, Object>> citations = new ArrayList<>();
+            // 同一 chunk 可能被多次检索命中（编号不同但指向同一 chunk），按 chunkId 去重展示
+            java.util.Set<String> seenChunkIds = new java.util.HashSet<>();
             if (!referencedIds.isEmpty()) {
                 for (String id : referencedIds) {
                     RetrievedChunk c = null;
@@ -237,22 +249,26 @@ public class QaSubAgent implements SubAgent {
                             if (id.equals(rc.getId())) { c = rc; break; }
                         }
                     }
+                    // 引用编号无法解析到 chunk（LLM 编造编号/越界）时跳过，不输出空引用
+                    if (c == null || c.getId() == null) continue;
+                    if (!seenChunkIds.add(c.getId())) continue;
                     Map<String, Object> entry = new java.util.LinkedHashMap<>();
                     entry.put("id", id);
-                    entry.put("chunkId", c != null && c.getId() != null ? c.getId() : "");
-                    entry.put("text", c != null && c.getText() != null ? c.getText() : "");
-                    entry.put("score", c != null && c.getScore() != null ? c.getScore() : 0f);
-                    entry.put("kbName", c != null && c.getKbName() != null ? c.getKbName() : "");
-                    entry.put("docName", c != null && c.getDocName() != null ? c.getDocName() : "");
-                    entry.put("contentType", c != null && c.getContentType() != null ? c.getContentType() : "TEXT");
+                    entry.put("chunkId", c.getId());
+                    entry.put("text", c.getText() != null ? c.getText() : "");
+                    entry.put("score", c.getScore() != null ? c.getScore() : 0f);
+                    entry.put("kbName", c.getKbName() != null ? c.getKbName() : "");
+                    entry.put("docName", c.getDocName() != null ? c.getDocName() : "");
+                    entry.put("contentType", c.getContentType() != null ? c.getContentType() : "TEXT");
                     entry.put("imageUrl",
-                            c != null && c.getMetadata() != null && c.getMetadata().get("image_url") instanceof String imgUrl
+                            c.getMetadata() != null && c.getMetadata().get("image_url") instanceof String imgUrl
                                     ? imgUrl : "");
-                    if (c == null && retrievedChunks.isEmpty()) continue;
                     citations.add(entry);
                 }
             } else {
                 for (RetrievedChunk c : retrievedChunks) {
+                    // 跨检索重复的 chunk 只展示一次
+                    if (c.getId() != null && !seenChunkIds.add(c.getId())) continue;
                     if (c.isImage()) {
                         Map<String, Object> entry = new java.util.LinkedHashMap<>();
                         entry.put("id", c.getId() != null ? c.getId() : "");

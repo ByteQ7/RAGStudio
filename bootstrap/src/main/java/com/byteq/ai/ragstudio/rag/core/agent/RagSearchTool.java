@@ -49,6 +49,9 @@ public class RagSearchTool implements Tool {
     /** 检索到的 Chunk 回调（用于引用溯源） */
     private Consumer<List<RetrievedChunk>> chunksConsumer;
 
+    /** 引用编号起始偏移提供者（Agent 模式下返回已累计的 chunk 数，保证编号跨多次检索全局唯一） */
+    private java.util.function.IntSupplier citationStartIndexSupplier;
+
     /**
      * @param retrievalEngine  检索引擎
      * @param searchProperties 检索配置（TopK 等）
@@ -113,6 +116,11 @@ public class RagSearchTool implements Tool {
     /** 设置 Chunk 收集回调（Agent 模式下用于引用溯源） */
     public void setChunksConsumer(Consumer<List<RetrievedChunk>> chunksConsumer) {
         this.chunksConsumer = chunksConsumer;
+    }
+
+    /** 设置引用编号起始偏移提供者（Agent 模式下为已累计的 chunk 数，用于上下文 [^chunk_N] 全局编号） */
+    public void setCitationStartIndexSupplier(java.util.function.IntSupplier citationStartIndexSupplier) {
+        this.citationStartIndexSupplier = citationStartIndexSupplier;
     }
 
     @Override
@@ -185,8 +193,9 @@ public class RagSearchTool implements Tool {
         try {
             // 使用 RewriteResult 兼容现有检索 API，直接以 query 作为主问题
             RewriteResult rewriteResult = new RewriteResult(query, List.of(query));
+            int citationStartIndex = citationStartIndexSupplier != null ? citationStartIndexSupplier.getAsInt() : 0;
             RetrievalContext ctx = retrievalEngine.retrieveByKnowledgeBases(
-                    knowledgeBaseIds, rewriteResult, topK, userOriginalQuestion);
+                    knowledgeBaseIds, rewriteResult, topK, userOriginalQuestion, citationStartIndex);
 
             if (ctx == null || StrUtil.isBlank(ctx.getKbContext())) {
                 return ToolResult.success(TOOL_NAME, "未检索到与 \"" + query + "\" 相关的文档。");

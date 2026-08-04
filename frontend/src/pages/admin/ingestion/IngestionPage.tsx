@@ -1125,7 +1125,7 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit, embeddin
       }
 
       let settings: Record<string, unknown> | undefined;
-      let condition: unknown;
+      let condition: Record<string, unknown> | null = null;
       try {
         const rawSettings = buildSettings(node) as Record<string, unknown> | undefined;
         settings = preserveUnknownFields(rawSettings, node);

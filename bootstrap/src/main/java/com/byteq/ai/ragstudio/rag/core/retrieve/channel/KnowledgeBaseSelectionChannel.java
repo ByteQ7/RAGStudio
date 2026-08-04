@@ -62,13 +62,28 @@ public class KnowledgeBaseSelectionChannel implements SearchChannel {
             log.info("执行知识库选择检索，目标集合：{}", collections);
 
             int topKMultiplier = properties.getChannels().getKnowledgeBaseSelection().getTopKMultiplier();
+            // 配置缺失/为 0 时兜底为 2，避免 SQL LIMIT 0 静默返回空导致检索"假性为空"
+            if (topKMultiplier <= 0) topKMultiplier = 2;
             int adjustedTopK = context.getTopK() * topKMultiplier;
 
-            List<RetrievedChunk> allChunks = parallelRetriever.executeParallelRetrieval(
-                    context.getMainQuestion(),
-                    collections,
-                    adjustedTopK
-            );
+            List<RetrievedChunk> allChunks;
+            float[] preEmbeddedVector = context.getPreEmbeddedVector();
+            if (preEmbeddedVector != null && collections.size() == 1) {
+                // 预嵌入向量（来自 RrfHybridChannel 批量嵌入，对应单个 collection 的查询），
+                // 直接向量检索避免重复 embedding
+                allChunks = parallelRetriever.executeParallelRetrieval(
+                        context.getMainQuestion(),
+                        collections,
+                        adjustedTopK,
+                        java.util.Map.of(collections.get(0), preEmbeddedVector)
+                );
+            } else {
+                allChunks = parallelRetriever.executeParallelRetrieval(
+                        context.getMainQuestion(),
+                        collections,
+                        adjustedTopK
+                );
+            }
 
             long latency = System.currentTimeMillis() - startTime;
 

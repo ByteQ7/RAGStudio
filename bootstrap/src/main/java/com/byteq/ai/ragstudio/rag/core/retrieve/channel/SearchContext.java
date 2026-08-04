@@ -53,6 +53,17 @@ public class SearchContext {
     private Map<String, Object> metadata = new HashMap<>();
 
     /**
+     * 预嵌入查询向量（可选）
+     * <p>
+     * 由 RrfHybridChannel 在多查询场景下按 collection 批量嵌入后注入，
+     * 向量检索通道命中该字段时直接使用（retrieveByVector），
+     * 避免每个查询独立触发一次远程 embedding 调用。
+     * null 表示未预嵌入，检索通道回退为自行 embed。
+     * </p>
+     */
+    private float[] preEmbeddedVector;
+
+    /**
      * 获取主问题（优先使用重写后的问题）
      */
     public String getMainQuestion() {

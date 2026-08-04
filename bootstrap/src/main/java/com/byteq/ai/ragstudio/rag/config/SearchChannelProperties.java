@@ -108,6 +108,40 @@ public class SearchChannelProperties {
     private Channels channels = new Channels();
 
     /**
+     * 语义裁剪（ContextCropper）配置
+     */
+    private Crop crop = new Crop();
+
+    /**
+     * 语义裁剪配置：控制 CPU 上 0.6B 语义高亮模型的调用成本（实测与句子总量成正比）
+     */
+    @Data
+    public static class Crop {
+
+        /**
+         * 参与裁剪的非图片 chunk 文本总字符数低于该值时跳过裁剪、保留原文。
+         * 短检索内容裁剪收益接近 0，但成本固定（CPU 推理）。
+         */
+        private int minChars = 800;
+
+        /**
+         * 每条 chunk 最多参与裁剪的句子数（0 = 不限制）。
+         * 长 chunk 尾部句子对准确度贡献边际递减，限制后可线性降低裁剪时延。
+         */
+        private int maxSentencesPerChunk = 0;
+
+        /**
+         * 裁剪结果 Redis 缓存开关：key=(sha1(question), chunkId)，命中直接复用结果。
+         */
+        private boolean cacheEnabled = true;
+
+        /**
+         * 裁剪缓存 TTL（小时），与 embedding 缓存保持一致
+         */
+        private int cacheTtlHours = 6;
+    }
+
+    /**
      * 检索通道聚合配置
      * <p>
      * 包含向量全局检索和知识库选择检索两个子通道的配置

@@ -204,10 +204,14 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
         // 只保留最近 1-2 轮的 User 和 Assistant 消息
         // 过滤掉 System 摘要，避免 Token 浪费
         if (CollUtil.isNotEmpty(history)) {
-            List<ChatMessage> recentHistory = history.stream()
+            // 先过滤再截取：skip 必须基于过滤后的数量计算，
+            // 否则 Agent 模式历史中混入大量 Observation/工具消息时会把最近对话整体丢弃
+            List<ChatMessage> filteredHistory = history.stream()
                     .filter(msg -> msg.getRole() == ChatMessage.Role.USER
                             || msg.getRole() == ChatMessage.Role.ASSISTANT)
-                    .skip(Math.max(0, history.size() - 4))  // 最多保留最近 4 条消息（2 轮对话）
+                    .toList();
+            List<ChatMessage> recentHistory = filteredHistory.stream()
+                    .skip(Math.max(0, filteredHistory.size() - 4))  // 最多保留最近 4 条消息（2 轮对话）
                     .toList();
             messages.addAll(recentHistory);
         }

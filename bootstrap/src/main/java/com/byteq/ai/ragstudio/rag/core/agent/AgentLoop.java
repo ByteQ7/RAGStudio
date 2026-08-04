@@ -6,8 +6,10 @@ import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
+import com.byteq.ai.ragstudio.infra.util.LLMResponseCleaner;
 import com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader;
 import com.google.gson.Gson;
+import com.google.gson.JsonParser;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -63,6 +65,9 @@ public class AgentLoop {
     /** 深度思考级别（0-100），0 表示关闭 */
     private final int thinkingLevel;
 
+    /** 是否以流式方式执行 ReACT 迭代（final_answer 内容实时透出，其余逻辑与同步一致） */
+    private final boolean streamIterations;
+
     /** 是否已调用过 rag_search（用于抑制 kb_forced 持续生效） */
     private boolean ragSearchCalled = false;
 
@@ -89,7 +94,7 @@ public class AgentLoop {
                      ReActResponseParser responseParser,
                      ReActPromptBuilder promptBuilder,
                      PromptTemplateLoader templateLoader) {
-        this(llmService, toolRegistry, responseParser, promptBuilder, templateLoader, () -> false, 0);
+        this(llmService, toolRegistry, responseParser, promptBuilder, templateLoader, () -> false, 0, false);
     }
 
     public AgentLoop(LLMService llmService,
@@ -98,7 +103,7 @@ public class AgentLoop {
                      ReActPromptBuilder promptBuilder,
                      PromptTemplateLoader templateLoader,
                      java.util.function.Supplier<Boolean> cancellationChecker) {
-        this(llmService, toolRegistry, responseParser, promptBuilder, templateLoader, cancellationChecker, 0);
+        this(llmService, toolRegistry, responseParser, promptBuilder, templateLoader, cancellationChecker, 0, false);
     }
 
     public AgentLoop(LLMService llmService,
@@ -108,6 +113,17 @@ public class AgentLoop {
                      PromptTemplateLoader templateLoader,
                      java.util.function.Supplier<Boolean> cancellationChecker,
                      int thinkingLevel) {
+        this(llmService, toolRegistry, responseParser, promptBuilder, templateLoader, cancellationChecker, thinkingLevel, false);
+    }
+
+    public AgentLoop(LLMService llmService,
+                     ToolRegistry toolRegistry,
+                     ReActResponseParser responseParser,
+                     ReActPromptBuilder promptBuilder,
+                     PromptTemplateLoader templateLoader,
+                     java.util.function.Supplier<Boolean> cancellationChecker,
+                     int thinkingLevel,
+                     boolean streamIterations) {
         this.llmService = llmService;
         this.toolRegistry = toolRegistry;
         this.responseParser = responseParser;
@@ -115,6 +131,7 @@ public class AgentLoop {
         this.templateLoader = templateLoader;
         this.cancellationChecker = cancellationChecker;
         this.thinkingLevel = thinkingLevel;
+        this.streamIterations = streamIterations;
     }
 
     /** 设置在 onComplete 之前触发的回调 */
@@ -161,28 +178,38 @@ public class AgentLoop {
                 log.info("Agent 迭代 {}/{} - 消息数: {}", iteration, ctx.getMaxIterations(),
                         ctx.getMessages().size());
 
-                // 2a. 同步调用 LLM
+                // 2a. 调用 LLM（流式模式：final_answer 内容实时透出；工具迭代仅缓冲，解析逻辑与同步一致）
                 String llmResponse;
-                try {
-                    llmResponse = llmService.chat(ChatRequest.builder()
-                            .messages(new ArrayList<>(ctx.getMessages()))
-                            .temperature(0.4)
-                            .thinkingLevel(thinkingLevel)
-                            .responseFormat("json_object")
-                            .build());
-                } catch (Exception e) {
-                    // 用户取消时不刷 error
-                    if (cancellationChecker.get()) {
-                        log.info("Agent 迭代 {} LLM 调用被取消: {}", iteration, e.getMessage());
-                    } else {
-                        log.error("Agent 迭代 {} LLM 调用失败: {}", iteration, e.getMessage());
+                String streamedAnswer = null;
+                if (streamIterations) {
+                    StreamResult streamResult = streamReActIteration(ctx, callback, thinkingLevel);
+                    llmResponse = streamResult.buffer();
+                    streamedAnswer = streamResult.streamedAnswer();
+                    if (streamResult.error() != null) {
+                        // 已透出部分内容：以已透出内容正常收尾，不再回放或兜底（内容不可撤回）
+                        if (streamedAnswer != null) {
+                            log.warn("Agent 迭代 {} 流式中途失败，以已透出内容收尾: {}", iteration, streamResult.error().getMessage());
+                            AgentStep partialStep = AgentStep.finish(iteration, "", streamedAnswer);
+                            ctx.addStep(partialStep);
+                            pushStepsComplete(ctx, callback);
+                            finishWithStreamedAnswer(streamedAnswer, callback);
+                            return;
+                        }
+                        handleLlmFailure(iteration, ctx, callback, streamResult.error());
+                        return;
                     }
-                    AgentStep errorStep = AgentStep.error(iteration, "",
-                            "模型调用失败: " + e.getMessage());
-                    pushStep(errorStep, callback);
-                    pushStepsComplete(ctx, callback);
-                    streamFallbackAnswer("抱歉，模型服务暂时不可用，请稍后重试。", callback);
-                    return;
+                } else {
+                    try {
+                        llmResponse = llmService.chat(ChatRequest.builder()
+                                .messages(new ArrayList<>(ctx.getMessages()))
+                                .temperature(0.4)
+                                .thinkingLevel(thinkingLevel)
+                                .responseFormat("json_object")
+                                .build());
+                    } catch (Exception e) {
+                        handleLlmFailure(iteration, ctx, callback, e);
+                        return;
+                    }
                 }
 
                 // LLM 调用完成后立即检查取消（防止取消发生在此次调用期间）
@@ -214,13 +241,13 @@ public class AgentLoop {
                     return;
                 }
 
-                // 2b. 解析响应
-                AgentStep step = responseParser.parse(llmResponse, iteration);
-
-                // 格式校正：初次迭代 LLM 未使用 JSON 时重试一次
-                boolean formatCorrected = false;
-                if (iteration == 0 && !llmResponse.trim().startsWith("{")) {
-                    log.warn("Agent 初次迭代 LLM 未使用 ReACT 格式，注入纠正提示后重试");
+                // 2b. 格式校正：初次迭代 LLM 未输出可解析的 ReACT JSON 时注入纠正提示重试一次。
+                // 仅当响应确实无法解析为 JSON 对象时才重试（markdown 围栏 / 前置自然语言等
+                // 可被 LLMResponseCleaner 清洗的响应不再触发多余的第二次 LLM 调用）。
+                // 已流式透出 final_answer 内容时不再重试（内容不可撤回）。
+                boolean assistantAdded = false;
+                if (iteration == 0 && streamedAnswer == null && !isReActJson(llmResponse)) {
+                    log.warn("Agent 初次迭代 LLM 未使用 ReACT JSON 格式，注入纠正提示后重试");
                     ctx.addMessage(ChatMessage.assistant(llmResponse));
                     ctx.addMessage(ChatMessage.system(
                             "你刚才没有遵循 JSON 格式。请以 JSON 对象输出，"
@@ -239,15 +266,17 @@ public class AgentLoop {
                     }
                     if (retryResponse != null && !retryResponse.isBlank()) {
                         llmResponse = retryResponse;
-                        step = responseParser.parse(llmResponse, iteration);
-                        ctx.addMessage(ChatMessage.assistant(llmResponse));
+                    } else {
+                        // 重试失败：原始响应已在上方加入消息列表，避免下方重复添加
+                        assistantAdded = true;
                     }
-                    formatCorrected = true;
                 }
 
-                ctx.addStep(step);
+                // 2c. 解析响应
+                AgentStep step = responseParser.parse(llmResponse, iteration);
 
-                if (!formatCorrected) {
+                ctx.addStep(step);
+                if (!assistantAdded) {
                     ctx.addMessage(ChatMessage.assistant(llmResponse));
                 }
 
@@ -263,6 +292,17 @@ public class AgentLoop {
 
                 // 2e. 根据动作分支
                 if (step.getAction() == AgentAction.FINISH) {
+                    // 流式模式：final_answer 已在生成过程中实时透出，直接收尾（引用溯源 + 完成）
+                    if (streamedAnswer != null) {
+                        log.info("Agent 流式完成 - iteration={}, finalAnswerLength={}", iteration, streamedAnswer.length());
+                        pushStepsComplete(ctx, callback);
+                        if (ctx.getCollectedS3ImageUrls() != null && !ctx.getCollectedS3ImageUrls().isEmpty()) {
+                            callback.setRetrievedImageUrls(new java.util.ArrayList<>(ctx.getCollectedS3ImageUrls()));
+                        }
+                        finishWithStreamedAnswer(streamedAnswer, callback);
+                        return;
+                    }
+
                     // LLM 输出 FINISH 但没有 final_answer 内容时重试一次
                     if (StrUtil.isBlank(step.getFinalAnswer())) {
                         log.warn("Agent FINISH 但 finalAnswer 为空，注入纠正重试");
@@ -414,6 +454,311 @@ public class AgentLoop {
         }
     }
 
+    // ==================== 流式迭代 ====================
+
+    /** 流式迭代结果：完整缓冲内容 + 已实时透出的 final_answer（未透出为 null）+ 异常 */
+    private record StreamResult(String buffer, String streamedAnswer, Throwable error) {
+    }
+
+    /**
+     * 以流式方式执行一次 ReACT 迭代调用（阻塞至流结束）。
+     * <p>
+     * content 通道累积到缓冲供 JSON 解析（工具迭代只缓冲不透出，工具解析与同步路径完全一致）；
+     * 当确认 action=finish 后，增量提取 final_answer 字符串值并经 callback.onContent 实时透出
+     * （含 JSON 字符串转义还原：引号/反斜杠/换行/制表/回车/四位十六进制 unicode 转义）。
+     * thinking 通道（deep thinking 的 reasoning_content）
+     * 直接透出。未检出 final_answer（如工具调用迭代/格式异常）时静默缓冲，由调用方按现有逻辑处理。
+     * </p>
+     */
+    private StreamResult streamReActIteration(AgentContext ctx, StreamCallback callback, int thinkingLevel) {
+        ChatRequest request = ChatRequest.builder()
+                .messages(new ArrayList<>(ctx.getMessages()))
+                .temperature(0.4)
+                .thinkingLevel(thinkingLevel)
+                .responseFormat("json_object")
+                .build();
+
+        ReActJsonStreamScanner scanner = new ReActJsonStreamScanner();
+        StringBuilder forwarded = new StringBuilder();
+        java.util.concurrent.atomic.AtomicReference<Throwable> error = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean dropped = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        StreamCallback wrapper = new StreamCallback() {
+            @Override
+            public void onContent(String content) {
+                if (dropped.get() || content == null || content.isEmpty()) return;
+                scanner.onContent(content);
+                // thought 实时透出（仅非 deep thinking 模式：deep thinking 时 reasoning_content 已走 onThinking，
+                // 避免 thought 与推理内容双通道重复）
+                if (thinkingLevel == 0) {
+                    String thought = scanner.drainThought();
+                    if (thought != null && !thought.isEmpty()) {
+                        callback.onThinking(thought);
+                    }
+                }
+                String forward = scanner.drainAnswer();
+                if (forward != null && !forward.isEmpty()) {
+                    forwarded.append(forward);
+                    callback.onContent(forward);
+                }
+            }
+
+            @Override
+            public void onThinking(String content) {
+                if (dropped.get() || content == null || content.isEmpty()) return;
+                callback.onThinking(content);
+            }
+
+            @Override
+            public void onComplete() {
+                if (dropped.get()) return;
+                scanner.onComplete();
+                if (thinkingLevel == 0) {
+                    String thought = scanner.drainThought();
+                    if (thought != null && !thought.isEmpty()) {
+                        callback.onThinking(thought);
+                    }
+                }
+                String tail = scanner.drainAnswer();
+                if (tail != null && !tail.isEmpty()) {
+                    forwarded.append(tail);
+                    callback.onContent(tail);
+                }
+                latch.countDown();
+            }
+
+            @Override
+            public void onError(Throwable e) {
+                if (dropped.get()) return;
+                if (e != null) error.set(e);
+                latch.countDown();
+            }
+
+            @Override
+            public void onAgentStep(Object step) {
+            }
+
+            @Override
+            public void onAgentStepsComplete(String json) {
+            }
+
+            @Override
+            public void onCitation(String citations) {
+            }
+
+            @Override
+            public void setRetrievedImageUrls(java.util.List<String> urls) {
+            }
+        };
+
+        try {
+            llmService.streamChat(request, wrapper);
+            // 阻塞等待流结束。不设等待上限：与同步模式语义一致——长回答/深度思考生成期间
+            // 只要连接持续有数据就不应被打断；底层 HTTP 读超时（60s）保证死连接必然触发
+            // onError 结束等待，不会无限挂起。
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            dropped.set(true);
+            error.compareAndSet(null, e);
+        } catch (Exception e) {
+            error.compareAndSet(null, e);
+        }
+
+        String streamedAnswer = forwarded.length() > 0 ? forwarded.toString() : null;
+        return new StreamResult(scanner.bufferContent(), streamedAnswer, error.get());
+    }
+
+    /**
+     * ReACT JSON 流式扫描器：顺序扫描响应 content，增量提取字符串字段值。
+     * <ul>
+     *   <li>{@code thought} → drainThought()（实时透出推理摘要）</li>
+     *   <li>{@code final_answer}（且已确认 action=finish）→ drainAnswer()（实时透出最终回答）</li>
+     *   <li>其余字段静默跳过；非字符串值（对象/数组/数字）整体跳过</li>
+     * </ul>
+     * 顺序扫描保证：action=finish 在 final_answer 之前被确认（ReACT 字段顺序），
+     * 字段顺序异常（final_answer 先于 action）时不透出、由调用方回退为完成后回放，内容不会出错。
+     * 处理 JSON 转义（\\ \" \n \t \r 及四位十六进制 unicode 转义）。
+     */
+    static class ReActJsonStreamScanner {
+
+        private final StringBuilder buffer = new StringBuilder();
+        private final StringBuilder thoughtOut = new StringBuilder();
+        private final StringBuilder answerOut = new StringBuilder();
+        private final StringBuilder actionBuf = new StringBuilder();
+        private int scanPos = 0;
+        /** 0=找key 1=读key名 2=等冒号 3=等值起始 4=字符串值中 5=跳过非字符串值 */
+        private int state = 0;
+        private StringBuilder keyBuf = null;
+        private String currentKey = null;
+        private boolean confirmedFinish = false;
+        /** 值内转义状态（仅 state=4）：0=正常 1=刚见反斜杠 2=在 unicode 四位十六进制转义中 */
+        private int escapeState = 0;
+        private StringBuilder unicodeBuf = null;
+
+        void onContent(String chunk) {
+            buffer.append(chunk);
+            process();
+        }
+
+        void onComplete() {
+            process();
+        }
+
+        String bufferContent() {
+            return buffer.toString();
+        }
+
+        /** 取回新增的 thought 透出内容并清空 */
+        String drainThought() {
+            return drain(thoughtOut);
+        }
+
+        /** 取回新增的 final_answer 透出内容并清空 */
+        String drainAnswer() {
+            return drain(answerOut);
+        }
+
+        private static String drain(StringBuilder sb) {
+            if (sb.length() == 0) {
+                return null;
+            }
+            String s = sb.toString();
+            sb.setLength(0);
+            return s;
+        }
+
+        private void process() {
+            while (scanPos < buffer.length()) {
+                char c = buffer.charAt(scanPos);
+                switch (state) {
+                    case 0: // 找 key 起始引号
+                        if (c == '"') {
+                            keyBuf = new StringBuilder();
+                            state = 1;
+                        }
+                        scanPos++;
+                        break;
+                    case 1: // 读 key 名
+                        if (c == '\\') {
+                            keyBuf.append(c);
+                            if (scanPos + 1 < buffer.length()) {
+                                keyBuf.append(buffer.charAt(scanPos + 1));
+                                scanPos += 2;
+                            } else {
+                                scanPos++;
+                            }
+                        } else if (c == '"') {
+                            currentKey = keyBuf.toString();
+                            keyBuf = null;
+                            state = 2;
+                            scanPos++;
+                        } else {
+                            keyBuf.append(c);
+                            scanPos++;
+                        }
+                        break;
+                    case 2: // 等冒号
+                        if (c == ':') {
+                            state = 3;
+                        }
+                        scanPos++;
+                        break;
+                    case 3: // 等值起始
+                        if (c == '"') {
+                            state = 4;
+                            escapeState = 0;
+                            unicodeBuf = null;
+                            scanPos++;
+                        } else if (c == '{' || c == '[' || c == 't' || c == 'f' || c == 'n'
+                                || c == '-' || Character.isDigit(c)) {
+                            state = 5; // 非字符串值，跳过
+                        } else {
+                            scanPos++; // 空白/逗号等
+                        }
+                        break;
+                    case 4: // 字符串值中
+                        if (escapeState == 2) {
+                            unicodeBuf.append(c);
+                            scanPos++;
+                            if (unicodeBuf.length() == 4) {
+                                try {
+                                    appendValue((char) Integer.parseInt(unicodeBuf.toString(), 16));
+                                } catch (Exception ignored) {
+                                    appendValue('?');
+                                }
+                                unicodeBuf = null;
+                                escapeState = 0;
+                            }
+                            break;
+                        }
+                        if (escapeState == 1) {
+                            scanPos++;
+                            if (c == 'u') {
+                                unicodeBuf = new StringBuilder();
+                                escapeState = 2;
+                            } else {
+                                appendValue(switch (c) {
+                                    case 'n' -> '\n';
+                                    case 't' -> '\t';
+                                    case 'r' -> '\r';
+                                    case '"' -> '"';
+                                    case '\\' -> '\\';
+                                    default -> c;
+                                });
+                                escapeState = 0;
+                            }
+                            break;
+                        }
+                        if (c == '\\') {
+                            escapeState = 1;
+                            scanPos++;
+                            break;
+                        }
+                        if (c == '"') {
+                            valueCompleted();
+                            state = 0;
+                            scanPos++;
+                            break;
+                        }
+                        appendValue(c);
+                        scanPos++;
+                        break;
+                    case 5: // 跳过非字符串值（对象/数组/数字/bool/null），直到字段分隔符
+                        if (c == ',') {
+                            state = 0;
+                        }
+                        scanPos++;
+                        break;
+                    default:
+                        scanPos++;
+                }
+            }
+        }
+
+        /** 值内字符输出：仅 thought 与（已确认 finish 的）final_answer 进入透出缓冲，action 值暂存用于确认 */
+        private void appendValue(char c) {
+            if ("thought".equals(currentKey)) {
+                thoughtOut.append(c);
+            } else if ("final_answer".equals(currentKey) && confirmedFinish) {
+                answerOut.append(c);
+            } else if ("action".equals(currentKey)) {
+                actionBuf.append(c);
+            }
+        }
+
+        private void valueCompleted() {
+            if ("action".equals(currentKey)) {
+                String action = actionBuf.toString();
+                actionBuf.setLength(0);
+                // action 在 final_answer 之前被扫描（ReACT 标准字段顺序），
+                // 确认 finish 后 final_answer 才会被透出
+                confirmedFinish = "finish".equals(action) || "FINISH".equals(action);
+            }
+        }
+    }
+
     // ==================== 消息构建 ====================
 
     /**
@@ -512,6 +857,27 @@ public class AgentLoop {
     /** 检查工具注册表中是否有 rag_search */
     private boolean hasRagSearchTool() {
         return toolRegistry.contains("rag_search");
+    }
+
+    /**
+     * 判断 LLM 响应是否可解析为 ReACT JSON 对象。
+     * 可容忍 markdown 代码块围栏、前置自然语言等可通过 LLMResponseCleaner 清洗的形式，
+     * 避免这些无害格式触发多余的"格式纠正"第二次 LLM 调用。
+     */
+    private boolean isReActJson(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return false;
+        }
+        String cleaned = LLMResponseCleaner.stripMarkdownCodeFence(raw).trim();
+        String json = LLMResponseCleaner.extractJson(cleaned);
+        if (json == null || !json.startsWith("{")) {
+            return false;
+        }
+        try {
+            return JsonParser.parseString(json).isJsonObject();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // ==================== 无效循环防护 ====================
@@ -645,6 +1011,33 @@ public class AgentLoop {
     }
 
     // ==================== 流式输出 ====================
+
+    /**
+     * 迭代 LLM 调用失败的统一处理（未透出任何内容时）：推送错误步骤 + 兜底回答
+     */
+    private void handleLlmFailure(int iteration, AgentContext ctx, StreamCallback callback, Throwable e) {
+        // 用户取消时不刷 error
+        if (cancellationChecker.get()) {
+            log.info("Agent 迭代 {} LLM 调用被取消: {}", iteration, e.getMessage());
+        } else {
+            log.error("Agent 迭代 {} LLM 调用失败: {}", iteration, e.getMessage());
+        }
+        AgentStep errorStep = AgentStep.error(iteration, "",
+                "模型调用失败: " + e.getMessage());
+        pushStep(errorStep, callback);
+        pushStepsComplete(ctx, callback);
+        streamFallbackAnswer("抱歉，模型服务暂时不可用，请稍后重试。", callback);
+    }
+
+    /**
+     * 流式模式收尾：final_answer 已实时透出，仅触发引用溯源与完成事件，不再回放内容
+     */
+    private void finishWithStreamedAnswer(String answer, StreamCallback callback) {
+        if (beforeCompleteCallback != null) {
+            beforeCompleteCallback.accept(answer);
+        }
+        callback.onComplete();
+    }
 
     /**
      * 流式输出最终回答

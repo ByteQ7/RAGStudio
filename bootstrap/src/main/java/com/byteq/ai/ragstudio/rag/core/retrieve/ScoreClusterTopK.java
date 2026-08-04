@@ -141,6 +141,9 @@ public final class ScoreClusterTopK {
             count = cliff;
         }
 
-        return Math.max(minChunks, Math.min(count, overflowCap));
+        // 结果钳制在 [minChunks, max(minChunks, overflowCap)] 区间：
+        // 当配置出现 overflowCap < minChunks 的异常组合时，以 minChunks 为下限兜底，
+        // 避免返回少于契约保证的条数（原 Math.min(count, overflowCap) 会被 overflowCap 拉低）
+        return Math.min(Math.max(count, minChunks), Math.max(minChunks, overflowCap));
     }
 }

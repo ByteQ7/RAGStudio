@@ -248,6 +248,9 @@ public class StreamChatEventHandler implements StreamCallback {
         log.info("onComplete called, thinkingLevel={}", thinkingLevel);
         if (taskManager.isCancelled(taskId)) {
             sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
+            // 取消分支同样要注销任务，否则 Redis 取消标记与本地缓存条目将滞留至 TTL 到期，
+            // 若 taskId 复用会误伤后续任务（unregister 幂等，可安全调用）
+            taskManager.unregister(taskId);
             return;
         }
         String messageId = null;

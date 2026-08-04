@@ -27,14 +27,26 @@ public class CollectionParallelRetriever extends AbstractParallelRetriever<Strin
     // 在指定 Collection 中执行向量检索，失败时返回空列表
     @Override
     protected List<RetrievedChunk> createRetrievalTask(String question, String collectionName, int topK) {
+        return doRetrieve(question, collectionName, topK, null);
+    }
+
+    // 带预嵌入向量：命中时直接向量检索，避免重复 embedding
+    @Override
+    protected List<RetrievedChunk> createRetrievalTask(String question, String collectionName, int topK, float[] preEmbeddedVector) {
+        return doRetrieve(question, collectionName, topK, preEmbeddedVector);
+    }
+
+    private List<RetrievedChunk> doRetrieve(String question, String collectionName, int topK, float[] preEmbeddedVector) {
         try {
-            return retrieverService.retrieve(
-                    RetrieveRequest.builder()
-                            .collectionName(collectionName)
-                            .query(question)
-                            .topK(topK)
-                            .build()
-            );
+            RetrieveRequest req = RetrieveRequest.builder()
+                    .collectionName(collectionName)
+                    .query(question)
+                    .topK(topK)
+                    .build();
+            if (preEmbeddedVector != null) {
+                return retrieverService.retrieveByVector(preEmbeddedVector, req);
+            }
+            return retrieverService.retrieve(req);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : "";
             // 区分常见失败原因，帮助排查

@@ -1,14 +1,16 @@
 package com.byteq.ai.ragstudio.rag.core.retrieve;
 
+import cn.hutool.core.util.StrUtil;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.infra.embedding.EmbeddingService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
@@ -17,13 +19,25 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @ConditionalOnProperty(name = "rag.vector.type", havingValue = "pg")
 public class PgRetrieverService implements RetrieverService {
 
     private final JdbcTemplate jdbcTemplate;
     private final EmbeddingService embeddingService;
+    private final PlatformTransactionManager transactionManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** 事务模板：用于在同一事务中执行 SET LOCAL + 向量查询，保证 hnsw.ef_search 生效且不污染连接池 */
+    private final TransactionTemplate transactionTemplate;
+
+    public PgRetrieverService(JdbcTemplate jdbcTemplate,
+                              EmbeddingService embeddingService,
+                              PlatformTransactionManager transactionManager) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.embeddingService = embeddingService;
+        this.transactionManager = transactionManager;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
 
     /** pg_trgm 扩展可用性缓存（null=未探测），决定关键词检索使用 similarity 还是位置降级打分 */
     private volatile Boolean trgmAvailable;
@@ -48,6 +62,104 @@ public class PgRetrieverService implements RetrieverService {
         return retrieveByVector(vector, request);
     }
 
+    /**
+     * 批量嵌入同一 collection 的多个查询：一次远程调用完成全部向量化。
+     * 向量逐位等价于逐查询 embed（模型/维度一致），失败时返回空 Map 由上层回退。
+     */
+    @Override
+    public Map<String, float[]> embedQueriesBatch(List<String> queries, String collectionName) {
+        if (queries == null || queries.isEmpty() || StrUtil.isBlank(collectionName)) {
+            return Map.of();
+        }
+        // 去重：同一查询文本只嵌入一次，向量按原文映射
+        List<String> distinct = queries.stream().distinct().toList();
+        try {
+            String embeddingModel = resolveEmbeddingModelFromCollection(collectionName);
+            Integer kbDimension = resolveDimensionFromCollection(collectionName);
+            List<List<Float>> embeddings;
+            if (embeddingModel != null) {
+                embeddings = embeddingService.embedBatch(distinct, embeddingModel, kbDimension);
+            } else {
+                embeddings = embeddingService.embedBatch(distinct);
+            }
+            if (embeddings == null || embeddings.size() != distinct.size()) {
+                return Map.of();
+            }
+            Map<String, float[]> result = new java.util.LinkedHashMap<>();
+            for (int i = 0; i < distinct.size(); i++) {
+                List<Float> embedding = embeddings.get(i);
+                if (embedding == null || embedding.isEmpty()) {
+                    continue;
+                }
+                result.put(distinct.get(i), normalize(toArray(embedding)));
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("批量嵌入查询失败，回退逐查询嵌入: collection={}, error={}", collectionName, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    /**
+     * 跨 collection 批量嵌入：按 (embedding 模型, 维度) 分组，同一模型的所有 collection
+     * 共享一次远程批量调用（如 8 个知识库 × 同一查询 = 1 次调用而非 8 次）。
+     * 任一 collection 解析或嵌入失败时整体返回空 Map，由上层回退为逐 collection 嵌入。
+     */
+    @Override
+    public Map<String, Map<String, float[]>> embedQueriesBatchPerCollection(List<String> queries, List<String> collectionNames) {
+        if (queries == null || queries.isEmpty() || collectionNames == null || collectionNames.isEmpty()) {
+            return Map.of();
+        }
+        List<String> distinct = queries.stream().distinct().toList();
+        try {
+            // 1. 解析每个 collection 的 (模型, 维度)
+            Map<String, EmbeddingSpec> specByCollection = new java.util.LinkedHashMap<>();
+            for (String collection : collectionNames) {
+                specByCollection.put(collection, new EmbeddingSpec(
+                        resolveEmbeddingModelFromCollection(collection),
+                        resolveDimensionFromCollection(collection)));
+            }
+            // 2. 按 (模型, 维度) 分组
+            Map<EmbeddingSpec, List<String>> groups = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, EmbeddingSpec> e : specByCollection.entrySet()) {
+                groups.computeIfAbsent(e.getValue(), k -> new java.util.ArrayList<>()).add(e.getKey());
+            }
+            // 3. 每组一次批量调用
+            Map<String, Map<String, float[]>> result = new java.util.LinkedHashMap<>();
+            for (Map.Entry<EmbeddingSpec, List<String>> group : groups.entrySet()) {
+                EmbeddingSpec spec = group.getKey();
+                List<List<Float>> embeddings;
+                if (spec.model != null) {
+                    embeddings = embeddingService.embedBatch(distinct, spec.model, spec.dimension);
+                } else {
+                    embeddings = embeddingService.embedBatch(distinct);
+                }
+                if (embeddings == null || embeddings.size() != distinct.size()) {
+                    return Map.of();
+                }
+                Map<String, float[]> vectors = new java.util.LinkedHashMap<>();
+                for (int i = 0; i < distinct.size(); i++) {
+                    List<Float> embedding = embeddings.get(i);
+                    if (embedding == null || embedding.isEmpty()) {
+                        continue;
+                    }
+                    vectors.put(distinct.get(i), normalize(toArray(embedding)));
+                }
+                for (String collection : group.getValue()) {
+                    result.put(collection, vectors);
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("跨 collection 批量嵌入失败，回退逐 collection 嵌入: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    /** embedding 模型与维度组合（record 自动实现 equals/hashCode，用于分组） */
+    private record EmbeddingSpec(String model, Integer dimension) {
+    }
+
     @Override
     public List<RetrievedChunk> retrieveByVector(float[] vector, RetrieveRequest request) {
         Integer dimension = request.getDimension();
@@ -67,18 +179,22 @@ public class PgRetrieverService implements RetrieverService {
 
         String tableName = "t_knowledge_vector_" + dimension;
         try {
-            jdbcTemplate.execute("SET LOCAL hnsw.ef_search = 200");
+            // SET LOCAL 必须在事务块内才生效；与查询放在同一事务中执行，
+            // 事务结束后 hnsw.ef_search 自动还原，不污染连接池中的其他连接使用方
+            return transactionTemplate.execute(status -> {
+                jdbcTemplate.execute("SET LOCAL hnsw.ef_search = 200");
 
-            String vectorLiteral = toVectorLiteral(vector);
-            // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-            return jdbcTemplate.query(
-                    "SELECT id, content, metadata, " +
-                            "COALESCE(NULLIF(content_type, 'TEXT'), metadata->>'content_type', 'TEXT') AS content_type, " +
-                            "1 - (embedding <=> ?::vector) AS score FROM " + tableName
-                            + " WHERE metadata->>'collection_name' = ? ORDER BY embedding <=> ?::vector LIMIT ?",
-                    (rs, rowNum) -> buildChunk(rs),
-                    vectorLiteral, request.getCollectionName(), vectorLiteral, request.getTopK()
-            );
+                String vectorLiteral = toVectorLiteral(vector);
+                // noinspection SqlDialectInspection,SqlNoDataSourceInspection
+                return jdbcTemplate.query(
+                        "SELECT id, content, metadata, " +
+                                "COALESCE(NULLIF(content_type, 'TEXT'), metadata->>'content_type', 'TEXT') AS content_type, " +
+                                "1 - (embedding <=> ?::vector) AS score FROM " + tableName
+                                + " WHERE metadata->>'collection_name' = ? ORDER BY embedding <=> ?::vector LIMIT ?",
+                        (rs, rowNum) -> buildChunk(rs),
+                        vectorLiteral, request.getCollectionName(), vectorLiteral, request.getTopK()
+                );
+            });
         } catch (Exception e) {
             log.warn("向量检索SQL失败: collection={}, dim={}, error={}",
                     request.getCollectionName(), dimension, e.getMessage());
@@ -112,6 +228,8 @@ public class PgRetrieverService implements RetrieverService {
         List<RetrievedChunk> result = tryKeywordQuery(tableName, request, keywords, trgmAvailable);
 
         // similarity 函数不存在（扩展未安装）时降级为不依赖扩展的位置打分
+        // 仅当错误确认为「similarity 函数不存在」时才降级并持久标记；
+        // 瞬时故障（超时/连接抖动等）返回空结果但不降级，避免关键词检索质量被永久拉低
         if (result == null && Boolean.TRUE.equals(trgmAvailable)) {
             trgmAvailable = false;
             log.warn("pg_trgm 扩展不可用，关键词检索降级为关键词位置打分");
@@ -172,7 +290,14 @@ public class PgRetrieverService implements RetrieverService {
             );
         } catch (Exception e) {
             log.warn("关键词检索SQL失败: table={}, error={}", tableName, e.getMessage());
-            return null;
+            // 仅「similarity 函数不存在」（pg_trgm 扩展未安装）返回 null 触发上层降级；
+            // 其他错误（超时、连接抖动等）返回空列表，不触发降级，避免瞬时故障永久拉低检索质量
+            if (trgm && e.getMessage() != null
+                    && e.getMessage().contains("does not exist")
+                    && e.getMessage().contains("similarity")) {
+                return null;
+            }
+            return List.of();
         }
     }
 

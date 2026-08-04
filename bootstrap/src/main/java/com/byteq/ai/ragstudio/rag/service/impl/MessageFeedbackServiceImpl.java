@@ -22,7 +22,6 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -117,12 +116,31 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
         return message;
     }
 
-    private static final ConcurrentHashMap<String, Object> FEEDBACK_LOCKS = new ConcurrentHashMap<>();
+    /**
+     * 反馈落库的 JVM 内锁池。
+     * 使用固定数量的 striped 锁（按 key 哈希取模）而非无界 ConcurrentHashMap：
+     * 原实现以 messageId::userId 为 key 只增不删，长时间运行持续膨胀（内存泄漏）。
+     * 注：该锁仅保证单实例内的串行化；多实例部署下仍需 DB 唯一索引兜底防重复插入。
+     */
+    private static final int LOCK_STRIPES = 64;
+    private static final Object[] FEEDBACK_LOCKS = createStripedLocks();
+
+    private static Object[] createStripedLocks() {
+        Object[] locks = new Object[LOCK_STRIPES];
+        for (int i = 0; i < LOCK_STRIPES; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
+    private static Object feedbackLock(String key) {
+        return FEEDBACK_LOCKS[(key.hashCode() & 0x7fffffff) % LOCK_STRIPES];
+    }
 
     private void doUpsertFeedback(String messageId, String userId, String conversationId,
                                   Integer vote, String reason, String comment, long submitTime) {
         String lockKey = messageId + "::" + userId;
-        Object lock = FEEDBACK_LOCKS.computeIfAbsent(lockKey, k -> new Object());
+        Object lock = feedbackLock(lockKey);
         synchronized (lock) {
             MessageFeedbackDO existing = feedbackMapper.selectOne(
                     Wrappers.lambdaQuery(MessageFeedbackDO.class)

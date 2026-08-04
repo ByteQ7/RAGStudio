@@ -235,7 +235,7 @@ export function DefaultModelConfigPage() {
           const selectedModel = models.find((m) => m.modelId === selectedModelId);
           const isDirty = config.configKey in dirty;
           const isSaving = savingKey === config.configKey;
-          const apiKeyOk = selectedModel
+          const apiKeyOk = selectedModel?.providerName
             ? providerApiKeyMap.get(selectedModel.providerName)
             : config.hasApiKey;
 

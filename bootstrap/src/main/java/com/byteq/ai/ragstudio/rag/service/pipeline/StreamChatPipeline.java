@@ -7,7 +7,6 @@ import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
 import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
-import com.byteq.ai.ragstudio.rag.config.MemoryProperties;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentContext;
 import com.byteq.ai.ragstudio.rag.core.agent.KbEmbeddingSelector;
@@ -16,7 +15,6 @@ import com.byteq.ai.ragstudio.rag.core.agent.QaSubAgent;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActPromptBuilder;
 import com.byteq.ai.ragstudio.rag.core.agent.ReActResponseParser;
 import com.byteq.ai.ragstudio.rag.core.agent.ToolSubAgent;
-import com.byteq.ai.ragstudio.rag.core.agent.TitleSubAgent;
 import com.byteq.ai.ragstudio.rag.core.agent.ToolRetriever;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
 import com.byteq.ai.ragstudio.rag.core.prompt.RAGPromptService;
@@ -119,6 +117,10 @@ public class StreamChatPipeline {
     @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.cpus:0.5}")
     private String sandboxCpus;
 
+    /** ReACT 迭代流式化开关：true 时 final_answer 生成过程中实时透出（首字体验），false 回退为完成后回放 */
+    @org.springframework.beans.factory.annotation.Value("${rag.agent.stream-finish:true}")
+    private boolean agentStreamFinish;
+
     @jakarta.annotation.PostConstruct
     public void initSandbox() {
         this.sandboxExecutor = SandboxExecutor.builder()
@@ -134,9 +136,6 @@ public class StreamChatPipeline {
 
     /** 链路追踪配置，用于判断是否启用追踪 */
     private final RagTraceProperties traceProperties;
-
-    /** 对话记忆配置（标题长度等） */
-    private final MemoryProperties memoryProperties;
 
     /** 工具语义检索器，按用户问题筛选相关工具注入 Prompt */
     private final ToolRetriever toolRetriever;
@@ -298,7 +297,7 @@ public class StreamChatPipeline {
                 reactResponseParser, reactPromptBuilder, promptTemplateLoader,
                 () -> taskManager.isCancelled(ctx.getTaskId()),
                 finalKbIds, kbSummaryText, effectiveRewrittenQuestion,
-                traceRecordService, toolRetriever
+                traceRecordService, toolRetriever, agentStreamFinish
         ));
         orchestrator.register(qaSubAgent);
 
@@ -311,14 +310,8 @@ public class StreamChatPipeline {
         } catch (Exception e) {
             log.warn("Tool Agent 注册失败，跳过", e);
         }
-
-        // Title Agent（LLM 调用生成标题）
-        try {
-            TitleSubAgent titleAgent = new TitleSubAgent(llmService, promptTemplateLoader, memoryProperties);
-            orchestrator.register(titleAgent);
-        } catch (Exception e) {
-            log.warn("Title Agent 注册失败，跳过", e);
-        }
+        // 注：不再注册 Title Agent。会话标题改由 createOrUpdate 异步生成（见 ConversationServiceImpl），
+        // 避免每次对话在 TTFT 关键路径上串行两次 LLM 标题调用（原 TitleSubAgent 产物无人消费，纯浪费）。
 
         checkCancellation(ctx);
 

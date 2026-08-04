@@ -59,9 +59,11 @@ public class DeduplicationPostProcessor implements SearchResultPostProcessor {
                             // 新 Chunk，直接添加
                             chunkMap.put(key, chunk);
                         } else {
-                            // 已存在，合并分数（取最高分）
+                            // 已存在，合并分数（取最高分）；score 可能为 null（非检索构造的 chunk），判空避免拆箱 NPE
                             RetrievedChunk existing = chunkMap.get(key);
-                            if (chunk.getScore() > existing.getScore()) {
+                            float newScore = chunk.getScore() != null ? chunk.getScore() : 0f;
+                            float oldScore = existing.getScore() != null ? existing.getScore() : 0f;
+                            if (newScore > oldScore) {
                                 chunkMap.put(key, chunk);
                             }
                         }

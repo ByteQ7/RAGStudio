@@ -82,15 +82,28 @@ public class ChatQueueLimiter {
     // ==================== Reject 业务 ====================
 
     // 处理被限流拒绝的请求: 记录拒绝会话 -> 向前端发送拒绝事件
-    private void handleReject(String question, String conversationId, SseEmitter emitter) {
+    // public: 会话并发门闸（ConversationConcurrencyGate）拒绝同会话并发请求时复用同一拒绝协议
+    public void handleReject(String question, String conversationId, SseEmitter emitter) {
+        handleReject(question, conversationId, emitter, true);
+    }
+
+    // 拒绝但不写入对话历史：用于「问题实际未被处理」的拒绝场景（同会话并发、重复提交防护），
+    // 避免把未回答的问题与"系统繁忙"假回答写进历史，污染后续多轮上下文
+    public void handleRejectWithoutRecord(String question, String conversationId, SseEmitter emitter) {
+        handleReject(question, conversationId, emitter, false);
+    }
+
+    private void handleReject(String question, String conversationId, SseEmitter emitter, boolean record) {
         RejectedContext context = null;
-        try {
-            context = recordRejectedConversation(question, conversationId, resolveUserId());
-        } catch (Exception ex) {
-            // 记录失败不能阻塞 emitter，否则前端永远收不到 DONE
-            log.warn("记录 reject 会话失败，仍向前端发送 DONE", ex);
+        if (record) {
+            try {
+                context = recordRejectedConversation(question, conversationId, resolveUserId());
+            } catch (Exception ex) {
+                // 记录失败不能阻塞 emitter，否则前端永远收不到 DONE
+                log.warn("记录 reject 会话失败，仍向前端发送 DONE", ex);
+            }
         }
-        sendRejectEvents(emitter, context);
+        sendRejectEvents(emitter, context, conversationId);
     }
 
     // 记录被拒绝的对话: 保存用户问题和拒绝回复到消息记录，返回拒绝上下文
@@ -137,14 +150,25 @@ public class ChatQueueLimiter {
     }
 
     // 向前端发送拒绝相关的 SSE 事件序列（META -> REJECT -> FINISH -> DONE）
-    private void sendRejectEvents(SseEmitter emitter, RejectedContext rejectedContext) {
+    // rejectedContext 为 null（问题/用户为空，或 record=false 不落库）时同样发送完整序列：
+    // 会话 ID 优先用 rejectedContext，其次用请求自带的 conversationId（拒绝事件挂到正确会话），
+    // 都没有时兜底生成雪花 ID，避免前端只收到 DONE 而挂起等待 META
+    private void sendRejectEvents(SseEmitter emitter, RejectedContext rejectedContext, String requestedConversationId) {
         SseEmitterSender sender = new SseEmitterSender(emitter);
-        if (rejectedContext != null) {
-            sender.sendEvent(SSEEventType.META.value(), new MetaPayload(rejectedContext.conversationId, rejectedContext.taskId));
-            sender.sendEvent(SSEEventType.REJECT.value(), new MessageDelta(RESPONSE_TYPE, REJECT_MESSAGE));
-            sender.sendEvent(SSEEventType.FINISH.value(),
-                    new CompletionPayload(rejectedContext.messageId != null ? String.valueOf(rejectedContext.messageId) : null, rejectedContext.title));
-        }
+        String conversationId = rejectedContext != null && StrUtil.isNotBlank(rejectedContext.conversationId)
+                ? rejectedContext.conversationId
+                : (StrUtil.isNotBlank(requestedConversationId)
+                        ? requestedConversationId
+                        : IdUtil.getSnowflakeNextIdStr());
+        String taskId = rejectedContext != null && StrUtil.isNotBlank(rejectedContext.taskId)
+                ? rejectedContext.taskId
+                : IdUtil.getSnowflakeNextIdStr();
+        String messageId = rejectedContext != null ? rejectedContext.messageId : null;
+        String title = rejectedContext != null ? rejectedContext.title : Strings.EMPTY;
+        sender.sendEvent(SSEEventType.META.value(), new MetaPayload(conversationId, taskId));
+        sender.sendEvent(SSEEventType.REJECT.value(), new MessageDelta(RESPONSE_TYPE, REJECT_MESSAGE));
+        sender.sendEvent(SSEEventType.FINISH.value(),
+                new CompletionPayload(messageId != null ? String.valueOf(messageId) : null, title));
         sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
         sender.complete();
     }

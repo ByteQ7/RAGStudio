@@ -1,7 +1,10 @@
 package com.byteq.ai.ragstudio.rag.core.retrieve.channel;
 
+import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
+import com.byteq.ai.ragstudio.rag.core.retrieve.RetrieverService;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RrfMerger;
 import com.byteq.ai.ragstudio.rag.core.retrieve.ScoreClusterTopK;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -26,18 +30,24 @@ public class RrfHybridChannel implements SearchChannel {
     private final KnowledgeBaseSelectionChannel vectorChannel;
     private final KeywordSearchChannel keywordChannel;
     private final SearchChannelProperties properties;
+    private final RetrieverService retrieverService;
     private final Executor executor;
 
     private int rrfK = 60;
     private int finalTopK = 5;
 
+    /** 子问题参与检索的最大数量（超出丢弃，控制检索开销） */
+    private static final int MAX_SUB_QUERIES = 3;
+
     public RrfHybridChannel(KnowledgeBaseSelectionChannel vectorChannel,
                             KeywordSearchChannel keywordChannel,
                             SearchChannelProperties properties,
+                            RetrieverService retrieverService,
                             Executor innerRetrievalExecutor) {
         this.vectorChannel = vectorChannel;
         this.keywordChannel = keywordChannel;
         this.properties = properties;
+        this.retrieverService = retrieverService;
         this.executor = innerRetrievalExecutor;
     }
 
@@ -68,23 +78,44 @@ public class RrfHybridChannel implements SearchChannel {
         List<String> collections = context.getSelectedCollectionNames();
         log.info("执行混合检索（per-KB RRF），目标集合数: {}", collections.size());
 
+        // 参与检索的查询列表：主问题 + 多问句拆分出的子问题（去重）。
+        // 此前子问题只进入 LLM Prompt 从未参与检索，多问句查询按主问题单路召回，
+        // 现让每个子问题都执行向量+关键词检索后统一 RRF 融合，提升多问句召回覆盖。
+        List<String> queries = buildQueries(context);
+        log.info("混合检索查询列表（主问题+子问题）: {}", queries);
+
         int perKbLimit = properties.getPerKbChunkLimit();
         if (perKbLimit <= 0) perKbLimit = 5;
         int perKbOverflowCap = properties.getPerKbOverflowCap();
         if (perKbOverflowCap < perKbLimit) perKbOverflowCap = perKbLimit;
 
-        // 所有知识库的向量 + 关键词检索一次性全量并行提交，避免多知识库串行检索
+        // 每个知识库的每个查询（主问题+子问题）的向量 + 关键词检索一次性全量并行提交
+        // 向量侧跨 collection 批量嵌入：按 (模型, 维度) 分组一次调用，避免 N 个知识库 × 同一查询产生 N 次远程调用
         List<CompletableFuture<PerKbResult>> futures = new ArrayList<>();
+        Map<String, Map<String, float[]>> preEmbeddedByCollection =
+                retrieverService.embedQueriesBatchPerCollection(queries, collections);
+        if (CollUtil.isNotEmpty(preEmbeddedByCollection)) {
+            log.info("混合检索跨库批量嵌入: collections={}, queries={}", collections.size(), queries.size());
+        }
         for (String collection : collections) {
-            SearchContext singleCtx = buildSingleCollectionContext(context, collection);
+            List<CompletableFuture<SearchChannelResult>> queryFutures = new ArrayList<>();
+            Map<String, float[]> preEmbedded = preEmbeddedByCollection.get(collection);
+            for (String query : queries) {
+                SearchContext singleCtx = buildSingleCollectionContext(context, collection, query);
+                if (preEmbedded != null) {
+                    singleCtx.setPreEmbeddedVector(preEmbedded.get(query));
+                }
+                queryFutures.add(CompletableFuture.supplyAsync(
+                        () -> safeSearch(vectorChannel, singleCtx), executor));
+                queryFutures.add(CompletableFuture.supplyAsync(
+                        () -> safeSearch(keywordChannel, singleCtx), executor));
+            }
 
-            CompletableFuture<SearchChannelResult> vectorFuture =
-                    CompletableFuture.supplyAsync(() -> safeSearch(vectorChannel, singleCtx), executor);
-            CompletableFuture<SearchChannelResult> keywordFuture =
-                    CompletableFuture.supplyAsync(() -> safeSearch(keywordChannel, singleCtx), executor);
-
-            futures.add(vectorFuture.thenCombine(keywordFuture,
-                    (v, k) -> new PerKbResult(collection, v, k)));
+            CompletableFuture<PerKbResult> perKbFuture = CompletableFuture
+                    .allOf(queryFutures.toArray(new CompletableFuture[0]))
+                    .thenApply(v -> new PerKbResult(collection,
+                            queryFutures.stream().map(CompletableFuture::join).toList()));
+            futures.add(perKbFuture);
         }
 
         List<RetrievedChunk> allChunks = new ArrayList<>();
@@ -95,23 +126,29 @@ public class RrfHybridChannel implements SearchChannel {
             try {
                 PerKbResult perKb = future.join();
 
-                vectorTotal += perKb.vectorResult.getChunks().size();
-                keywordTotal += perKb.keywordResult.getChunks().size();
+                // results 顺序为 [向量0, 关键词0, 向量1, 关键词1, ...]
+                for (int i = 0; i < perKb.results.size(); i++) {
+                    if (i % 2 == 0) {
+                        vectorTotal += perKb.results.get(i).getChunks().size();
+                    } else {
+                        keywordTotal += perKb.results.get(i).getChunks().size();
+                    }
+                }
 
                 // 先融合到扩量上限（让分数簇截断能看到完整分布），再做分数簇感知截断：
                 // 分数接近 → 保留更多（避免正确 chunk 在粗召阶段被硬截丢失）
                 // 有明显落差 → 保留更少（弱相关库不硬凑 perKbLimit 条）
-                List<List<RetrievedChunk>> perKbResults = new ArrayList<>();
-                perKbResults.add(perKb.vectorResult.getChunks());
-                perKbResults.add(perKb.keywordResult.getChunks());
+                List<List<RetrievedChunk>> perKbResults = perKb.results.stream()
+                        .map(SearchChannelResult::getChunks)
+                        .toList();
 
                 List<RetrievedChunk> merged = RrfMerger.merge(perKbResults, perKbOverflowCap, rrfK);
                 List<RetrievedChunk> kbChunks = applyPerKbClusterTruncation(merged, perKbLimit, perKbOverflowCap);
                 allChunks.addAll(kbChunks);
 
                 log.debug("KB [{}] RRF: 向量{}条 + 关键词{}条 → 融合{}条, 簇感知截断后{}条",
-                        perKb.collection, perKb.vectorResult.getChunks().size(),
-                        perKb.keywordResult.getChunks().size(), merged.size(), kbChunks.size());
+                        perKb.collection, vectorTotal,
+                        keywordTotal, merged.size(), kbChunks.size());
             } catch (Exception e) {
                 log.warn("KB RRF 融合异常: {}", e.getMessage());
             }
@@ -127,6 +164,30 @@ public class RrfHybridChannel implements SearchChannel {
                 .chunks(allChunks)
                 .latencyMs(latency)
                 .build();
+    }
+
+    /**
+     * 构建参与检索的查询列表：主问题优先，随后追加多问句拆分的子问题（去重、限量）。
+     */
+    private List<String> buildQueries(SearchContext context) {
+        List<String> queries = new ArrayList<>();
+        String main = context.getMainQuestion();
+        if (StrUtil.isNotBlank(main)) {
+            queries.add(main);
+        }
+        if (context.getSubQuestions() != null) {
+            int added = 0;
+            for (String sub : context.getSubQuestions()) {
+                if (added >= MAX_SUB_QUERIES) {
+                    break;
+                }
+                if (StrUtil.isNotBlank(sub) && !queries.contains(sub)) {
+                    queries.add(sub);
+                    added++;
+                }
+            }
+        }
+        return queries;
     }
 
     /**
@@ -147,15 +208,13 @@ public class RrfHybridChannel implements SearchChannel {
         return chunks.subList(0, Math.max(1, count));
     }
 
-    /** 单个知识库的向量 + 关键词检索结果 */
-    private record PerKbResult(String collection,
-                               SearchChannelResult vectorResult,
-                               SearchChannelResult keywordResult) {}
+    /** 单个知识库的多个查询（主问题+子问题）的检索结果 */
+    private record PerKbResult(String collection, List<SearchChannelResult> results) {}
 
-    private SearchContext buildSingleCollectionContext(SearchContext original, String collection) {
+    private SearchContext buildSingleCollectionContext(SearchContext original, String collection, String query) {
         return SearchContext.builder()
-                .originalQuestion(original.getOriginalQuestion())
-                .rewrittenQuestion(original.getRewrittenQuestion())
+                .originalQuestion(query)
+                .rewrittenQuestion(query)
                 .userOriginalQuestion(original.getUserOriginalQuestion())
                 .subQuestions(original.getSubQuestions())
                 .selectedCollectionNames(List.of(collection))

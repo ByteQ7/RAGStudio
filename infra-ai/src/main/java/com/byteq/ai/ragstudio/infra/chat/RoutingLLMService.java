@@ -6,6 +6,7 @@ import com.byteq.ai.ragstudio.framework.convention.DefaultModelService;
 import com.byteq.ai.ragstudio.framework.errorcode.BaseErrorCode;
 import com.byteq.ai.ragstudio.framework.exception.RemoteException;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
+import com.byteq.ai.ragstudio.infra.config.ModelRoutingProperties;
 import com.byteq.ai.ragstudio.infra.enums.ModelCapability;
 import com.byteq.ai.ragstudio.infra.enums.ModelProvider;
 import com.byteq.ai.ragstudio.infra.model.ModelHealthStore;
@@ -57,13 +58,15 @@ public class RoutingLLMService implements LLMService {
     private final ModelRoutingExecutor executor;
     private final Map<String, ChatClient> clientsByProvider;
     private final DefaultModelService defaultModelService;
+    private final ModelRoutingProperties routingProperties;
 
     public RoutingLLMService(
             ModelSelector selector,
             ModelHealthStore healthStore,
             ModelRoutingExecutor executor,
             List<ChatClient> clients,
-            DefaultModelService defaultModelService) {
+            DefaultModelService defaultModelService,
+            ModelRoutingProperties routingProperties) {
         this.selector = selector;
         this.healthStore = healthStore;
         this.executor = executor;
@@ -76,6 +79,7 @@ public class RoutingLLMService implements LLMService {
                             return replacement;
                         }));
         this.defaultModelService = defaultModelService;
+        this.routingProperties = routingProperties;
     }
 
     /**
@@ -121,7 +125,8 @@ public class RoutingLLMService implements LLMService {
                 ModelCapability.CHAT,
                 targets,
                 target -> clientsByProvider.get(target.candidate().getProvider()),
-                (client, target) -> client.chat(request, target)
+                (client, target) -> client.chat(request, target),
+                routingProperties.getSyncChat().getMaxFallback()
         );
 
         // 记录响应日志

@@ -31,7 +31,7 @@ public class DefaultContextFormatter implements ContextFormatter {
      * 按 topK 限制收集检索文档块，拼接文本后使用 kb-section 模板渲染
      */
     @Override
-    public String formatKbContext(Map<String, List<RetrievedChunk>> chunksByKey, int topK) {
+    public String formatKbContext(Map<String, List<RetrievedChunk>> chunksByKey, int topK, int citationStartIndex) {
         if (chunksByKey == null || chunksByKey.isEmpty()) {
             return "";
         }
@@ -58,7 +58,9 @@ public class DefaultContextFormatter implements ContextFormatter {
 
         // 给每个 Chunk 加上 [^chunk_{idx}] 前缀（使用顺序编号 1、2、3... 而非原始 DB ID，
         // 避免长数字 Snowflake ID 导致 LLM 编造/截断引用编号）
-        final int[] idx = {0};
+        // 编号从 citationStartIndex 起（Agent 多次检索时由调用方传入已累计的 chunk 数），
+        // 保证跨多次检索编号全局唯一，引用溯源（QaSubAgent.fireCitations）按位置映射才精确
+        final int[] idx = {citationStartIndex};
         String body = chunks.stream()
                 .map(chunk -> {
                     if (chunk.isImage()) {

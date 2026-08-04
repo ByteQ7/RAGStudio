@@ -1,9 +1,12 @@
 package com.byteq.ai.ragstudio.rag.config;
 
+import cn.hutool.core.util.IdUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.errorcode.BaseErrorCode;
+import com.byteq.ai.ragstudio.rag.dto.CompletionPayload;
 import com.byteq.ai.ragstudio.rag.dto.MessageDelta;
+import com.byteq.ai.ragstudio.rag.dto.MetaPayload;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -68,7 +71,8 @@ public class DemoModeInterceptor implements HandlerInterceptor {
         return false;
     }
 
-    // 向响应写入 SSE 格式的拒绝消息，通过 text/event-stream 返回 reject 事件和 done 事件
+    // 向响应写入 SSE 格式的拒绝消息，事件序列与正常拒绝流程一致（META -> REJECT -> FINISH -> DONE），
+    // 否则前端按标准协议解析时会因缺少 META/FINISH 而挂起等待会话信息
     private void writeSseReject(HttpServletResponse response) {
         try {
             response.setStatus(HttpServletResponse.SC_OK);
@@ -76,7 +80,11 @@ public class DemoModeInterceptor implements HandlerInterceptor {
             response.setHeader("Cache-Control", "no-cache");
             response.setHeader("Connection", "keep-alive");
             PrintWriter writer = response.getWriter();
+            writer.write("event: meta\ndata: " + objectMapper.writeValueAsString(
+                    new MetaPayload(IdUtil.getSnowflakeNextIdStr(), IdUtil.getSnowflakeNextIdStr())) + "\n\n");
             writer.write("event: reject\ndata: " + objectMapper.writeValueAsString(new MessageDelta("response", DEMO_REJECT_MESSAGE)) + "\n\n");
+            writer.write("event: finish\ndata: " + objectMapper.writeValueAsString(
+                    new CompletionPayload(null, null)) + "\n\n");
             writer.write("event: done\ndata: \"[DONE]\"\n\n");
             writer.flush();
         } catch (Exception e) {

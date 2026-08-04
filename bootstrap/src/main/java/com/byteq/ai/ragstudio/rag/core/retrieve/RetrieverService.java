@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.rag.core.retrieve;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 向量检索服务接口（RetrieverService）
@@ -93,6 +94,35 @@ public interface RetrieverService {
      */
     default List<RetrievedChunk> retrieveByKeyword(String query, RetrieveRequest retrieveParam) {
         throw new UnsupportedOperationException("当前检索后端不支持关键词检索");
+    }
+
+    /**
+     * 批量嵌入多个查询文本（同一 collection 的 embedding 模型/维度一致，可一次批量调用）
+     * <p>
+     * 用于多查询（主问题 + 子问题）场景：将 N 次独立远程 embedding 调用合并为 1 次，
+     * 向量逐位等价，不影响检索结果。返回 key 为查询原文（与传入列表一致）。
+     *
+     * @param queries        查询文本列表
+     * @param collectionName 目标 collection（用于解析该库的 embedding 模型与维度）
+     * @return 查询原文 → 归一化后的向量；无法批量嵌入时返回空 Map（调用方回退逐查询嵌入）
+     */
+    default Map<String, float[]> embedQueriesBatch(List<String> queries, String collectionName) {
+        return Map.of();
+    }
+
+    /**
+     * 批量嵌入多个 collection 的查询文本（跨 collection 合并调用）
+     * <p>
+     * 按 (embedding 模型, 维度) 分组：同一模型的全部 collection 共享一次远程批量调用，
+     * 避免"8 个知识库 × 同一查询"产生 8 次独立 embedding 请求。
+     * 向量逐位等价，不影响检索结果。
+     *
+     * @param queries         查询文本列表
+     * @param collectionNames 目标 collection 列表
+     * @return collectionName → (查询原文 → 归一化向量)；无法批量嵌入时返回空 Map（调用方回退）
+     */
+    default Map<String, Map<String, float[]>> embedQueriesBatchPerCollection(List<String> queries, List<String> collectionNames) {
+        return Map.of();
     }
 }
 

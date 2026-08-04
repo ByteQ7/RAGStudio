@@ -93,8 +93,29 @@ public class ModelRoutingProperties {
         private Long connectTimeoutSeconds = 10L;
 
         /**
-         * 读取超时（秒），默认 120
+         * 读取超时（秒），默认 60
          */
-        private Long readTimeoutSeconds = 120L;
+        private Long readTimeoutSeconds = 60L;
+    }
+
+    /**
+     * 同步 Chat 调用配置
+     */
+    private SyncChat syncChat = new SyncChat();
+
+    /**
+     * 同步 Chat 调用配置类
+     * <p>
+     * 控制 ReACT 迭代等同步 Chat 调用的故障转移行为，防止模型挂起/失败时
+     * 在多个候选模型间串联重试（此前单请求最差耗时达 10 分钟）。
+     * </p>
+     */
+    @Data
+    public static class SyncChat {
+        /**
+         * 失败后最多继续尝试的候选模型数（0 = 不限制，逐候选全量尝试）。
+         * 默认 1：主模型失败后只再试 1 个候选，单次调用最多 2 次模型请求。
+         */
+        private Integer maxFallback = 1;
     }
 }

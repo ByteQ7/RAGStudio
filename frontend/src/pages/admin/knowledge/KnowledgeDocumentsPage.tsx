@@ -1094,6 +1094,10 @@ const uploadSchema = z
   });
 
 type UploadFormValues = z.infer<typeof uploadSchema>;
+// schema 中带 .default() 的字段在输入侧是可选的（Input 类型），校验后输出侧才是必填（Output 类型）。
+// useForm 三个泛型分别对应 TFieldValues(Input)/TContext/TTransformedValues(Output)，
+// 这样 zodResolver 的 Input/Output 与 useForm 完全对齐，handleSubmit 拿到的是带默认值的完整类型。
+type UploadFormInput = z.input<typeof uploadSchema>;
 
 function UploadDialog({ open, onOpenChange, kbId, onSuccess, supportsImageEmbedding }: UploadDialogProps) {
   const [files, setFiles] = useState<File[]>([]);
@@ -1108,7 +1112,7 @@ function UploadDialog({ open, onOpenChange, kbId, onSuccess, supportsImageEmbedd
   const [loadingPipelines, setLoadingPipelines] = useState(false);
   const [maxFileSize, setMaxFileSize] = useState<number>(50 * 1024 * 1024);
 
-  const form = useForm<UploadFormValues>({
+  const form = useForm<UploadFormInput, unknown, UploadFormValues>({
     resolver: zodResolver(uploadSchema),
     defaultValues: {
       sourceType: "file",

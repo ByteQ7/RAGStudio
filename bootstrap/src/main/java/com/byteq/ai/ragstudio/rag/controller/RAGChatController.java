@@ -53,7 +53,9 @@ public class RAGChatController {
      * @return SseEmitter SSE 发射器，用于流式返回对话结果
      */
     @IdempotentSubmit(
-            key = "T(com.byteq.ai.ragstudio.framework.context.UserContext).getUserId() + ':' + #request.conversationId",
+            key = "T(com.byteq.ai.ragstudio.framework.context.UserContext).getUserId() + ':' + "
+                    + "(T(org.springframework.util.StringUtils).hasText(#request.conversationId) "
+                    + "? #request.conversationId : 'NEW:' + #request.question)",
             message = "当前会话处理中，请稍后再发起新的对话"
     )
     @PostMapping(value = "/rag/v3/chat", produces = "text/event-stream;charset=UTF-8")

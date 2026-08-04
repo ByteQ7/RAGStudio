@@ -8,8 +8,10 @@ server:
     context-path: /api/ragstudio
 
 spring:
-  dotenv:
-    location: ../.env     # .env 在项目根目录，bootstrap/ 是子模块
+  # 加载项目根目录的 .env（bootstrap/ 是子模块，从 bootstrap 或项目根启动时均可命中）
+  # optional: 前缀保证文件缺失（如 CI）不报错；未命中时使用下方各占位符的默认值
+  config:
+    import: optional:file:../.env[.properties],optional:file:.env[.properties]
   application:
     name: ragstudio${unique-name:}-service
 
@@ -21,9 +23,9 @@ spring:
   datasource:
     driver-class-name: org.postgresql.Driver
     type: com.zaxxer.hikari.HikariDataSource
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
-    url: ${DB_URL}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ragstudio}
     hikari:
       connection-timeout: 5000
       idle-timeout: 600000
@@ -34,12 +36,12 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST}
-      port: ${REDIS_PORT}
-      password: ${REDIS_PASSWORD}
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
 
 rocketmq:
-  name-server: ${ROCKETMQ_NAMESERVER}
+  name-server: ${ROCKETMQ_NAMESERVER:localhost:9876}
   producer:
     group: ragstudio-producer${unique-name:}_pg
     send-message-timeout: 2000
@@ -84,7 +86,7 @@ rag:
   rate-limit:
     global:
       enabled: true
-      max-concurrent: ${MAX_CONCURRENT:1}
+      max-concurrent: ${MAX_CONCURRENT:3}
       max-wait-seconds: 15
       lease-seconds: 30
       poll-interval-ms: 200
@@ -140,6 +142,18 @@ rag:
     kb-selection-tie-band-ratio: 0.10
     kb-selection-threshold: 0.30
 
+    # 语义裁剪（ContextCropper）性能优化（CPU-only 环境）
+    # - min-chars：参与裁剪文本总字符数低于该值 → 跳过裁剪保原文（短内容裁剪收益接近 0）
+    # - max-sentences-per-chunk：每条 chunk 最多裁剪句数（0=不限制；长 chunk 尾部句子贡献递减）
+    # - cache-enabled：裁剪结果 Redis 缓存（(问题, chunk) 幂等，追问/重复提问直接命中）
+    crop:
+      min-chars: 800
+      # 每条 chunk 最多裁剪句数：长 chunk 尾部句子贡献递减，限制后裁剪时延线性下降
+      # （CPU 实测 5 chunks×20句≈9.5s，限制句数后按比例缩短）
+      max-sentences-per-chunk: 20
+      cache-enabled: true
+      cache-ttl-hours: 6
+
     channels:
       # 向量全局检索（当前已禁用：VectorGlobalSearchChannel.isEnabled() 返回 false）
       vector-global:
@@ -173,12 +187,18 @@ rag:
       message-chunk-size: 1
     http:
       connect-timeout-seconds: 10
-      read-timeout-seconds: 120
+      # 同步调用读超时 60s：配合 chat 的 fallback 次数上限，避免模型挂起/降级时
+      # 单次请求串联多次 2 分钟超时（此前最长请求达 10 分钟）
+      read-timeout-seconds: 60
+    sync-chat:
+      # 同步 Chat（ReACT 迭代/改写/标题等）失败后最多继续尝试的候选数：
+      # 主模型失败后再试 1 个候选即终止，防止全量候选串联重试造成分钟级长尾
+      max-fallback: 1
 
 rustfs:
-  url: ${RUSTFS_URL}
-  access-key-id: ${RUSTFS_ACCESS_KEY}
-  secret-access-key: ${RUSTFS_SECRET_KEY}
+  url: ${RUSTFS_URL:http://localhost:9000}
+  access-key-id: ${RUSTFS_ACCESS_KEY:}
+  secret-access-key: ${RUSTFS_SECRET_KEY:}
 
 sa-token:
   token-name: Authorization

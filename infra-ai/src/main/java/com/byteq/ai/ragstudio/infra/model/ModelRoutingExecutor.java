@@ -81,6 +81,39 @@ public class ModelRoutingExecutor {
             // 模型调用接口
             ModelCaller<C, T> caller)
     {
+        return executeWithFallback(capability, targets, clientResolver, caller, 0);
+    }
+
+    /**
+     * 带故障转移的模型调用执行（支持失败次数上限）
+     * <p>
+     * 与 {@link #executeWithFallback(ModelCapability, List, Function, ModelCaller)} 逻辑一致，
+     * 额外支持 {@code maxFallback} 限制：模型调用失败次数达到上限后立即终止，
+     * 不再尝试剩余候选，避免"模型挂起 + 全量候选串联重试"造成分钟级长尾时延。
+     * </p>
+     *
+     * @param capability     模型能力类型（如 EMBEDDING、RERANK、CHAT），用于日志和错误提示
+     * @param targets        按优先级排序的候选模型目标列表
+     * @param clientResolver 从模型目标解析出对应客户端实例的函数
+     * @param caller         实际执行模型调用的函数式接口
+     * @param maxFallback    失败后最多继续尝试的候选数（0 = 不限制，保持全量 fallback）
+     * @param <C>            客户端类型
+     * @param <T>            返回值类型
+     * @return 模型调用的结果
+     * @throws RemoteException 当所有候选模型均不可用或全部调用失败时抛出
+     */
+    public <C, T> T executeWithFallback(
+            // 模型能力类型(聊天、向量化、重排序)
+            ModelCapability capability,
+            // 候选模型列表
+            List<ModelTarget> targets,
+            // 对应客户端
+            Function<ModelTarget, C> clientResolver,
+            // 模型调用接口
+            ModelCaller<C, T> caller,
+            // 失败后最多继续尝试的候选数（0 = 不限制）
+            int maxFallback)
+    {
         String label = capability.getDisplayName();
         // 检查是否有可用的候选模型列表
         if (targets == null || targets.isEmpty()) {
@@ -88,6 +121,7 @@ public class ModelRoutingExecutor {
         }
 
         Throwable last = null;
+        int failures = 0;
         // 按优先级顺序依次尝试每个候选模型
         for (ModelTarget target : targets) {
             C client = clientResolver.apply(target);
@@ -110,15 +144,21 @@ public class ModelRoutingExecutor {
                 healthStore.markSuccess(target.id());
                 return response;
             } catch (Exception e) {
-                // 调用失败：记录异常信息，标记失败状态，继续尝试下一个候选
+                // 调用失败：记录异常信息，标记失败状态
                 if (last == null) {
                     last = e;
                 } else {
                     last.addSuppressed(e);
                 }
                 healthStore.markFailure(target.id());
+                failures++;
                 log.error("{} model failed, fallback to next. modelId={}, provider={}, error={}",
                         label, target.id(), target.candidate().getProvider(), e.getMessage());
+                // 达到失败次数上限：立即终止，不继续尝试剩余候选（防长尾时延）
+                if (maxFallback > 0 && failures >= maxFallback) {
+                    log.warn("{} 达到失败次数上限({})，终止剩余候选尝试", label, maxFallback);
+                    break;
+                }
             }
         }
 
