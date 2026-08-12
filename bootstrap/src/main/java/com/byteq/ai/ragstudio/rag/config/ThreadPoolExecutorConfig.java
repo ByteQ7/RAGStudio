@@ -100,6 +100,30 @@ public class ThreadPoolExecutorConfig {
     }
 
     /**
+     * 语义裁剪（ContextCropper）专用线程池
+     * <p>
+     * 与检索线程池隔离：裁剪超时后后台 HTTP 请求仍会阻塞到读超时（最长 120s），
+     * 若与向量/关键词检索共池，线程被占满后检索会退化为串行。
+     * 拒绝策略用 AbortPolicy：队列满时裁剪直接降级保留原文，不让调用线程代跑阻塞任务。
+     * </p>
+     */
+    @Bean
+    public Executor cropExecutor() {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                1,
+                2,
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(20),
+                ThreadFactoryBuilder.create()
+                        .setNamePrefix("rag_crop_executor_")
+                        .build(),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+        return TtlExecutors.getTtlExecutor(executor);
+    }
+
+    /**
      * 意图识别并行执行线程池
      */
     @Bean

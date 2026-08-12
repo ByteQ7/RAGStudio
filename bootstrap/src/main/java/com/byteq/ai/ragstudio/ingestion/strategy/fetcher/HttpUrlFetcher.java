@@ -35,6 +35,11 @@ import java.util.Map;
 public class HttpUrlFetcher implements DocumentFetcher {
 
     /**
+     * 下载内容大小上限（100MB），防止恶意/异常响应导致 OOM
+     */
+    private static final long MAX_DOWNLOAD_BYTES = 100L * 1024 * 1024;
+
+    /**
      * HTTP 客户端辅助工具，用于执行 HTTP 请求
      */
     private final HttpClientHelper httpClientHelper;
@@ -55,7 +60,7 @@ public class HttpUrlFetcher implements DocumentFetcher {
         SsrfGuard.validate(location);
 
         Map<String, String> headers = buildHeaders(source.getCredentials());
-        HttpClientHelper.HttpFetchResponse resp = httpClientHelper.get(location, headers);
+        HttpClientHelper.HttpFetchResponse resp = httpClientHelper.getWithLimit(location, headers, MAX_DOWNLOAD_BYTES);
         String fileName = StringUtils.hasText(source.getFileName()) ? source.getFileName() : resp.fileName();
         String contentType = normalizeContentType(resp.contentType());
         if (!StringUtils.hasText(contentType)) {

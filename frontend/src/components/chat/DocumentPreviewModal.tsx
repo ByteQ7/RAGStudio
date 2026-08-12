@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, Eye, FileIcon, Loader2, X } from "lucide-react";
+import DOMPurify from "dompurify";
 
 import { getDocumentPreviewUrl, getDocumentBinaryContent, type PreviewData } from "@/services/previewService";
 
@@ -28,9 +29,6 @@ export function DocumentPreviewModal({ docId, docName, fileType, open, onClose }
       return;
     }
 
-    const isImage = ["png", "jpg", "jpeg", "gif", "webp"].includes(fileType);
-    const isPdf = fileType === "pdf";
-    const isText = ["txt", "markdown", "md", "csv", "json", "xml", "yaml", "yml", "log"].includes(fileType);
     const isOffice = ["docx", "xlsx", "pptx", "odt", "ods", "odp", "xls", "ppt"].includes(fileType);
 
     setLoading(true);
@@ -191,8 +189,11 @@ export function DocumentPreviewModal({ docId, docName, fileType, open, onClose }
         )}
 
         {!loading && !error && isOffice && htmlContent && (
-          <div className="h-full w-full overflow-auto rounded-lg border p-6" style={{ borderColor: 'var(--color-border-secondary)', background: 'white' }}
-            dangerouslySetInnerHTML={{ __html: htmlContent }}
+          <div
+            className="h-full w-full overflow-auto rounded-lg border p-6"
+            style={{ borderColor: 'var(--color-border-secondary)', background: 'white' }}
+            // 用户上传文档转换出的 HTML 未经信任，渲染前必须经 DOMPurify 白名单清洗，防止存储型 XSS
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(htmlContent) }}
           />
         )}
 

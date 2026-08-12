@@ -6,9 +6,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
+import com.byteq.ai.ragstudio.framework.security.UrlSafetyValidator;
 import com.byteq.ai.ragstudio.mcp.controller.request.McpServerCreateRequest;
 import com.byteq.ai.ragstudio.mcp.controller.request.McpServerUpdateRequest;
 import com.byteq.ai.ragstudio.mcp.controller.vo.McpServerVO;
+import com.byteq.ai.ragstudio.mcp.enums.McpErrorCode;
 import com.byteq.ai.ragstudio.mcp.dao.entity.McpServerDO;
 import com.byteq.ai.ragstudio.mcp.dao.mapper.McpServerMapper;
 import com.byteq.ai.ragstudio.mcp.service.DynamicMcpConnectionManager;
@@ -46,6 +48,8 @@ public class McpServerServiceImpl implements McpServerService {
         if (StrUtil.isBlank(request.getUrl())) {
             throw new ClientException("服务地址不能为空");
         }
+        // 管理员录入地址仅做协议/格式校验（内网 MCP 服务为合法场景）
+        String mcpUrl = UrlSafetyValidator.validateHttpUrl(request.getUrl(), "服务地址");
 
         // 名称唯一性校验
         Long count = mcpServerMapper.selectCount(
@@ -53,13 +57,13 @@ public class McpServerServiceImpl implements McpServerService {
                         .eq(McpServerDO::getName, request.getName())
         );
         if (count > 0) {
-            throw new ServiceException("MCP Server 名称已存在：" + request.getName());
+            throw new ClientException("MCP Server 名称已存在：" + request.getName(), McpErrorCode.NAME_EXIST);
         }
 
         // 构建实体
         McpServerDO server = McpServerDO.builder()
                 .name(request.getName().trim())
-                .url(request.getUrl().trim())
+                .url(mcpUrl)
                 .description(request.getDescription())
                 .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                 .transportType(StrUtil.isNotBlank(request.getTransportType()) ? request.getTransportType() : null)
@@ -84,7 +88,7 @@ public class McpServerServiceImpl implements McpServerService {
     public void update(String id, McpServerUpdateRequest request) {
         McpServerDO existing = mcpServerMapper.selectById(id);
         if (existing == null) {
-            throw new ClientException("MCP Server 不存在：" + id);
+            throw new ClientException("MCP Server 不存在：" + id, McpErrorCode.SERVER_NOT_FOUND);
         }
 
         // 名称唯一性校验（排除自身）
@@ -95,7 +99,7 @@ public class McpServerServiceImpl implements McpServerService {
                             .ne(McpServerDO::getId, id)
             );
             if (count > 0) {
-                throw new ServiceException("MCP Server 名称已存在：" + request.getName());
+                throw new ClientException("MCP Server 名称已存在：" + request.getName(), McpErrorCode.NAME_EXIST);
             }
         }
 
@@ -105,7 +109,7 @@ public class McpServerServiceImpl implements McpServerService {
             existing.setName(request.getName().trim());
         }
         if (StrUtil.isNotBlank(request.getUrl()) && !request.getUrl().equals(existing.getUrl())) {
-            existing.setUrl(request.getUrl().trim());
+            existing.setUrl(UrlSafetyValidator.validateHttpUrl(request.getUrl(), "服务地址"));
             needReconnect = true;
         }
         if (request.getDescription() != null) {
@@ -128,12 +132,15 @@ public class McpServerServiceImpl implements McpServerService {
         mcpServerMapper.updateById(existing);
         log.info("更新 MCP Server 配置: id={}, needReconnect={}", id, needReconnect);
 
-        // 只要服务器处于启用状态，更新后一律重连（确保连接状态与 DB 同步，清除历史错误）
-        if (existing.getEnabled() == 1) {
-            DynamicMcpConnectionManager.ConnectResult result = connectionManager.reconnect(existing);
-            updateConnectionStatus(id, result);
-        } else if (needReconnect) {
-            connectionManager.disconnect(id);
+        // 仅在有实质变更（URL/启用状态/传输类型/headers）时重连，
+        // 避免任意字段保存都触发全量重连导致工具短暂不可用
+        if (needReconnect) {
+            if (existing.getEnabled() == 1) {
+                DynamicMcpConnectionManager.ConnectResult result = connectionManager.reconnect(existing);
+                updateConnectionStatus(id, result);
+            } else {
+                connectionManager.disconnect(id);
+            }
         }
     }
 
@@ -141,7 +148,7 @@ public class McpServerServiceImpl implements McpServerService {
     public void delete(String id) {
         McpServerDO existing = mcpServerMapper.selectById(id);
         if (existing == null) {
-            throw new ClientException("MCP Server 不存在：" + id);
+            throw new ClientException("MCP Server 不存在：" + id, McpErrorCode.SERVER_NOT_FOUND);
         }
 
         // 先断开连接
@@ -159,7 +166,7 @@ public class McpServerServiceImpl implements McpServerService {
     public McpServerVO queryById(String id) {
         McpServerDO server = mcpServerMapper.selectById(id);
         if (server == null) {
-            throw new ClientException("MCP Server 不存在：" + id);
+            throw new ClientException("MCP Server 不存在：" + id, McpErrorCode.SERVER_NOT_FOUND);
         }
         return toVO(server);
     }
@@ -177,7 +184,7 @@ public class McpServerServiceImpl implements McpServerService {
     public void toggleEnabled(String id, boolean enabled) {
         McpServerDO server = mcpServerMapper.selectById(id);
         if (server == null) {
-            throw new ClientException("MCP Server 不存在：" + id);
+            throw new ClientException("MCP Server 不存在：" + id, McpErrorCode.SERVER_NOT_FOUND);
         }
 
         server.setEnabled(enabled ? 1 : 0);
@@ -199,7 +206,7 @@ public class McpServerServiceImpl implements McpServerService {
     public DynamicMcpConnectionManager.HealthStatus testConnection(String id) {
         McpServerDO server = mcpServerMapper.selectById(id);
         if (server == null) {
-            throw new ClientException("MCP Server 不存在：" + id);
+            throw new ClientException("MCP Server 不存在：" + id, McpErrorCode.SERVER_NOT_FOUND);
         }
 
         DynamicMcpConnectionManager.HealthStatus status = connectionManager.healthCheck(id);
@@ -217,7 +224,7 @@ public class McpServerServiceImpl implements McpServerService {
     public DynamicMcpConnectionManager.ConnectResult reload(String id) {
         McpServerDO server = mcpServerMapper.selectById(id);
         if (server == null) {
-            throw new ClientException("MCP Server 不存在：" + id);
+            throw new ClientException("MCP Server 不存在：" + id, McpErrorCode.SERVER_NOT_FOUND);
         }
 
         DynamicMcpConnectionManager.ConnectResult result = connectionManager.reconnect(server);
@@ -243,7 +250,8 @@ public class McpServerServiceImpl implements McpServerService {
     // 将 DO 转换为 VO，填充运行时的工具数量和实时连接状态
     private McpServerVO toVO(McpServerDO server) {
         McpServerVO vo = BeanUtil.copyProperties(server, McpServerVO.class);
-        vo.setHeaders(server.getHeaders());
+        // headers 可能含 Authorization 等敏感凭据，不回传原始值，仅标记是否已配置
+        vo.setHeaders(StrUtil.isNotBlank(server.getHeaders()) ? "{\"configured\":true}" : null);
         // 运行时数据：从连接管理器获取工具数量和实时状态
         String serverId = server.getId();
         vo.setToolCount(connectionManager.getToolCount(serverId));

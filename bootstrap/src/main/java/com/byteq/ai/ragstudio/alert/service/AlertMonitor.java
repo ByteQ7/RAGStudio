@@ -48,6 +48,30 @@ public class AlertMonitor {
     /** 单个模型最大熔断事件记录数，防止内存泄漏 */
     private static final int MAX_EVENTS_PER_MODEL = 1000;
 
+    /** 同一告警类型（同模型熔断/全失败）的发送冷却时间（30 分钟），防止故障期间邮件轰炸 */
+    private static final long ALERT_COOLDOWN_MS = 30L * 60 * 1000;
+
+    /** 最近一次告警发送时间戳 key: 告警标识（"cb:"+modelId / "all-failed"） */
+    private final ConcurrentHashMap<String, Long> lastAlertSentAt = new ConcurrentHashMap<>();
+
+    // 冷却检查：冷却窗口内不再重复发送同类告警（CAS 更新，并发安全）
+    private boolean tryAcquireAlertTicket(String key) {
+        long now = System.currentTimeMillis();
+        while (true) {
+            Long current = lastAlertSentAt.get(key);
+            if (current != null && now - current < ALERT_COOLDOWN_MS) {
+                return false;
+            }
+            if (current == null) {
+                if (lastAlertSentAt.putIfAbsent(key, now) == null) {
+                    return true;
+                }
+            } else if (lastAlertSentAt.replace(key, current, now)) {
+                return true;
+            }
+        }
+    }
+
     @PostConstruct
     public void init() {
         // 注册熔断器 OPEN 回调
@@ -100,7 +124,12 @@ public class AlertMonitor {
         int count = events.size();
         if (count < threshold) return;
 
-        // 触发告警（但避免重复发送：只记录日志，不做幂等去重—由管理员收到后自行处理）
+        // 触发告警（冷却窗口内不重复发送，避免故障期间邮件轰炸）
+        String alertKey = "cb:" + modelId;
+        if (!tryAcquireAlertTicket(alertKey)) {
+            log.debug("模型 {} 熔断告警处于冷却窗口内，跳过发送", modelId);
+            return;
+        }
         log.warn("模型 {} 在 {}h 内熔断 {} 次（阈值 {}），触发告警", modelId, windowHours, count, threshold);
 
         // 获取供应商信息（从 modelId 中提取）
@@ -116,6 +145,12 @@ public class AlertMonitor {
      */
     private void checkAllFailedAlert(List<ModelTarget> targets) {
         if (targets == null || targets.isEmpty() || !configService.isReady()) return;
+
+        // 冷却窗口内不重复发送，避免故障期间邮件轰炸
+        if (!tryAcquireAlertTicket("all-failed")) {
+            log.debug("全失败告警处于冷却窗口内，跳过发送");
+            return;
+        }
 
         List<Map<String, String>> failures = new ArrayList<>();
         for (ModelTarget t : targets) {

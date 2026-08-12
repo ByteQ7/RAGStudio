@@ -13,6 +13,7 @@ import com.byteq.ai.ragstudio.ingestion.controller.request.IngestionPipelineUpda
 import com.byteq.ai.ragstudio.ingestion.controller.vo.IngestionPipelineNodeVO;
 import com.byteq.ai.ragstudio.ingestion.controller.vo.IngestionPipelineVO;
 import com.byteq.ai.ragstudio.ingestion.dao.entity.IngestionPipelineDO;
+import com.byteq.ai.ragstudio.ingestion.enums.IngestionErrorCode;
 import com.byteq.ai.ragstudio.ingestion.dao.entity.IngestionPipelineNodeDO;
 import com.byteq.ai.ragstudio.ingestion.dao.mapper.IngestionPipelineMapper;
 import com.byteq.ai.ragstudio.ingestion.dao.mapper.IngestionPipelineNodeMapper;
@@ -93,7 +94,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
     @Transactional(rollbackFor = Exception.class)
     public IngestionPipelineVO update(String pipelineId, IngestionPipelineUpdateRequest request) {
         IngestionPipelineDO pipeline = pipelineMapper.selectById(pipelineId);
-        Assert.notNull(pipeline, () -> new ClientException("未找到流水线"));
+        Assert.notNull(pipeline, () -> new ClientException("未找到流水线", IngestionErrorCode.PIPELINE_NOT_FOUND));
 
         if (StringUtils.hasText(request.getName())) {
             pipeline.setName(request.getName());
@@ -119,7 +120,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
     @Override
     public IngestionPipelineVO get(String pipelineId) {
         IngestionPipelineDO pipeline = pipelineMapper.selectById(pipelineId);
-        Assert.notNull(pipeline, () -> new ClientException("未找到流水线"));
+        Assert.notNull(pipeline, () -> new ClientException("未找到流水线", IngestionErrorCode.PIPELINE_NOT_FOUND));
         return toVO(pipeline, fetchNodes(pipeline.getId()));
     }
 
@@ -154,7 +155,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(String pipelineId) {
         IngestionPipelineDO pipeline = pipelineMapper.selectById(pipelineId);
-        Assert.notNull(pipeline, () -> new ClientException("未找到流水线"));
+        Assert.notNull(pipeline, () -> new ClientException("未找到流水线", IngestionErrorCode.PIPELINE_NOT_FOUND));
         pipeline.setDeleted(1);
         pipeline.setUpdatedBy(UserContext.getUsername());
         pipelineMapper.deleteById(pipeline);
@@ -176,7 +177,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
     @Override
     public PipelineDefinition getDefinition(String pipelineId) {
         IngestionPipelineDO pipeline = pipelineMapper.selectById(pipelineId);
-        Assert.notNull(pipeline, () -> new ClientException("未找到流水线"));
+        Assert.notNull(pipeline, () -> new ClientException("未找到流水线", IngestionErrorCode.PIPELINE_NOT_FOUND));
 
         List<NodeConfig> nodes = fetchNodes(pipeline.getId()).stream()
                 .map(this::toNodeConfig)

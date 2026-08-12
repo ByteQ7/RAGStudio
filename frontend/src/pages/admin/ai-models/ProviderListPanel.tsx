@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Cpu, Loader2, Plug, PlugZap } from "lucide-react";
+import { Cpu, Loader2, PlugZap } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { AiProvider } from "@/services/aiModelConfigService";

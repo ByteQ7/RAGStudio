@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 邮件发送服务
@@ -32,7 +33,7 @@ public class EmailService {
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
-     * 发送告警邮件（非阻塞，异常只记录日志不抛出）
+     * 发送告警邮件（异步执行，异常只记录日志不抛出，不阻塞告警触发链路）
      */
     public void sendAlert(String subject, String htmlBody) {
         var config = configService.getConfig();
@@ -41,19 +42,21 @@ public class EmailService {
             return;
         }
 
-        try {
-            JavaMailSender mailSender = createMailSender(config);
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(config.getFromAddress());
-            helper.setTo(config.getToAddress());
-            helper.setSubject(subject);
-            helper.setText(htmlBody, true);
-            mailSender.send(message);
-            log.info("告警邮件已发送至 {}", config.getToAddress());
-        } catch (Exception e) {
-            log.error("发送告警邮件失败: {}", e.getMessage());
-        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                JavaMailSender mailSender = createMailSender(config);
+                MimeMessage message = mailSender.createMimeMessage();
+                MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+                helper.setFrom(config.getFromAddress());
+                helper.setTo(config.getToAddress());
+                helper.setSubject(subject);
+                helper.setText(htmlBody, true);
+                mailSender.send(message);
+                log.info("告警邮件已发送至 {}", config.getToAddress());
+            } catch (Exception e) {
+                log.error("发送告警邮件失败: {}", e.getMessage());
+            }
+        });
     }
 
     /**

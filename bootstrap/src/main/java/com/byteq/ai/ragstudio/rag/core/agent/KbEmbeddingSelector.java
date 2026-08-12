@@ -44,9 +44,6 @@ public class KbEmbeddingSelector {
     /** 每个知识库最多纳入嵌入文本的文档名数量 */
     private static final int MAX_DOC_NAMES_PER_KB = 30;
 
-    /** 全部知识库相似度均低于阈值时，降级保留最佳知识库所需的最低分数比例 */
-    private static final double BEST_EFFORT_FLOOR_RATIO = 0.6;
-
     private final EmbeddingService embeddingService;
     private final MultimodalEmbeddingService multimodalEmbeddingService;
     private final DefaultModelConfigService defaultModelConfigService;
@@ -207,14 +204,9 @@ public class KbEmbeddingSelector {
             }
         }
 
-        // 5. 全部低于阈值时降级保留最佳知识库（分数不能太低），避免"不选知识库"
-        if (selected.isEmpty() && !scored.isEmpty() && scored.get(0).score >= threshold * BEST_EFFORT_FLOOR_RATIO) {
-            ScoredKb best = scored.get(0);
-            selected.add(new SelectedKb(best.info.id(), best.info.name(), best.score));
-            log.warn("知识库语义选择全部低于阈值 {}，降级保留最佳: {} ({})",
-                    threshold, best.info.name(), String.format("%.3f", best.score));
-        }
-
+        // 5. 全部低于阈值时不降级：明确判定为与知识库无关，不检索任何知识库。
+        // 注意：曾有过"降级保留最佳知识库"的兜底（分数 ≥ 阈值的 60%），它会把明显无关的问题
+        // （如实时天气、闲聊）误判为"相关"并强制触发知识库检索，已移除。
         if (selected.isEmpty()) {
             double maxScore = scored.isEmpty() ? 0 : scored.get(0).score;
             log.info("知识库语义选择: 无相关知识库, 最高相似度={}", String.format("%.3f", maxScore));
@@ -242,25 +234,33 @@ public class KbEmbeddingSelector {
 
     /**
      * 构建知识库的嵌入文本：名称 + 描述 + collection + 文档名列表
+     * <p>
+     * 文档名查询按知识库逐个 LIMIT {@link #MAX_DOC_NAMES_PER_KB} 条：
+     * 避免“先查全部启用文档再内存截断”在大知识库场景下的全量扫描开销。
+     * 知识库数量有限（≤ kb-selection-top-k），少量小查询优于一次全量查询。
+     * </p>
      */
     private List<KbText> buildKbTexts(List<KbInfo> kbInfos) {
         // 批量查询这些知识库下启用的文档名，增强选库准确性
         List<String> kbIds = kbInfos.stream().map(KbInfo::id).toList();
         Map<String, List<String>> docsByKb = new LinkedHashMap<>();
         if (CollUtil.isNotEmpty(kbIds)) {
-            try {
-                List<KnowledgeDocumentDO> docs = knowledgeDocumentMapper.selectList(
-                        Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
-                                .select(KnowledgeDocumentDO::getKbId, KnowledgeDocumentDO::getDocName)
-                                .in(KnowledgeDocumentDO::getKbId, kbIds)
-                                .eq(KnowledgeDocumentDO::getEnabled, 1)
-                                .orderByDesc(KnowledgeDocumentDO::getUpdateTime));
-                for (KnowledgeDocumentDO doc : docs) {
-                    if (StrUtil.isBlank(doc.getDocName())) continue;
-                    docsByKb.computeIfAbsent(doc.getKbId(), k -> new ArrayList<>()).add(doc.getDocName());
+            for (String kbId : kbIds) {
+                try {
+                    List<KnowledgeDocumentDO> docs = knowledgeDocumentMapper.selectList(
+                            Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
+                                    .select(KnowledgeDocumentDO::getKbId, KnowledgeDocumentDO::getDocName)
+                                    .eq(KnowledgeDocumentDO::getKbId, kbId)
+                                    .eq(KnowledgeDocumentDO::getEnabled, 1)
+                                    .orderByDesc(KnowledgeDocumentDO::getUpdateTime)
+                                    .last("LIMIT " + MAX_DOC_NAMES_PER_KB));
+                    for (KnowledgeDocumentDO doc : docs) {
+                        if (StrUtil.isBlank(doc.getDocName())) continue;
+                        docsByKb.computeIfAbsent(doc.getKbId(), k -> new ArrayList<>()).add(doc.getDocName());
+                    }
+                } catch (Exception e) {
+                    log.warn("查询知识库文档名失败，仅使用名称+描述进行选择: kbId={}", kbId, e);
                 }
-            } catch (Exception e) {
-                log.warn("查询知识库文档名失败，仅使用名称+描述进行选择: {}", e.getMessage());
             }
         }
 

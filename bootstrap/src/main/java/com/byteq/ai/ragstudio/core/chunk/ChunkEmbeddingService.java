@@ -1,6 +1,8 @@
 package com.byteq.ai.ragstudio.core.chunk;
 
+import com.byteq.ai.ragstudio.core.enums.CoreErrorCode;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
+import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.infra.embedding.EmbeddingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -103,12 +105,12 @@ public class ChunkEmbeddingService {
 
     private void applyEmbeddings(List<VectorChunk> chunks, List<List<Float>> vectors) {
         if (vectors == null || vectors.size() != chunks.size()) {
-            throw new ClientException("Embedding result size mismatch");
+            throw new ServiceException("Embedding result size mismatch", CoreErrorCode.EMBEDDING_RESULT_MISMATCH);
         }
         for (int i = 0; i < chunks.size(); i++) {
             List<Float> row = vectors.get(i);
             if (row == null) {
-                throw new ClientException("Embedding result missing, index: " + i);
+                throw new ServiceException("Embedding result missing, index: " + i, CoreErrorCode.EMBEDDING_RESULT_MISMATCH);
             }
             float[] vec = new float[row.size()];
             for (int j = 0; j < row.size(); j++) {

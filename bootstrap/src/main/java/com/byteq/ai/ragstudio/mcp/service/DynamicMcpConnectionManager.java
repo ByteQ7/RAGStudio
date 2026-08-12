@@ -101,6 +101,9 @@ public class DynamicMcpConnectionManager {
 
             McpSyncClient client = McpClient.sync(transport)
                     .clientInfo(new Implementation("ragstudio-bootstrap", "1.0.0"))
+                    // 握手与请求超时：目标服务 TCP 接受但永不回复时，避免请求线程无限挂起
+                    .initializationTimeout(Duration.ofSeconds(15))
+                    .requestTimeout(Duration.ofSeconds(30))
                     .build();
             client.initialize();
 
@@ -147,6 +150,11 @@ public class DynamicMcpConnectionManager {
         lock.lock();
         try {
             disconnectInternal(serverId);
+            // 清理无主的锁条目，防止 serverLocks 随 serverId 只增不减（内存泄漏）
+            // 仅当锁没有排队等待者且无活跃连接时才移除，避免与并发 connect 产生竞态
+            if (!lock.hasQueuedThreads() && !activeClients.containsKey(serverId)) {
+                serverLocks.remove(serverId, lock);
+            }
         } finally {
             lock.unlock();
         }

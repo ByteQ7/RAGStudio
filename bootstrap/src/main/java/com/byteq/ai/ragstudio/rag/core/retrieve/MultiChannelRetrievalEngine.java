@@ -135,7 +135,9 @@ public class MultiChannelRetrievalEngine {
                         // 设置超时防止单个通道挂起导致整个检索阻塞
                         return future.get(30, TimeUnit.SECONDS);
                     } catch (Exception e) {
-                        log.warn("检索通道执行超时或失败: {}", e.getMessage());
+                        // 取消未完成的通道任务，释放线程池资源，避免挂起任务长期占用线程
+                        future.cancel(true);
+                        log.warn("检索通道执行超时或失败，已取消任务: {}", e.getMessage());
                         return null;
                     }
                 })

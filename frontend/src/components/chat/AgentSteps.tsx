@@ -66,10 +66,10 @@ function StepDetail({ step }: { step: AgentStep }) {
    ========================================================================== */
 
 export const AgentSteps = React.memo(function AgentSteps({ steps, thinkingLevel = 0 }: AgentStepsProps) {
-  if (!steps || steps.length === 0) return null;
-
   // execution accordion 的折叠状态（默认全部折叠）
   const [expandedSteps, setExpandedSteps] = React.useState<Set<number>>(new Set());
+
+  if (!steps || steps.length === 0) return null;
 
   const toggle = (iteration: number) => {
     setExpandedSteps((prev) => {

@@ -12,6 +12,7 @@ import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentScheduleExecMapper;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentScheduleMapper;
 import com.byteq.ai.ragstudio.knowledge.enums.DocumentStatus;
+import com.byteq.ai.ragstudio.knowledge.enums.KnowledgeErrorCode;
 import com.byteq.ai.ragstudio.knowledge.enums.ScheduleRunStatus;
 import com.byteq.ai.ragstudio.knowledge.enums.SourceType;
 import com.byteq.ai.ragstudio.knowledge.handler.RemoteFileFetcher;
@@ -190,7 +191,7 @@ public class ScheduleRefreshProcessor {
 
                 KnowledgeBaseDO kbDO = kbMapper.selectById(state.document.getKbId());
                 if (kbDO == null) {
-                    throw new ClientException("知识库不存在");
+                    throw new ClientException("知识库不存在", KnowledgeErrorCode.KB_NOT_FOUND);
                 }
 
                 state.oldFileUrl = state.document.getFileUrl();
@@ -208,7 +209,7 @@ public class ScheduleRefreshProcessor {
 
                 KnowledgeDocumentDO runtimeDoc = documentMapper.selectById(state.document.getId());
                 if (runtimeDoc == null) {
-                    throw new ClientException("文档不存在");
+                    throw new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND);
                 }
                 runtimeDoc.setDocName(state.stored.getOriginalFilename());
                 runtimeDoc.setFileUrl(state.stored.getUrl());

@@ -48,4 +48,15 @@ public class ReasoningRouter {
         ReasoningConfig config = registry.getConfig(modelId);
         return config.getType() != ReasoningType.NONE;
     }
+
+    /**
+     * 判断模型是否使用 thinking.type 开关（DeepSeek 系）
+     * <p>DeepSeek 官方文档规定思考模式默认开启，非思考模式下必须显式
+     * 注入 {"thinking": {"type": "disabled"}}，否则模型默认思考导致
+     * 意外的思维链输出与成本消耗。</p>
+     */
+    public boolean usesThinkingSwitch(String modelId) {
+        ReasoningConfig config = registry.getConfig(modelId);
+        return config != null && "thinking.type".equals(config.getBooleanParam());
+    }
 }

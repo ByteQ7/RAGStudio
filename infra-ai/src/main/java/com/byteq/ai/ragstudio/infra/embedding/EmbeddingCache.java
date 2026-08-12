@@ -122,10 +122,32 @@ public class EmbeddingCache {
     }
 
     /**
-     * 构造缓存 key。维度为空时用占位符，避免与指定维度的结果混淆。
+     * 构造缓存 key。
+     * <p>
+     * 使用文本的 SHA-256 摘要替代原文，避免：1) 超长文本直接作为 Redis key 导致内存/网络
+     * 开销失控；2) 语料明文落 Redis（含用户 query 与文档内容，敏感数据不应以明文存储）。
+     * 维度为空时用占位符，避免与指定维度的结果混淆。
+     * </p>
      */
     public static String key(String modelId, Integer dimension, String text) {
-        return modelId + "|" + (dimension == null ? "-" : dimension) + "|" + text;
+        return modelId + "|" + (dimension == null ? "-" : dimension) + "|" + sha256(text);
+    }
+
+    private static String sha256(String text) {
+        try {
+            java.security.MessageDigest digest =
+                    java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(Character.forDigit((b >> 4) & 0xF, 16));
+                hex.append(Character.forDigit(b & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 在所有 JDK 实现中均存在，不会走到这里
+            throw new IllegalStateException("SHA-256 算法不可用", e);
+        }
     }
 
     /**

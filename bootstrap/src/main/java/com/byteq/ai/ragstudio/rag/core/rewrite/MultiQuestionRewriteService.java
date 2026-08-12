@@ -94,6 +94,13 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
 
         String normalizedQuestion = queryTermMappingService.normalize(userQuestion, knowledgeBaseIds);
 
+        // 简单问题跳过 LLM 改写：无历史 + 短问题 + 无指代/追问意图，
+        // 规则归一化 + 规则拆分已足够，省一次固定 LLM 往返
+        if (shouldSkipLlmRewrite(userQuestion, history)) {
+            log.info("查询改写跳过 LLM（简单问题）: question={}", userQuestion);
+            return new RewriteResult(normalizedQuestion, ruleBasedSplit(normalizedQuestion));
+        }
+
         return completeFollowUpIfNeeded(callLLMRewriteAndSplit(normalizedQuestion, userQuestion, history),
                 userQuestion, history);
     }
@@ -116,11 +123,48 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
         // 兜底：使用归一化结果 + 规则拆分
     }
 
+    /** 简单问题最大长度：超过该长度认为需要 LLM 改写（长问题含多意图、复杂限定词概率高） */
+    private static final int SIMPLE_QUESTION_MAX_LEN = 30;
+
+    /** 指代/追问/并列意图词：命中任一即认为需要 LLM 改写（规则拆分无法处理指代消解与语义扩展） */
+    private static final String[] REFERENCE_WORDS = {
+            "这个", "这些", "那个", "那些", "上述", "以上", "它们", "其中", "分别",
+            "继续", "再试", "另外", "其他", "还有", "相比", "区别"
+    };
+
+    /**
+     * 判断简单问题是否可跳过 LLM 改写：
+     * <ul>
+     *   <li>无对话历史（首轮问题）——多轮指代消解由 LLM 完成，历史非空时必须走 LLM</li>
+     *   <li>问题较短（≤ {@value #SIMPLE_QUESTION_MAX_LEN} 字）</li>
+     *   <li>不含指代/追问/并列意图词（规则拆分与归一化可覆盖）</li>
+     * </ul>
+     */
+    private boolean shouldSkipLlmRewrite(String userQuestion, List<ChatMessage> history) {
+        if (!Boolean.TRUE.equals(ragConfigProperties.getQueryRewriteSkipSimple())) {
+            return false;
+        }
+        if (history != null && !history.isEmpty()) {
+            return false;
+        }
+        if (StrUtil.isBlank(userQuestion) || userQuestion.length() > SIMPLE_QUESTION_MAX_LEN) {
+            return false;
+        }
+        if (FollowUpQueryUtil.isWeakFollowUp(userQuestion)) {
+            return false;
+        }
+        for (String word : REFERENCE_WORDS) {
+            if (userQuestion.contains(word)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // 调用 LLM 执行查询改写和多问句拆分，失败时使用归一化问题作为兜底
     private RewriteResult callLLMRewriteAndSplit(String normalizedQuestion,
                                                  String originalQuestion,
-                                                 List<ChatMessage> history) {
-        String systemPrompt = promptTemplateLoader.load(QUERY_REWRITE_AND_SPLIT_PROMPT_PATH);
+                                                 List<ChatMessage> history) {        String systemPrompt = promptTemplateLoader.load(QUERY_REWRITE_AND_SPLIT_PROMPT_PATH);
         ChatRequest req = buildRewriteRequest(systemPrompt, normalizedQuestion, history);
 
         try {

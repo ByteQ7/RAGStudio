@@ -54,7 +54,7 @@ public class SaTokenConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         // 注册 SaToken 登录拦截器
-        registry.addInterceptor(new SaInterceptor(handler -> {
+        SaInterceptor saInterceptor = new SaInterceptor(handler -> {
                     // 异步调度请求跳过登录检查（SSE 完成回调会触发 asyncDispatch，此时 SaToken 上下文已丢失）
                     ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
                     if (attrs != null) {
@@ -70,7 +70,10 @@ public class SaTokenConfig implements WebMvcConfigurer {
                     }
                     // 执行登录检查
                     StpUtil.checkLogin();
-                }))
+                })
+                // 启用注解式鉴权（@SaCheckRole 等，需 admin 角色的接口由注解声明）
+                .isAnnotation(true);
+        registry.addInterceptor(saInterceptor)
                 // 拦截所有路径
                 .addPathPatterns("/**")
                 // 排除认证相关路径和错误页面

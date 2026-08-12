@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.core.parser;
 
+import com.byteq.ai.ragstudio.core.enums.CoreErrorCode;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.knowledge.service.DocumentVisionExtractor;
 import lombok.RequiredArgsConstructor;
@@ -68,6 +69,20 @@ public class TikaDocumentParser implements DocumentParser {
     private static final int MAX_VISION_PAGES = 10;
 
     /**
+     * 视觉提取超时（毫秒）：LLM 视觉调用若挂起，不能长时间占用文档处理线程
+     */
+    private static final long VISION_TIMEOUT_MS = 120_000;
+
+    /**
+     * 视觉提取超时保护线程池（daemon，仅用于带超时的视觉调用）
+     */
+    private static final ExecutorService VISION_TIMEOUT_EXECUTOR = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "tika-vision-timeout-");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
      * PDF 表格提取器（Tabula 引擎），用于补充 Tika 在 PDF 表格检测上的不足。
      */
     private final PdfTableExtractor pdfTableExtractor;
@@ -125,10 +140,10 @@ public class TikaDocumentParser implements DocumentParser {
                 future.get(60, TimeUnit.SECONDS);
             } catch (TimeoutException e) {
                 log.warn("Tika 解析超时（60s），MIME 类型: {}，文件大小: {} bytes", mimeType, content.length);
-                throw new ServiceException("文档解析超时（超过 60 秒），请确认文件未损坏或尝试更小的文件");
+                throw new ServiceException("文档解析超时（超过 60 秒），请确认文件未损坏或尝试更小的文件", CoreErrorCode.DOCUMENT_PARSE_FAILED);
             } catch (Exception e) {
                 log.error("Tika 解析失败，MIME 类型: {}", mimeType, e);
-                throw new ServiceException("文档解析失败: " + e.getMessage());
+                throw new ServiceException("文档解析失败: " + e.getMessage(), CoreErrorCode.DOCUMENT_PARSE_FAILED);
             } finally {
                 executor.shutdownNow();
             }
@@ -140,7 +155,7 @@ public class TikaDocumentParser implements DocumentParser {
             throw e;
         } catch (Exception e) {
             log.error("Tika 解析失败，MIME 类型: {}", mimeType, e);
-            throw new ServiceException("文档解析失败: " + e.getMessage());
+            throw new ServiceException("文档解析失败: " + e.getMessage(), CoreErrorCode.DOCUMENT_PARSE_FAILED);
         }
     }
 
@@ -152,7 +167,7 @@ public class TikaDocumentParser implements DocumentParser {
             return TextCleanupUtil.cleanup(text);
         } catch (Exception e) {
             log.error("从文件中提取文本内容失败: {}", fileName, e);
-            throw new ServiceException("解析文件失败: " + fileName);
+            throw new ServiceException("解析文件失败: " + fileName, CoreErrorCode.DOCUMENT_PARSE_FAILED);
         }
     }
 
@@ -190,7 +205,7 @@ public class TikaDocumentParser implements DocumentParser {
             return markdown;
         } catch (Exception e) {
             log.error("读取文件流失败: {}", fileName, e);
-            throw new ServiceException("解析文件失败: " + fileName);
+            throw new ServiceException("解析文件失败: " + fileName, CoreErrorCode.DOCUMENT_PARSE_FAILED);
         }
     }
 
@@ -229,13 +244,16 @@ public class TikaDocumentParser implements DocumentParser {
      * </ol>
      */
     private String extractPdfWithVision(byte[] bytes, String fileName) {
-        List<Integer> imagePages = documentVisionExtractor.findPagesWithImages(bytes);
+        // 视觉 LLM 调用加超时保护，防止模型挂起时长时间占用文档处理线程
+        List<Integer> imagePages = withVisionTimeout(
+                () -> documentVisionExtractor.findPagesWithImages(bytes), List.of());
         boolean hasImages = !imagePages.isEmpty();
         boolean hasTables = pdfTableExtractor.hasTables(bytes);
 
         if (hasImages || hasTables) {
             log.info("PDF 包含表格或图片，使用多模态大模型提取: hasTables={}, hasImages={}", hasTables, hasImages);
-            String visionText = documentVisionExtractor.extractPdfWithVision(bytes);
+            String visionText = withVisionTimeout(
+                    () -> documentVisionExtractor.extractPdfWithVision(bytes), "");
             if (!visionText.isBlank()) {
                 return visionText;
             }
@@ -262,7 +280,9 @@ public class TikaDocumentParser implements DocumentParser {
                 md.append("## 第 ").append(i + 1).append(" 页\n\n");
                 String pageContent;
                 if (imagePages.contains(i)) {
-                    pageContent = documentVisionExtractor.extractPageTextWithVision(bytes, i);
+                    int pageIdx = i;
+                    pageContent = withVisionTimeout(
+                            () -> documentVisionExtractor.extractPageTextWithVision(bytes, pageIdx), "");
                     if (pageContent.isBlank()) {
                         pageContent = extractPdfPageText(document, i);
                     }
@@ -282,6 +302,20 @@ public class TikaDocumentParser implements DocumentParser {
         } catch (Exception e) {
             log.error("PDF 逐页提取失败", e);
             return tikaText;
+        }
+    }
+
+    // 带超时执行的视觉提取调用，超时/异常时返回 fallback，避免 LLM 挂起占用处理线程
+    private <T> T withVisionTimeout(java.util.concurrent.Callable<T> task, T fallback) {
+        try {
+            Future<T> future = VISION_TIMEOUT_EXECUTOR.submit(task);
+            return future.get(VISION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.warn("视觉提取超时（{}ms），使用降级结果", VISION_TIMEOUT_MS);
+            return fallback;
+        } catch (Exception e) {
+            log.warn("视觉提取异常，使用降级结果: {}", e.getMessage());
+            return fallback;
         }
     }
 

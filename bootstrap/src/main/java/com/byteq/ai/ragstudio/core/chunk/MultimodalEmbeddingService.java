@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.core.chunk;
 
-import com.byteq.ai.ragstudio.framework.exception.RemoteException;
+import com.byteq.ai.ragstudio.aimodel.enums.AiModelErrorCode;
+import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.http.ModelHttpClient;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
@@ -41,7 +42,7 @@ public class MultimodalEmbeddingService {
         } else {
             target = modelSelector.selectEmbeddingCandidates().stream()
                     .findFirst()
-                    .orElseThrow(() -> new RemoteException("无可用的 Embedding 模型"));
+                    .orElseThrow(() -> new ServiceException("无可用的 Embedding 模型", AiModelErrorCode.EMBEDDING_MODEL_UNAVAILABLE));
         }
 
         ModelProtocol protocol = protocolRegistry.get(target.protocolName());
@@ -61,11 +62,11 @@ public class MultimodalEmbeddingService {
 
     private ModelTarget resolveTarget(String modelId) {
         if (!StringUtils.hasText(modelId)) {
-            throw new RemoteException("Embedding 模型ID不能为空");
+            throw new ServiceException("Embedding 模型ID不能为空", AiModelErrorCode.EMBEDDING_MODEL_ID_EMPTY);
         }
         return modelSelector.selectEmbeddingCandidates().stream()
                 .filter(target -> modelId.equals(target.id()))
                 .findFirst()
-                .orElseThrow(() -> new RemoteException("Embedding 模型不可用: " + modelId));
+                .orElseThrow(() -> new ServiceException("Embedding 模型不可用: " + modelId, AiModelErrorCode.EMBEDDING_MODEL_UNAVAILABLE));
     }
 }

@@ -15,8 +15,10 @@ public class AiProviderVO {
     private String name;
     private String displayName;
     private String baseUrl;
-    /** API 密钥 */
+    /** API 密钥（仅返回掩码，完整密钥不回传前端） */
     private String apiKey;
+    /** 是否已配置 API 密钥 */
+    private Boolean hasApiKey;
     private Map<String, String> endpoints;
     private Integer enabled;
     /** 供应商图标 URL */

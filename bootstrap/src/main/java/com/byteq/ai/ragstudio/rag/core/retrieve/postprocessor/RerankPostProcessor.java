@@ -136,10 +136,12 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
                                                         String preferredModelId) {
         List<RetrievedChunk> rerankedText;
         if (!textChunks.isEmpty()) {
-            rerankedText = executeRerank(query, textChunks, textChunks.size(), preferredModelId);
+            // 远程 Rerank 前先做全局候选截断，避免多知识库粗召膨胀导致远程输入线性放大
+            List<RetrievedChunk> rerankInput = limitRerankCandidates(textChunks);
+            rerankedText = executeRerank(query, rerankInput, rerankInput.size(), preferredModelId);
             int finalTextCount = computeDynamicTopK(textChunks.size(), rerankedText);
             rerankedText = rerankedText.subList(0, Math.min(finalTextCount, rerankedText.size()));
-            log.info("文本 Rerank 完成: 输入 {} 个, 重排后取前 {} 个", textChunks.size(), rerankedText.size());
+            log.info("文本 Rerank 完成: 输入 {} 个, 重排后取前 {} 个", rerankInput.size(), rerankedText.size());
         } else {
             rerankedText = List.of();
         }
@@ -165,13 +167,30 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
             return allChunks;
         }
 
-        List<RetrievedChunk> reranked = executeRerank(query, allChunks, allChunks.size(), preferredModelId);
+        List<RetrievedChunk> rerankInput = limitRerankCandidates(allChunks);
+        List<RetrievedChunk> reranked = executeRerank(query, rerankInput, rerankInput.size(), preferredModelId);
         int finalCount = computeDynamicTopK(allChunks.size(), reranked);
         List<RetrievedChunk> result = reranked.subList(0, Math.min(finalCount, reranked.size()));
 
         log.info("多模态 Rerank 完成: 输入 {} 个(TEXT:{}+IMAGE:{}), 重排后取前 {} 个",
-                allChunks.size(), textChunks.size(), imageChunks.size(), result.size());
+                rerankInput.size(), textChunks.size(), imageChunks.size(), result.size());
         return result;
+    }
+
+    /**
+     * 远程 Rerank 前全局候选截断：按分数降序保留最多 {@code max-rerank-candidates} 条，
+     * 避免多知识库场景下粗召候选膨胀（per-kb-overflow-cap × KB 数）导致远程调用输入量线性放大。
+     */
+    private List<RetrievedChunk> limitRerankCandidates(List<RetrievedChunk> candidates) {
+        int cap = searchProperties.getMaxRerankCandidates();
+        if (cap <= 0 || candidates.size() <= cap) {
+            return candidates;
+        }
+        List<RetrievedChunk> sorted = new ArrayList<>(candidates);
+        sorted.sort(Comparator.comparingDouble((RetrievedChunk c) -> c.getScore() != null ? -c.getScore() : 0));
+        List<RetrievedChunk> limited = sorted.subList(0, cap);
+        log.info("Rerank 候选截断: {} -> {}（max-rerank-candidates={}）", candidates.size(), cap, cap);
+        return limited;
     }
 
     private List<RetrievedChunk> executeRerank(String query, List<RetrievedChunk> candidates,

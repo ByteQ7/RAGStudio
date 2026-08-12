@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.ingestion.strategy.fetcher;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.ingestion.domain.context.DocumentSource;
 import com.byteq.ai.ragstudio.ingestion.domain.enums.SourceType;
+import com.byteq.ai.ragstudio.ingestion.enums.IngestionErrorCode;
 import com.byteq.ai.ragstudio.ingestion.util.MimeTypeDetector;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
@@ -70,7 +71,8 @@ public class S3Fetcher implements DocumentFetcher {
             }
             if (bytes.length > maxFileSize) {
                 throw new ServiceException(
-                        "S3文件大小超过限制: " + maxFileSize + " bytes (100MB), 来源: " + location);
+                        "S3文件大小超过限制: " + maxFileSize + " bytes (100MB), 来源: " + location,
+                        IngestionErrorCode.FILE_TOO_LARGE);
             }
 
             String fileName = source.getFileName();

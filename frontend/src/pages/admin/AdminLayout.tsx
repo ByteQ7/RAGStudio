@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Bell,
-  ClipboardList,
   Database,
-  FolderKanban,
   LayoutDashboard,
   Lightbulb,
   Image,
@@ -23,8 +20,7 @@ import {
   Users,
   Workflow,
   Zap,
-  BrainCircuit,
-  X
+  BrainCircuit
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";

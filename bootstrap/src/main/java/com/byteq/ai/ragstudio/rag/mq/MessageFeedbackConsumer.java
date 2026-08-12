@@ -33,7 +33,12 @@ public class MessageFeedbackConsumer implements RocketMQListener<MessageWrapper<
      */
     @Override
     public void onMessage(MessageWrapper<MessageFeedbackEvent> message) {
-        MessageFeedbackEvent event = message.getBody();
+        MessageFeedbackEvent event = message == null ? null : message.getBody();
+        if (event == null) {
+            // 脏消息/反序列化失败时直接跳过，避免 NPE 触发 RocketMQ 无限重试形成死信风暴
+            log.warn("收到空反馈事件，已跳过: message={}", message == null ? null : message.getKeys());
+            return;
+        }
 
         log.info("[消费者] 开始处理点赞/点踩事件，messageId: {}, userId: {}, vote: {}, keys: {}",
                 event.getMessageId(), event.getUserId(), event.getVote(), message.getKeys());

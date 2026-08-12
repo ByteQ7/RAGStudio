@@ -63,6 +63,9 @@ public class DashboardServiceImpl implements DashboardService {
     private static final String GRANULARITY_DAY = "day";
     private static final String GRANULARITY_HOUR = "hour";
     private static final long SLOW_LATENCY_THRESHOLD_MS = 20000L;
+    /** 时间窗口上限：90 天（小时窗口上限 2160h） */
+    private static final long MAX_WINDOW_DAYS = 90L;
+    private static final long MAX_WINDOW_HOURS = MAX_WINDOW_DAYS * 24L;
     private static final DateTimeFormatter HOUR_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final UserMapper userMapper;
@@ -108,21 +111,21 @@ public class DashboardServiceImpl implements DashboardService {
     @Override
     public DashboardPerformanceVO loadPerformance(String window) {
         WindowRange range = resolveWindowRange(window, Duration.ofHours(24));
-        List<Long> durations = listDurations(range.start, range.end);
-        long avgLatency = average(durations);
-        long p95Latency = percentile(durations);
+        PerformanceStats stats = statsDurations(range.start, range.end);
+        long avgLatency = stats.avgMs;
+        long p95Latency = stats.p95Ms;
 
         long success = countTraceRuns(range.start, range.end, STATUS_SUCCESS);
         long error = countTraceRuns(range.start, range.end, STATUS_ERROR);
         long total = success + error;
         long assistantCount = countAssistantMessages(range.start, range.end);
         long noDocCount = countNoDocMessages(range.start, range.end);
-        long slowCount = durations.stream().filter(duration -> duration > SLOW_LATENCY_THRESHOLD_MS).count();
+        long slowCount = stats.slowCount;
 
         double successRate = total == 0 ? 0.0 : round1((success * 100.0) / total);
         double errorRate = total == 0 ? 0.0 : round1((error * 100.0) / total);
         double noDocRate = assistantCount == 0 ? 0.0 : round1((noDocCount * 100.0) / assistantCount);
-        double slowRate = durations.isEmpty() ? 0.0 : round1((slowCount * 100.0) / durations.size());
+        double slowRate = stats.count == 0 ? 0.0 : round1((slowCount * 100.0) / stats.count);
 
         return DashboardPerformanceVO.builder()
                 .window(range.windowLabel)
@@ -323,27 +326,39 @@ public class DashboardServiceImpl implements DashboardService {
         return messageMapper.selectCount(wrapper);
     }
 
-    // 获取指定时间范围内所有成功运行的耗时列表（毫秒），过滤掉无效值
-    private List<Long> listDurations(Date start, Date end) {
+    // 通过 SQL 聚合统计成功运行的耗时指标（平均值/P95/慢请求数/总数），
+    // 避免将窗口内全部 duration_ms 载入内存（大数据量时 OOM 风险）
+    private PerformanceStats statsDurations(Date start, Date end) {
         QueryWrapper<RagTraceRunDO> wrapper = new QueryWrapper<>();
-        wrapper.select("duration_ms")
+        wrapper.select(
+                        "COALESCE(AVG(duration_ms), 0) AS avg_ms",
+                        "COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms), 0) AS p95_ms",
+                        "COALESCE(SUM(CASE WHEN duration_ms > " + SLOW_LATENCY_THRESHOLD_MS + " THEN 1 ELSE 0 END), 0) AS slow_cnt",
+                        "COUNT(*) AS total_cnt")
                 .ge("start_time", start)
                 .lt("start_time", end)
                 .eq("status", STATUS_SUCCESS);
-        List<Object> results = traceRunMapper.selectObjs(wrapper);
-        if (results == null || results.isEmpty()) {
-            return Collections.emptyList();
+        List<Map<String, Object>> rows = traceRunMapper.selectMaps(wrapper);
+        if (rows == null || rows.isEmpty()) {
+            return new PerformanceStats(0, 0, 0, 0);
         }
-        List<Long> durations = new ArrayList<>();
-        for (Object value : results) {
-            if (value instanceof Number number) {
-                long duration = number.longValue();
-                if (duration > 0) {
-                    durations.add(duration);
-                }
-            }
+        Map<String, Object> row = rows.get(0);
+        return new PerformanceStats(
+                toLong(row.get("avg_ms")),
+                toLong(row.get("p95_ms")),
+                toLong(row.get("slow_cnt")),
+                toLong(row.get("total_cnt")));
+    }
+
+    // 将聚合结果安全转换为 long
+    private long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
         }
-        return durations;
+        return 0L;
+    }
+
+    private record PerformanceStats(long avgMs, long p95Ms, long slowCount, long count) {
     }
 
     // 从 selectMaps 查询结果中提取 count 聚合值
@@ -671,30 +686,6 @@ public class DashboardServiceImpl implements DashboardService {
         return points;
     }
 
-    // 计算数值列表的平均值，四舍五入到整数
-    private long average(List<Long> values) {
-        if (values == null || values.isEmpty()) {
-            return 0L;
-        }
-        long sum = 0L;
-        for (Long value : values) {
-            sum += value;
-        }
-        return Math.round(sum / (double) values.size());
-    }
-
-    // 计算数值列表的 P95 百分位值
-    private long percentile(List<Long> values) {
-        if (values == null || values.isEmpty()) {
-            return 0L;
-        }
-        List<Long> sorted = new ArrayList<>(values);
-        sorted.sort(Long::compareTo);
-        int index = (int) Math.ceil(sorted.size() * 0.95) - 1;
-        index = Math.max(0, Math.min(index, sorted.size() - 1));
-        return sorted.get(index);
-    }
-
     // 将数值四舍五入保留一位小数
     private double round1(double value) {
         return Math.round(value * 10.0) / 10.0;
@@ -761,7 +752,8 @@ public class DashboardServiceImpl implements DashboardService {
                 window == null ? formatDuration(fallback) : window, "prev_" + (window == null ? formatDuration(fallback) : window));
     }
 
-    // 解析时间窗口字符串（如 "24h"、"7d"）为 Duration，解析失败使用默认值
+    // 解析时间窗口字符串（如 "24h"、"7d"）为 Duration，解析失败使用默认值；
+    // 窗口上限 90 天，防止异常大窗口导致查询与聚合开销失控
     private Duration parseWindow(String window, Duration fallback) {
         if (window == null || window.isBlank()) {
             return fallback;
@@ -769,11 +761,11 @@ public class DashboardServiceImpl implements DashboardService {
         String normalized = window.trim().toLowerCase();
         if (normalized.endsWith("h")) {
             long hours = parseNumber(normalized.substring(0, normalized.length() - 1), fallback.toHours());
-            return Duration.ofHours(hours);
+            return Duration.ofHours(Math.min(hours, MAX_WINDOW_HOURS));
         }
         if (normalized.endsWith("d")) {
             long days = parseNumber(normalized.substring(0, normalized.length() - 1), fallback.toDays());
-            return Duration.ofDays(days);
+            return Duration.ofDays(Math.min(days, MAX_WINDOW_DAYS));
         }
         return fallback;
     }

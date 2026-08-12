@@ -1,9 +1,6 @@
 package com.byteq.ai.ragstudio.rag.service.handler;
 
 import cn.hutool.core.util.StrUtil;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentStep;
 import com.byteq.ai.ragstudio.rag.dao.entity.ConversationDO;
 import com.byteq.ai.ragstudio.rag.dto.AgentStepPayload;
@@ -27,6 +24,7 @@ public class StreamChatEventHandler implements StreamCallback {
 
     private final int messageChunkSize;
     private final SseEmitterSender sender;
+    private final org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter;
     private final String conversationId;
     private final ConversationMemoryService memoryService;
     private final ConversationGroupService conversationGroupService;
@@ -35,6 +33,7 @@ public class StreamChatEventHandler implements StreamCallback {
     private final StreamTaskManager taskManager;
     private final boolean sendTitleOnComplete;
     private final StringBuffer answer = new StringBuffer();
+    /** 思考内容缓冲：仅思考模式（thinkingLevel>0）累积，用于按 DeepSeek 官方要求回传 reasoning_content */
     private final StringBuffer thinking = new StringBuffer();
     private long thinkingStartMs;
     private int thinkingDurationSeconds;
@@ -42,6 +41,8 @@ public class StreamChatEventHandler implements StreamCallback {
     private String citationsJson;
     private int thinkingLevel;
     private java.util.List<String> retrievedImageUrls;
+    /** 是否已正常完成（onComplete 置位）：区分"正常收尾"与"连接提前断开/超时"，避免误取消 */
+    private final java.util.concurrent.atomic.AtomicBoolean completedNormally = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     public void setThinkingLevel(int level) { this.thinkingLevel = level; }
 
@@ -52,6 +53,7 @@ public class StreamChatEventHandler implements StreamCallback {
      */
     public StreamChatEventHandler(StreamChatHandlerParams params) {
         this.sender = new SseEmitterSender(params.getEmitter());
+        this.emitter = params.getEmitter();
         this.conversationId = params.getConversationId();
         this.taskId = params.getTaskId();
         this.memoryService = params.getMemoryService();
@@ -73,6 +75,24 @@ public class StreamChatEventHandler implements StreamCallback {
     private void initialize() {
         sender.sendEvent(SSEEventType.META.value(), new MetaPayload(conversationId, taskId));
         taskManager.register(taskId, sender, this::buildCompletionPayloadOnCancel);
+        // 客户端断开 / SSE 超时：中断 Agent 流并释放限流线程与模型连接，
+        // 避免模型继续生成到完成而白白占用 chatEntryExecutor 线程
+        emitter.onCompletion(() -> cancelOnDisconnect());
+        emitter.onTimeout(() -> cancelOnDisconnect());
+        emitter.onError(e -> cancelOnDisconnect());
+    }
+
+    /**
+     * 连接提前关闭/超时时的任务取消。
+     * 正常完成路径（onComplete）已置 completedNormally 并先 unregister，不会误取消；
+     * 取消执行中 taskManager.cancel 会中断 Agent 推理、保存已生成内容并发送 CANCEL/DONE。
+     */
+    private void cancelOnDisconnect() {
+        if (completedNormally.get()) {
+            return;
+        }
+        log.info("SSE 连接提前关闭/超时，取消任务: taskId={}", taskId);
+        taskManager.cancel(taskId);
     }
 
     /**
@@ -137,7 +157,9 @@ public class StreamChatEventHandler implements StreamCallback {
         if (thinkingStartMs == 0) {
             thinkingStartMs = System.currentTimeMillis();
         }
-        thinking.append(chunk);
+        if (thinkingLevel > 0) {
+            thinking.append(chunk);
+        }
         sendChunked(TYPE_THINK, chunk);
     }
 
@@ -169,82 +191,10 @@ public class StreamChatEventHandler implements StreamCallback {
         this.retrievedImageUrls = s3Urls;
     }
 
-    /**
-     * 将 Agent 推理步骤嵌入到 assistant 内容中
-     * <p>解析 agentStepsJson 中的步骤信息，格式化为可读的推理链追加到消息内容尾部。</p>
-     *
-     * @param content        原始 assistant 内容
-     * @param agentStepsJson Agent 步骤 JSON 数组字符串
-     * @return 嵌入推理链后的内容
-     */
-    private String enrichWithAgentTrace(String content, String agentStepsJson) {
-        if (StrUtil.isBlank(agentStepsJson)) {
-            return content;
-        }
-        try {
-            JsonArray steps = JsonParser.parseString(agentStepsJson).getAsJsonArray();
-            if (steps.isEmpty()) {
-                return content;
-            }
-            StringBuilder sb = new StringBuilder(content);
-            sb.append("\n\n---\n").append("🧠 **Agent 推理过程**\n\n");
-            for (int i = 0; i < steps.size(); i++) {
-                JsonObject s = steps.get(i).getAsJsonObject();
-                int iteration = s.get("iteration").getAsInt();
-                sb.append("> **步骤 ").append(iteration + 1).append("**");
-
-                String plan = getJsonString(s, "plan");
-                if (plan != null) {
-                    sb.append("\n> 📋 ").append(plan.replace("\n", "\n> "));
-                }
-                String thought = getJsonString(s, "thought");
-                if (thought != null) {
-                    sb.append("\n> 🤔 ").append(thought.replace("\n", "\n> "));
-                }
-
-                String action = s.has("action") && !s.get("action").isJsonNull() ? s.get("action").getAsString() : null;
-                if ("TOOL_CALL".equals(action)) {
-                    String toolName = getJsonString(s, "toolName");
-                    if (toolName != null) {
-                        sb.append("\n> 🔧 调用工具: `").append(toolName).append("`");
-                    }
-                    String observation = getJsonString(s, "observation");
-                    if (observation != null) {
-                        String truncated = observation.length() > 200 ? observation.substring(0, 200) + "…" : observation;
-                        sb.append("\n> 📝 ").append(truncated.replace("\n", "\n> "));
-                    }
-                } else if ("FINISH".equals(action)) {
-                    sb.append("\n> ✅ 完成回答");
-                } else if ("ERROR".equals(action)) {
-                    sb.append("\n> ❌ 执行出错");
-                }
-
-                if (s.has("durationMs") && !s.get("durationMs").isJsonNull()) {
-                    long dur = s.get("durationMs").getAsLong();
-                    if (dur > 0) {
-                        sb.append(" （").append(dur).append("ms）");
-                    }
-                }
-                sb.append("\n\n");
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            log.warn("嵌入 Agent 推理链失败", e);
-            return content;
-        }
-    }
-
-    /**
-     * 安全获取 JSON 字符串字段
-     */
-    private static String getJsonString(JsonObject obj, String key) {
-        if (!obj.has(key) || obj.get(key).isJsonNull()) return null;
-        String val = obj.get(key).getAsString();
-        return val.isEmpty() ? null : val;
-    }
-
     @Override
     public void onComplete() {
+        // 先置正常完成标志：后续 sender.complete() 触发的 onCompletion 不再取消任务
+        completedNormally.set(true);
         log.info("onComplete called, thinkingLevel={}", thinkingLevel);
         if (taskManager.isCancelled(taskId)) {
             sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
@@ -280,6 +230,20 @@ public class StreamChatEventHandler implements StreamCallback {
             return;
         }
         taskManager.unregister(taskId);
+        // 错误路径同样持久化已产生的回答内容，避免用户已看到的内容在历史中永久缺失
+        // （与取消路径 buildCompletionPayloadOnCancel 行为保持一致）
+        try {
+            String content = answer.toString();
+            if (StrUtil.isNotBlank(content)) {
+                String thinkingContent = thinking.length() == 0 ? null : thinking.toString();
+                ChatMessage message = ChatMessage.assistant(content, thinkingContent,
+                        resolveThinkingDuration(), agentStepsJson, citationsJson);
+                message.setThinkingLevel(thinkingLevel);
+                memoryService.append(conversationId, userId, message);
+            }
+        } catch (Exception e) {
+            log.error("错误时持久化消息失败，conversationId：{}", conversationId, e);
+        }
         sender.fail(t);
     }
 

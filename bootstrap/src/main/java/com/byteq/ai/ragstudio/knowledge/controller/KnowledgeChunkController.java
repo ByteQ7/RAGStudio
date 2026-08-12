@@ -9,6 +9,7 @@ import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeChunkPageReq
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeChunkUpdateRequest;
 import com.byteq.ai.ragstudio.knowledge.controller.vo.KnowledgeChunkVO;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeChunkService;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 分片是知识库中向量检索的最小单元，由文档经过分块策略处理后生成。
  */
 @RestController
+@SaCheckRole("admin")
 @RequiredArgsConstructor
 @Validated
 public class KnowledgeChunkController {

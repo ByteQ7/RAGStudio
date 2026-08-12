@@ -210,9 +210,22 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 .logs(new ArrayList<>())
                 .build();
 
-        IngestionContext result = engine.execute(pipeline, context);
-        saveNodeLogs(task, pipeline, result.getLogs());
-        updateTaskFromContext(task, result);
+        IngestionContext result;
+        try {
+            result = engine.execute(pipeline, context);
+            saveNodeLogs(task, pipeline, result.getLogs());
+            updateTaskFromContext(task, result);
+        } catch (Exception e) {
+            // 引擎内部校验（环检测/缺失节点等）或执行异常必须兜底更新任务状态，
+            // 否则任务将永久停留在 RUNNING，用户无法重试
+            log.error("摄取任务执行异常，任务标记为失败: taskId={}, pipelineId={}", task.getId(), pipelineId, e);
+            task.setStatus(IngestionStatus.FAILED.getValue());
+            task.setErrorMessage(e.getMessage());
+            task.setCompletedAt(new Date());
+            task.setUpdatedBy(UserContext.getUsername());
+            taskMapper.updateById(task);
+            throw e;
+        }
 
         // 引擎执行成功后，创建知识库文档和分块记录
         if (result.getStatus() == IngestionStatus.COMPLETED

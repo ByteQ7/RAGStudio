@@ -5,6 +5,7 @@ import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeDocumentDO;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.byteq.ai.ragstudio.knowledge.enums.DocumentStatus;
+import com.byteq.ai.ragstudio.knowledge.enums.KnowledgeErrorCode;
 import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -83,7 +84,7 @@ public class DocumentStatusHelper {
                 .build();
         int updated = documentMapper.updateById(update);
         if (updated == 0) {
-            throw new ClientException("文档不存在");
+            throw new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND);
         }
     }
 

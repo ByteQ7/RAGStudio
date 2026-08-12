@@ -24,7 +24,7 @@ import java.util.Map;
  * <h3>参数注入路径</h3>
  * <ul>
  *   <li>DeepSeek 等 → 原始 OkHttp 路径（buildRequestBody），所有类型参数均可注入</li>
- *   <li>OpenAI 等 → LangChain4j 标准路径（OpenAiChatRequestParameters），仅支持 reasoning_effort</li>
+ *   <li>OpenAI 等 → AgentScope OpenAIChatModel（GenerateOptions.reasoningEffort）</li>
  * </ul>
  */
 @Slf4j

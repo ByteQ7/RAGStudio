@@ -1,8 +1,9 @@
 package com.byteq.ai.ragstudio.rag.core.skill;
 
 import cn.hutool.core.util.StrUtil;
-import com.byteq.ai.ragstudio.rag.core.agent.Tool;
-import com.byteq.ai.ragstudio.rag.core.agent.ToolResult;
+import com.byteq.ai.ragstudio.rag.core.tool.Tool;
+import com.byteq.ai.ragstudio.rag.core.tool.ToolNameUtil;
+import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolExecutor;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
 import com.google.gson.Gson;
@@ -30,9 +31,47 @@ public class ToolReaderTool implements Tool {
     private final SkillLoader skillLoader;
     private final McpToolRegistry mcpToolRegistry;
 
+    /** 原始工具名 → Agent 注册的规范化名映射（null 时退回静态规范化） */
+    private final Map<String, String> exposedNameMapping;
+
     public ToolReaderTool(SkillLoader skillLoader, McpToolRegistry mcpToolRegistry) {
+        this(skillLoader, mcpToolRegistry, null);
+    }
+
+    public ToolReaderTool(SkillLoader skillLoader, McpToolRegistry mcpToolRegistry,
+                          Map<String, String> exposedNameMapping) {
         this.skillLoader = skillLoader;
         this.mcpToolRegistry = mcpToolRegistry;
+        this.exposedNameMapping = exposedNameMapping;
+    }
+
+    /**
+     * 原始工具名 → Agent 中注册的规范化名（与模型可见/可调用的名称一致）：
+     * MCP/SKILL 工具名可能含中文、点号等非法字符，注册时已被清洗（见 ProjectToolAdapter），
+     * 此处必须展示同一名称，否则模型会尝试调用不存在的原始名。
+     */
+    private String exposedName(String original) {
+        if (exposedNameMapping != null) {
+            String mapped = exposedNameMapping.get(original);
+            if (mapped != null) {
+                return mapped;
+            }
+        }
+        return ToolNameUtil.sanitize(original);
+    }
+
+    /** 按规范化名或原始名查找 SKILL */
+    private SkillDefinition findSkill(String toolName) {
+        SkillDefinition direct = skillLoader.getSkill(toolName);
+        if (direct != null) {
+            return direct;
+        }
+        for (SkillDefinition def : skillLoader.getAllSkills()) {
+            if (exposedName(def.getName()).equalsIgnoreCase(toolName)) {
+                return def;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -100,7 +139,7 @@ public class ToolReaderTool implements Tool {
             String name = tool.name() != null ? tool.name().toLowerCase() : "";
             String desc = tool.description() != null ? tool.description().toLowerCase() : "";
             if (name.contains(keyword) || desc.contains(keyword)) {
-                mcpMatches.add("- " + exe.getToolDefinition().name() + ": " +
+                mcpMatches.add("- " + exposedName(exe.getToolDefinition().name()) + ": " +
                     truncate(exe.getToolDefinition().description(), 100));
                 count++;
             }
@@ -115,7 +154,7 @@ public class ToolReaderTool implements Tool {
             String name = def.getName() != null ? def.getName().toLowerCase() : "";
             String desc = def.getDescription() != null ? def.getDescription().toLowerCase() : "";
             if (name.contains(keyword) || desc.contains(keyword)) {
-                skillMatches.add("- " + def.getName() + ": " + truncate(def.getDescription(), 100));
+                skillMatches.add("- " + exposedName(def.getName()) + ": " + truncate(def.getDescription(), 100));
                 count++;
             }
         }
@@ -148,11 +187,12 @@ public class ToolReaderTool implements Tool {
 
         // 查 MCP
         List<McpToolExecutor> mcpExecutors = mcpToolRegistry.listAllExecutors().stream()
-            .filter(e -> e.getToolDefinition().name().equalsIgnoreCase(toolName))
+            .filter(e -> e.getToolDefinition().name().equalsIgnoreCase(toolName)
+                    || exposedName(e.getToolDefinition().name()).equalsIgnoreCase(toolName))
             .toList();
         for (McpToolExecutor exe : mcpExecutors) {
             var tool = exe.getToolDefinition();
-            sb.append("=== MCP 工具: ").append(tool.name()).append(" ===\n");
+            sb.append("=== MCP 工具: ").append(exposedName(tool.name())).append(" ===\n");
             if (tool.description() != null) sb.append("描述: ").append(tool.description()).append("\n");
             if (tool.inputSchema() != null) {
                 sb.append("参数: ").append(GSON.toJson(tool.inputSchema().properties())).append("\n");
@@ -161,27 +201,50 @@ public class ToolReaderTool implements Tool {
         }
 
         // 查 SKILL
-        SkillDefinition def = skillLoader.getSkill(toolName);
+        SkillDefinition def = findSkill(toolName);
         if (def != null) {
-            sb.append("=== SKILL: ").append(def.getName()).append(" ===\n");
+            sb.append("=== SKILL: ").append(exposedName(def.getName())).append(" ===\n");
             if (def.getDescription() != null) sb.append("描述: ").append(def.getDescription()).append("\n");
+            if (StrUtil.isNotBlank(def.getVersion())) sb.append("版本: ").append(def.getVersion()).append("\n");
+            if (StrUtil.isNotBlank(def.getLicense())) sb.append("许可证: ").append(def.getLicense()).append("\n");
+            if (StrUtil.isNotBlank(def.getType())) sb.append("执行类型: ").append(def.getType()).append("\n");
+
             if (StrUtil.isNotBlank(def.getSkillDoc())) {
                 String doc = def.getSkillDoc();
                 if (doc.length() > MAX_CONTENT_LENGTH) doc = doc.substring(0, MAX_CONTENT_LENGTH) + "\n...（截断）";
-                sb.append("\n--- SKILL.md ---\n").append(doc).append("\n");
+                sb.append("\n<skill_content name=\"").append(exposedName(def.getName())).append("\">\n")
+                        .append(doc)
+                        .append("\nSkill directory: ").append(def.getSkillDir())
+                        .append("\nRelative paths in this skill are relative to the skill directory.")
+                        .append("\n</skill_content>\n");
+            } else {
+                sb.append("\n（该技能无 SKILL.md 指令正文）\n");
             }
+
+            // 资源清单（不读取内容，由模型按需 list/read）
             List<String> scripts = def.getScriptFiles();
-            if (scripts != null && !scripts.isEmpty()) sb.append("\n脚本: ").append(String.join(", ", scripts));
             List<String> refs = def.getReferenceFiles();
-            if (refs != null && !refs.isEmpty()) sb.append("\n参考资料: ").append(String.join(", ", refs));
-            sb.append("\n");
+            if ((scripts != null && !scripts.isEmpty()) || (refs != null && !refs.isEmpty())) {
+                sb.append("\n<skill_resources>\n");
+                if (scripts != null) {
+                    for (String s : scripts) {
+                        sb.append("  <file>scripts/").append(s).append("</file>\n");
+                    }
+                }
+                if (refs != null) {
+                    for (String r : refs) {
+                        sb.append("  <file>references/").append(r).append("</file>\n");
+                    }
+                }
+                sb.append("</skill_resources>\n");
+            }
         }
 
         if (sb.isEmpty()) {
             // Not found in either, suggest available tools
             List<String> allNames = new ArrayList<>();
-            mcpToolRegistry.listAllExecutors().forEach(e -> allNames.add("[MCP] " + e.getToolDefinition().name()));
-            skillLoader.getAllSkills().forEach(s -> allNames.add("[SKILL] " + s.getName()));
+            mcpToolRegistry.listAllExecutors().forEach(e -> allNames.add("[MCP] " + exposedName(e.getToolDefinition().name())));
+            skillLoader.getAllSkills().forEach(s -> allNames.add("[SKILL] " + exposedName(s.getName())));
             return ToolResult.failure(TOOL_NAME, "未找到工具: " + toolName + "。可用: " + String.join(", ", allNames));
         }
 
@@ -194,10 +257,11 @@ public class ToolReaderTool implements Tool {
                                     java.util.function.BiFunction<SkillDefinition, Map<String, Object>, ToolResult> fn) {
         String skillName = params.get("skill") instanceof String s ? s.trim() : "";
         if (StrUtil.isBlank(skillName)) return ToolResult.failure(TOOL_NAME, "缺少 skill 参数");
-        SkillDefinition def = skillLoader.getSkill(skillName);
+        SkillDefinition def = findSkill(skillName);
         if (def == null) {
             return ToolResult.failure(TOOL_NAME, "未找到 SKILL: " + skillName +
-                "。可用 SKILL: " + skillLoader.getAllSkills().stream().map(SkillDefinition::getName).collect(Collectors.joining(", ")));
+                "。可用 SKILL: " + skillLoader.getAllSkills().stream()
+                    .map(s -> exposedName(s.getName())).collect(Collectors.joining(", ")));
         }
         return fn.apply(def, params);
     }

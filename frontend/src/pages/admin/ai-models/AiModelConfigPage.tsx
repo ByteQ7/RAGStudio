@@ -36,7 +36,6 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import {
   type AiProvider,
   type AiModel,
@@ -59,9 +58,7 @@ import { ProviderListPanel } from "./ProviderListPanel";
 import { ProviderDetailPanel } from "./ProviderDetailPanel";
 import { FetchModelsDialog } from "./FetchModelsDialog";
 
-// ==================== Constants ====================
-
-const CAPABILITIES = ["CHAT", "EMBEDDING", "RERANK"] as const;
+// ==================== Helpers ====================
 
 const emptyProviderForm = (): AiProviderPayload & { endpointsJson: string; iconFile?: File | null } => ({
   name: "",
@@ -89,14 +86,6 @@ const emptyModelForm = () => ({
   customUrl: "",
   apiProtocol: "__inherit__"
 });
-
-// ==================== Helpers ====================
-
-function maskApiKey(key?: string | null): string {
-  if (!key) return "-";
-  if (key.length <= 8) return "****";
-  return `${key.slice(0, 4)}****${key.slice(-4)}`;
-}
 
 // ==================== Component ====================
 
@@ -129,7 +118,6 @@ export function AiModelConfigPage() {
   // ---------- Action state ----------
   const [togglingProviderId, setTogglingProviderId] = useState<string | null>(null);
   const [togglingModelEnabledId, setTogglingModelEnabledId] = useState<string | null>(null);
-  const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchDialogOpen, setFetchDialogOpen] = useState(false);
 
   // ==================== Loaders ====================
@@ -163,36 +151,12 @@ export function AiModelConfigPage() {
     loadModels();
   }, [loadProviders, loadModels]);
 
-  const handleRefreshAll = () => {
-    loadProviders();
-    loadModels();
-  };
-
   // ==================== Provider CRUD ====================
 
   const openCreateProvider = () => {
     setProviderForm(emptyProviderForm());
     setProviderDialogMode("create");
     setEditingProviderId(null);
-    setProviderDialogOpen(true);
-  };
-
-  const openEditProvider = (provider: AiProvider) => {
-    const endpointsJson = provider.endpoints
-      ? JSON.stringify(provider.endpoints, null, 2)
-      : "";
-    setProviderForm({
-      name: provider.name,
-      displayName: provider.displayName || "",
-      baseUrl: provider.baseUrl,
-      apiKey: provider.apiKey || "",
-      endpoints: provider.endpoints || {},
-      enabled: provider.enabled,
-      endpointsJson,
-      apiProtocol: provider.apiProtocol || "openai"
-    });
-    setProviderDialogMode("edit");
-    setEditingProviderId(provider.id);
     setProviderDialogOpen(true);
   };
 
@@ -527,7 +491,6 @@ export function AiModelConfigPage() {
             togglingModelEnabledId={togglingModelEnabledId}
             // Fetch models
             onFetchModels={handleFetchModels}
-            fetchingModels={fetchingModels}
             // Add model manually
             onAddModel={(providerId) => openCreateModel(providerId)}
           />

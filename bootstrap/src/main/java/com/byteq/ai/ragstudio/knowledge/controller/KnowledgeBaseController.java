@@ -10,6 +10,7 @@ import com.byteq.ai.ragstudio.knowledge.controller.vo.KnowledgeBaseVO;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeBaseService;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import java.util.List;
  * 所有接口统一返回 {@link Result} 格式的响应体。
  */
 @RestController
+@SaCheckRole("admin")
 @RequiredArgsConstructor
 public class KnowledgeBaseController {
 

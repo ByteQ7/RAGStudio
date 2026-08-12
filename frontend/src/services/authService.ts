@@ -5,13 +5,13 @@ export interface LoginResponse extends User {}
 export interface CurrentUserResponse extends CurrentUser {}
 
 export async function login(username: string, password: string) {
-  return api.post<LoginResponse>("/auth/login", { username, password });
+  return api.post<LoginResponse, LoginResponse>("/auth/login", { username, password });
 }
 
 export async function logout() {
-  return api.post<void>("/auth/logout");
+  return api.post<void, void>("/auth/logout");
 }
 
 export async function getCurrentUser() {
-  return api.get<CurrentUserResponse>("/user/me");
+  return api.get<CurrentUserResponse, CurrentUserResponse>("/user/me");
 }

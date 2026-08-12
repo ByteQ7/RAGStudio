@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.byteq.ai.ragstudio.infra.config.ModelRoutingProperties;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.Call;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 统一 LLM HTTP 客户端
@@ -41,6 +43,17 @@ public class ModelHttpClient {
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * SSE 流式读取线程池：替代每次 new Thread（无线程上限），
+     * SSE 长连接期间线程被占用，高并发对话下必须有界
+     */
+    private static final java.util.concurrent.ExecutorService SSE_EXECUTOR =
+            java.util.concurrent.Executors.newFixedThreadPool(32, r -> {
+                Thread t = new Thread(r, "http-sse-worker");
+                t.setDaemon(true);
+                return t;
+            });
 
     private final OkHttpClient okHttpClient;
 
@@ -145,6 +158,7 @@ public class ModelHttpClient {
 
         String finalTraceId = (traceId != null && !traceId.isEmpty()) ? traceId : String.valueOf(System.currentTimeMillis());
         AtomicBoolean terminated = new AtomicBoolean(false);
+        AtomicReference<Call> callRef = new AtomicReference<>();
 
         try {
             String jsonBody = MAPPER.writeValueAsString(body);
@@ -154,8 +168,10 @@ public class ModelHttpClient {
                     .header("Accept", "text/event-stream")
                     .post(RequestBody.create(jsonBody, JSON)).build();
 
-            Thread sseThread = new Thread(() -> {
-                try (Response httpResp = okHttpClient.newCall(httpReq).execute()) {
+            SSE_EXECUTOR.submit(() -> {
+                Call call = okHttpClient.newCall(httpReq);
+                callRef.set(call);
+                try (Response httpResp = call.execute()) {
                     if (!httpResp.isSuccessful()) {
                         if (!terminated.compareAndSet(false, true)) return;
                         callback.onError(new ModelClientException("流式 HTTP " + httpResp.code(),
@@ -200,13 +216,18 @@ public class ModelHttpClient {
                     if (!terminated.compareAndSet(false, true)) return;
                     callback.onError(e);
                 }
-            }, "http-sse-" + finalTraceId);
-            sseThread.setDaemon(true);
-            sseThread.start();
+            });
         } catch (Exception e) {
             if (terminated.compareAndSet(false, true)) callback.onError(e);
         }
-        return () -> { if (terminated.compareAndSet(false, true)) callback.onComplete(); };
+        return () -> {
+            // 取消时同时关闭底层连接，避免服务端不再下发数据时线程挂到读超时
+            Call call = callRef.get();
+            if (call != null) {
+                call.cancel();
+            }
+            if (terminated.compareAndSet(false, true)) callback.onComplete();
+        };
     }
 
     /**
@@ -218,6 +239,7 @@ public class ModelHttpClient {
         ModelProtocol protocol = protocolRegistry.get(target.protocolName());
         String finalTraceId = (traceId != null && !traceId.isEmpty()) ? traceId : String.valueOf(System.currentTimeMillis());
         AtomicBoolean terminated = new AtomicBoolean(false);
+        AtomicReference<Call> callRef = new AtomicReference<>();
 
         try {
             String jsonBody = MAPPER.writeValueAsString(body);
@@ -228,8 +250,10 @@ public class ModelHttpClient {
                     .header("Accept", "text/event-stream")
                     .post(RequestBody.create(jsonBody, JSON)).build();
 
-            Thread sseThread = new Thread(() -> {
-                try (Response httpResp = okHttpClient.newCall(httpReq).execute()) {
+            SSE_EXECUTOR.submit(() -> {
+                Call call = okHttpClient.newCall(httpReq);
+                callRef.set(call);
+                try (Response httpResp = call.execute()) {
                     if (!httpResp.isSuccessful()) {
                         if (!terminated.compareAndSet(false, true)) return;
                         callback.onError(new ModelClientException("流式 HTTP " + httpResp.code(),
@@ -263,13 +287,18 @@ public class ModelHttpClient {
                     if (!terminated.compareAndSet(false, true)) return;
                     callback.onError(e);
                 }
-            }, "http-sse-" + finalTraceId);
-            sseThread.setDaemon(true);
-            sseThread.start();
+            });
         } catch (Exception e) {
             if (terminated.compareAndSet(false, true)) callback.onError(e);
         }
-        return () -> { if (terminated.compareAndSet(false, true)) callback.onComplete(); };
+        return () -> {
+            // 取消时同时关闭底层连接，避免服务端不再下发数据时线程挂到读超时
+            Call call = callRef.get();
+            if (call != null) {
+                call.cancel();
+            }
+            if (terminated.compareAndSet(false, true)) callback.onComplete();
+        };
     }
 
     // ==================== 响应解析 ====================

@@ -157,6 +157,10 @@ async function streamWithRetry(
 
   let attempt = 0;
   while (attempt <= retryCount) {
+    // 仅当「连接尚未建立」时允许重试；
+    // 流已建立后中断（网络抖动）不整包重发——该请求是有副作用的 POST，
+    // 重发会导致后端生成第二条完整回答
+    let streamStarted = false;
     try {
       const response = await fetch(url, {
         method: method ?? "POST",
@@ -173,6 +177,7 @@ async function streamWithRetry(
         throw new Error(`SSE 请求失败（${response.status}）`, { cause: { status: response.status } });
       }
 
+      streamStarted = true;
       await readSseStream(response, handlers, signal);
       return;
     } catch (error) {
@@ -182,6 +187,9 @@ async function streamWithRetry(
       }
       const cause = (err as any).cause;
       if (cause?.status && cause.status >= 400 && cause.status < 500) {
+        throw err;
+      }
+      if (streamStarted) {
         throw err;
       }
       if (attempt >= retryCount) {

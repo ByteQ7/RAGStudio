@@ -1,10 +1,12 @@
+---
+name: geo-reverse
+description: 经纬度坐标逆地理编码。输入纬度和经度，返回对应的省份、城市、区县名称及行政编码。完全离线运行，使用本地中国行政区划边界数据。当你从用户消息中获取到经纬度坐标后，可以调用此工具将坐标转换为城市名。
+---
+
 # Geo Reverse SKILL — 经纬度逆地理编码
 
 ## 功能
-将经纬度坐标转换为可读的地理位置信息，包括省份、城市、区县名称及行政编码。
-
-## 数据来源
-调用 OpenStreetMap Nominatim 逆向地理编码 API（免费，无需 API Key）。
+将经纬度坐标转换为可读的地理位置信息，包括省份、城市、区县名称及行政编码。完全离线运行，使用本地中国行政区划边界数据，不依赖外部 API。
 
 ## 使用场景
 当 AI 收到用户发来的坐标信息（如 `我的位置：纬度 39.9042, 经度 116.4074`）时，使用此工具将坐标转换为城市名，以便进一步查询天气等信息。
@@ -16,23 +18,27 @@
 | `lat` | string | 是 | 纬度，如 `39.9042` |
 | `lng` | string | 是 | 经度，如 `116.4074` |
 
-## 返回结果示例
+## 返回结果
 
-调用 `geo_reverse` 并传入 `lat=39.9042, lng=116.4074` 返回：
+调用脚本 `python3 geo_reverse.py <纬度> <经度>` 返回 JSON：
 
 ```json
 {
-  "place_id": 417862833,
-  "display_name": "台基厂头条14号院-10号院, 台基厂头条, ..., 东城区, 北京市, 100010, 中国",
+  "status": 1,
   "address": {
-    "city": "东城区",
-    "country": "中国",
-    "country_code": "cn"
+    "province": "北京市",
+    "province_code": "110000",
+    "city": "北京市",
+    "city_code": "110000",
+    "district": "东城区",
+    "district_code": "110101"
   }
 }
 ```
 
-> 注意：对于北京市等直辖市，Nominatim 返回的 `address.city` 是区名（如"东城区"）。完整的城市信息在 `display_name` 中以"北京市"形式出现。建议优先从返回的 `display_name` 或 `address` 的组合中提取城市名。
+- `status`: 1=成功，0=未命中
+- `province/city/district`: 省/市/区县名称
+- `*_code`: 对应行政编码
 
 ## 使用示例（完整流程）
 
@@ -43,9 +49,9 @@
 
 AI（ReACT 循环）：
   Thought: 用户提供了坐标，我需要将其转换为城市名
-  Action: geo_reverse
+  Action: geo-reverse
   Action Input: {"lat": "31.9242", "lng": "120.4923"}
-  → 返回：{"address": {"city": "苏州市", "province": "江苏省", ...}, "display_name": "...苏州市..."}
+  → 返回：{"status": 1, "address": {"province": "江苏省", "city": "苏州市", "district": "吴中区", ...}}
 
   Thought: 用户在苏州市。需要确认她查询的是本地还是其他城市。
   Action: FINISH
@@ -56,16 +62,16 @@ AI（ReACT 循环）：
   [/USER_CHOICE]
 ```
 
-### 场景：北京市特殊处理
+### 场景：直辖市处理
 
 ```
 用户：我的位置：纬度 39.9042, 经度 116.4074
 
-  Action: geo_reverse
+  Action: geo-reverse
   Action Input: {"lat": "39.9042", "lng": "116.4074"}
-  → 返回：{"address": {"city": "东城区", ...}, "display_name": "...北京市..."}
+  → 返回：{"status": 1, "address": {"province": "北京市", "city": "北京市", "district": "东城区", ...}}
 
-  Thought: 从 display_name 中可以看到用户在"北京市"，address.city 中的"东城区"是区名
+  Thought: 用户在北京市东城区
   Action: FINISH
   Final Answer: 您当前在北京市东城区。请问您想：
   [USER_CHOICE]
@@ -75,7 +81,7 @@ AI（ReACT 循环）：
 ```
 
 ## 注意事项
-1. **仅限中国坐标**：此 API 全球通用，但主要使用场景是中国境内的坐标
-2. **请求频率**：Nominatim 使用限制为每秒最多 1 次请求（本工具通常只需调用一次）
-3. **北京市特殊结构**：北京、上海、天津、重庆这四个直辖市的 `address.city` 字段是区名而非市名，完整的城市信息在 `display_name` 中
-4. **坐标格式**：纬度范围 -90~90，经度范围 -180~180。中国境内纬度约 18~54，经度约 73~135
+1. **仅限中国坐标**：数据仅覆盖中国行政区划，国外坐标将返回 status=0
+2. **坐标格式**：纬度范围 -90~90，经度范围 -180~180。中国境内纬度约 18~54，经度约 73~135
+3. **直辖市**：北京、上海、天津、重庆的 province/city 均为直辖市名，区县信息在 district 字段
+4. **离线运行**：数据文件随技能打包（scripts/china_*.geojson），无需网络

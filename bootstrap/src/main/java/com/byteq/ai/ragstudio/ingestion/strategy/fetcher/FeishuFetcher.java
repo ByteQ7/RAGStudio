@@ -51,6 +51,11 @@ public class FeishuFetcher implements DocumentFetcher {
     private static final String TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/";
 
     /**
+     * 下载内容大小上限（100MB），防止恶意/异常响应导致 OOM
+     */
+    private static final long MAX_DOWNLOAD_BYTES = 100L * 1024 * 1024;
+
+    /**
      * 同步 HTTP 客户端，用于飞书 API 调用
      */
     @Qualifier("syncHttpClient")
@@ -86,7 +91,7 @@ public class FeishuFetcher implements DocumentFetcher {
         if (isDocxUrl(location)) {
             String docToken = extractDocToken(location);
             String apiUrl = "https://open.feishu.cn/open-apis/docx/v1/documents/" + docToken + "/raw_content";
-            HttpClientHelper.HttpFetchResponse resp = httpClientHelper.get(apiUrl, headers);
+            HttpClientHelper.HttpFetchResponse resp = httpClientHelper.getWithLimit(apiUrl, headers, MAX_DOWNLOAD_BYTES);
             byte[] bodyBytes = resp.body();
             if (bodyBytes == null) {
                 throw new ServiceException("飞书文档API返回内容为空");
@@ -100,13 +105,25 @@ public class FeishuFetcher implements DocumentFetcher {
         }
 
         // 非在线文档类型，直接通过 HTTP 下载
-        HttpClientHelper.HttpFetchResponse resp = httpClientHelper.get(location, headers);
+        HttpClientHelper.HttpFetchResponse resp = httpClientHelper.getWithLimit(location, headers, MAX_DOWNLOAD_BYTES);
         String fileName = StringUtils.hasText(source.getFileName()) ? source.getFileName() : resp.fileName();
-        String contentType = resp.contentType();
+        // 标准化 Content-Type（去掉 "; charset=..." 参数），避免下游 MIME 判断误判
+        String contentType = normalizeContentType(resp.contentType());
         if (!StringUtils.hasText(contentType)) {
             contentType = MimeTypeDetector.detect(resp.body(), fileName);
         }
         return new FetchResult(resp.body(), contentType, fileName);
+    }
+
+    /**
+     * 规范化 Content-Type：去除参数部分（如 "; charset=utf-8"），只保留 MIME 类型
+     */
+    private String normalizeContentType(String contentType) {
+        if (!StringUtils.hasText(contentType)) {
+            return null;
+        }
+        int idx = contentType.indexOf(';');
+        return idx > 0 ? contentType.substring(0, idx).trim() : contentType.trim();
     }
 
     /**

@@ -73,9 +73,10 @@ function startStreamingTimer(get: () => ChatState) {
       }
       return;
     }
-    const take = Math.min(3, streamingBuffer.length);
-    const chars = streamingBuffer.slice(0, take);
-    streamingBuffer = streamingBuffer.slice(take);
+    // 后端已按 SSE_MESSAGE_CHUNK_SIZE 分块推送，前端无需再限速播放；
+    // 一次性消费全部缓冲，避免"服务端已完成、前端还在逐字播"的感知延迟
+    const chars = streamingBuffer;
+    streamingBuffer = "";
     useChatStore.setState((prev) => {
       const found = findStreamingMessage(prev.messages);
       if (!found) return prev;
@@ -134,6 +135,16 @@ function parseAgentSteps(raw: unknown): AgentStep[] | undefined {
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 安全解析 JSON 字符串字段，解析失败返回 undefined（避免历史脏数据导致页面白屏） */
+function safeJsonParse(raw: unknown): unknown {
+  if (!raw) return undefined;
+  try {
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
   } catch {
     return undefined;
   }
@@ -259,12 +270,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         feedback: mapVoteToFeedback(item.vote),
         status: "done",
         agentSteps: item.agentSteps ? parseAgentSteps(item.agentSteps) : undefined,
-        citations: item.citations
-          ? (typeof item.citations === "string" ? JSON.parse(item.citations) : item.citations)
-          : undefined,
-        imageUrls: item.imageUrls
-          ? (typeof item.imageUrls === "string" ? JSON.parse(item.imageUrls) : item.imageUrls)
-          : undefined,
+        citations: safeJsonParse(item.citations) as Citation[] | undefined,
+        imageUrls: safeJsonParse(item.imageUrls) as string[] | undefined,
         thinkingLevel: item.thinkingLevel ?? undefined
       }));
       set({ messages: mapped });

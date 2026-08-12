@@ -1,6 +1,8 @@
 package com.byteq.ai.ragstudio.rag.core.agent;
 
 import cn.hutool.core.util.StrUtil;
+import com.byteq.ai.ragstudio.rag.core.tool.Tool;
+import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import lombok.extern.slf4j.Slf4j;
 

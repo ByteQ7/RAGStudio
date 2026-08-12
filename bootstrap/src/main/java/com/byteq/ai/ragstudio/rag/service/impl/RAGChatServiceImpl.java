@@ -63,8 +63,14 @@ public class RAGChatServiceImpl implements RAGChatService {
             return;
         }
 
+        long enqueueStartMillis = System.currentTimeMillis();
         chatQueueLimiter.enqueue(question, actualConversationId, emitter,
                 () -> {
+                    // 排队耗时可观测：全局限流/线程池繁忙时，首包延迟大头可能来自这里
+                    long queueWaitMs = System.currentTimeMillis() - enqueueStartMillis;
+                    if (queueWaitMs > 100) {
+                        log.info("聊天请求排队等待 {}ms, conversationId={}", queueWaitMs, actualConversationId);
+                    }
                     // 会话级并发门闸：同一会话已有请求在处理时直接拒绝，
                     // 避免同会话并发请求导致历史读写竞态（loadAndAppend 非原子、消息乱序）
                     if (!conversationGate.tryAcquire(userId, actualConversationId)) {

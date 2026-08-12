@@ -2,6 +2,7 @@ package com.byteq.ai.ragstudio.rag.core.retrieve.channel;
 
 import cn.hutool.core.collection.CollUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
+import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RetrieverService;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.strategy.CollectionParallelRetriever;
@@ -54,6 +55,7 @@ public class KnowledgeBaseSelectionChannel implements SearchChannel {
      * 对用户选定的知识库集合执行并行向量检索，topK 按配置的倍数放大后传入
      */
     @Override
+    @RagTraceNode(name = "向量检索", type = "VECTOR_RETRIEVE")
     public SearchChannelResult search(SearchContext context) {
         long startTime = System.currentTimeMillis();
 

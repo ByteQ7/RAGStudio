@@ -157,7 +157,9 @@ public class ImageChunkResolver {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .get(60, TimeUnit.SECONDS);
         } catch (Exception e) {
-            log.warn("并行下载图片中断: {}", e.getMessage());
+            log.warn("并行下载图片中断，取消未完成任务: {}", e.getMessage());
+            // 取消未完成的任务，释放线程池资源，避免挂起的下载继续占用线程
+            futures.forEach(f -> f.cancel(true));
         }
         return result;
     }

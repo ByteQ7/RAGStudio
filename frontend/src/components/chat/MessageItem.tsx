@@ -72,6 +72,12 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const [expandedImage, setExpandedImage] = React.useState<string | null>(null);
   const contentRef = React.useRef<HTMLDivElement | null>(null);
 
+  // 解析协议标记（仅在助理消息中处理）
+  const { cleanContent, hasLocationRequest, userChoice } = React.useMemo(
+    () => (!isUser ? parseMessageMarkers(message.content) : { cleanContent: message.content, hasLocationRequest: false, userChoice: null }),
+    [message.content, isUser]
+  );
+
   if (isUser) {
     const hasImages = message.imageUrls && message.imageUrls.length > 0;
     return (
@@ -134,12 +140,6 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
       </div>
     );
   }
-
-  // 解析协议标记（仅在助理消息中处理）
-  const { cleanContent, hasLocationRequest, userChoice } = React.useMemo(
-    () => (!isUser ? parseMessageMarkers(message.content) : { cleanContent: message.content, hasLocationRequest: false, userChoice: null }),
-    [message.content, isUser]
-  );
 
   return (
     <div className="group">

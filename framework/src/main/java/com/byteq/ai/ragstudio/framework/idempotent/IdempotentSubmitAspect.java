@@ -53,6 +53,16 @@ public final class IdempotentSubmitAspect {
             .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
 
     /**
+     * 等待获取锁的最长时间（毫秒）。
+     * <p>
+     * 零等待会把「前一个请求尚未完成的瞬时竞争」（如双击、断线重试）误判为重复提交。
+     * 等待一小段时间：前一个请求若很快完成（毫秒级竞争），当前请求拿到锁后正常执行；
+     * 只有长时间未释放锁（真正的大流量重复提交/长时间任务）才会被拒绝。
+     * </p>
+     */
+    private static final long LOCK_WAIT_MS = 2000;
+
+    /**
      * 增强方法标记 {@link IdempotentSubmit} 注解逻辑
      * <p>在方法执行前尝试获取分布式锁，获取失败则抛出客户端异常提示重复提交。</p>
      *
@@ -66,8 +76,8 @@ public final class IdempotentSubmitAspect {
         // 根据注解配置和方法参数构建分布式锁标识
         String lockKey = buildLockKey(joinPoint, idempotentSubmit);
         RLock lock = redissonClient.getLock(lockKey);
-        // 尝试获取锁，获取锁失败就意味着已经重复提交，直接抛出异常
-        if (!lock.tryLock()) {
+        // 尝试获取锁，等待 LOCK_WAIT_MS 后仍获取失败则视为重复提交
+        if (!lock.tryLock(LOCK_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
             throw new ClientException(idempotentSubmit.message());
         }
         Object result;
@@ -76,7 +86,9 @@ public final class IdempotentSubmitAspect {
             result = joinPoint.proceed();
         } finally {
             // 释放分布式锁
-            lock.unlock();
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
         return result;
     }

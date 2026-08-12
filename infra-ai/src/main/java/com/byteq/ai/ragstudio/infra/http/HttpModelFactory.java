@@ -1,6 +1,5 @@
 package com.byteq.ai.ragstudio.infra.http;
 
-import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
@@ -11,17 +10,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
 
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
  * HTTP 模型工厂
  * <p>
- * 根据数据库配置提供 LLM API 调用的通用工具方法：
- * URL / API Key / 推理参数解析、请求体构建、S3 图片编码。
+ * 根据数据库配置提供 Embedding / Rerank 等 API 调用的通用工具方法：
+ * URL / API Key / 推理参数解析、S3 图片编码。
+ * （Chat 模型调用已迁移至 AgentScope，见 {@link com.byteq.ai.ragstudio.infra.agentscope.AgentScopeModelFactory}）
  * </p>
  */
 @Slf4j
@@ -105,12 +103,6 @@ public class HttpModelFactory {
 
     // ==================== 请求体构建 ====================
 
-    /** 解析协议感知的 Chat URL */
-    public String resolveChatUrl(ModelTarget target) {
-        ModelProtocol protocol = protocolRegistry.get(target.protocolName());
-        return resolveFullUrl(target, "chat", protocol.resolveChatUrlFallback());
-    }
-
     /** 解析协议感知的 Embedding URL */
     public String resolveEmbeddingUrl(ModelTarget target) {
         ModelProtocol protocol = protocolRegistry.get(target.protocolName());
@@ -118,50 +110,6 @@ public class HttpModelFactory {
             return protocol.resolveEmbeddingUrl(resolveBaseUrl(target));
         }
         return resolveFullUrl(target, "embedding", protocol.resolveEmbeddingUrlFallback());
-    }
-
-    public Map<String, Object> buildRequestBody(ChatRequest request, ModelTarget target, boolean stream) {
-        return buildRequestBody(request, target, stream, null);
-    }
-
-    /**
-     * 构建请求体，可携带 tools（native function calling）
-     */
-    public Map<String, Object> buildRequestBody(ChatRequest request, ModelTarget target, boolean stream,
-                                                 List<Map<String, Object>> tools) {
-        ModelProtocol protocol = protocolRegistry.get(target.protocolName());
-        Map<String, Object> reasoningParams = reasoningRouter != null
-                ? reasoningRouter.route(target.candidate().getModel(), request.getThinkingLevel() != null ? request.getThinkingLevel() : 0)
-                : Map.of();
-
-        // 前置解析 S3 图片 URL → data URI（所有协议都需要）
-        List<ChatMessage> messages = new ArrayList<>();
-        if (request.getMessages() != null) {
-            for (ChatMessage msg : request.getMessages()) {
-                ChatMessage processed = msg;
-                List<String> imageUrls = msg.getImageUrls();
-                if (imageUrls != null && !imageUrls.isEmpty()) {
-                    List<String> resolvedUrls = new ArrayList<>();
-                    for (String url : imageUrls) {
-                        String resolvedDataUri = resolveImageDataUri(url);
-                        if (resolvedDataUri != null) resolvedUrls.add(resolvedDataUri);
-                    }
-                    processed = new ChatMessage(msg.getRole(), msg.getContent());
-                    processed.setImageUrls(resolvedUrls);
-                    processed.setThinkingContent(msg.getThinkingContent());
-                    processed.setThinkingLevel(msg.getThinkingLevel());
-                }
-                messages.add(processed);
-            }
-        }
-
-        return protocol.buildChatRequest(target.candidate().getModel(), messages, stream,
-                request.getTemperature(), request.getTopP(), request.getMaxTokens(),
-                reasoningParams, tools, request.getResponseFormat());
-    }
-
-    public Map<String, Object> buildRequestBody(ChatRequest request, ModelTarget target) {
-        return buildRequestBody(request, target, false);
     }
 
     // ==================== S3 图片编码 ====================
@@ -175,6 +123,10 @@ public class HttpModelFactory {
             if (slashIdx < 0) return url;
             String bucket = path.substring(0, slashIdx);
             String key = path.substring(slashIdx + 1);
+            if (!allowedS3Bucket(bucket)) {
+                log.warn("S3 bucket 不在白名单内，拒绝读取: {}", bucket);
+                return url;
+            }
             byte[] imageBytes = s3Client.getObject(b -> b.bucket(bucket).key(key)).readAllBytes();
             String mimeType = detectMimeType(key);
             String base64 = Base64.getEncoder().encodeToString(imageBytes);
@@ -183,6 +135,11 @@ public class HttpModelFactory {
             log.warn("读取 S3 图片失败，回退到原始 URL: {}", url, e);
             return url;
         }
+    }
+
+    /** 仅允许读取应用所属 bucket，防止经用户可控 URL 访问存储桶内任意对象 */
+    private boolean allowedS3Bucket(String bucket) {
+        return "ragstudio".equals(bucket);
     }
 
     private String detectMimeType(String key) {
@@ -195,7 +152,7 @@ public class HttpModelFactory {
         return "image/jpeg";
     }
 
-    // ==================== 兼容接口（原 LangChain4j 缓存清除，现已无缓存） ====================
+    // ==================== 兼容接口（原模型实例缓存清除，现已无缓存） ====================
 
     public void evict(String modelId) {
         // no-op

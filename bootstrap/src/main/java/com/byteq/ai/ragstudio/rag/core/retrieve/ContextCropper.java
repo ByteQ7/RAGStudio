@@ -9,15 +9,19 @@ import com.byteq.ai.ragstudio.infra.highlight.SemanticHighlightClient;
 import com.byteq.ai.ragstudio.infra.highlight.SemanticHighlightRequest;
 import com.byteq.ai.ragstudio.infra.highlight.SemanticHighlightResponse;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBucket;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -38,7 +42,6 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ContextCropper {
 
     private static final double DEFAULT_THRESHOLD = 0.3;
@@ -48,6 +51,18 @@ public class ContextCropper {
     private final SemanticHighlightClient semanticHighlightClient;
     private final SearchChannelProperties searchProperties;
     private final RedissonClient redissonClient;
+    /** 裁剪远程调用执行线程池：硬超时后后台任务继续完成并写缓存，不占用检索线程 */
+    private final Executor cropExecutor;
+
+    public ContextCropper(SemanticHighlightClient semanticHighlightClient,
+                          SearchChannelProperties searchProperties,
+                          RedissonClient redissonClient,
+                          @Qualifier("cropExecutor") Executor cropExecutor) {
+        this.semanticHighlightClient = semanticHighlightClient;
+        this.searchProperties = searchProperties;
+        this.redissonClient = redissonClient;
+        this.cropExecutor = cropExecutor;
+    }
 
     /**
      * 裁剪 Chunk 列表：只保留与问题语义相关的句子
@@ -108,6 +123,38 @@ public class ContextCropper {
                         .build())
                 .toList();
 
+        long timeoutMs = searchProperties.getCrop().getTimeoutMs();
+        if (timeoutMs > 0) {
+            // 硬超时保护：异步调用远程语义服务，超时直接保留原文返回；
+            // 后台任务完成后仅写缓存（不修改 chunk 文本，避免与主流程数据竞争）
+            CompletableFuture<SemanticHighlightResponse> future;
+            try {
+                future = CompletableFuture.supplyAsync(
+                        () -> semanticHighlightClient.highlight(question, chunkItems, DEFAULT_THRESHOLD),
+                        cropExecutor);
+            } catch (RejectedExecutionException e) {
+                // 专用线程池繁忙（AbortPolicy）：本次直接降级保留原文，不让调用线程代跑阻塞任务
+                log.warn("语义裁剪线程池繁忙，本次保留原文: {}", e.getMessage());
+                return;
+            }
+            SemanticHighlightResponse response;
+            try {
+                response = future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                log.warn("语义裁剪超时（{}ms），本次保留原文，后台完成结果将写入缓存: chunks={}",
+                        timeoutMs, chunkItems.size());
+                future.thenAccept(resp -> writeMissCacheQuietly(questionHash, misses, resp));
+                return;
+            } catch (Exception e) {
+                log.warn("语义裁剪失败，保留原文: {}", e.getMessage());
+                return;
+            }
+            applyHighlightResponse(questionHash, misses, response);
+            applyResults(items);
+            return;
+        }
+
+        // 无超时配置：保持原有同步调用语义
         SemanticHighlightResponse response;
         try {
             response = semanticHighlightClient.highlight(question, chunkItems, DEFAULT_THRESHOLD);
@@ -116,6 +163,15 @@ public class ContextCropper {
             return;
         }
 
+        applyHighlightResponse(questionHash, misses, response);
+        applyResults(items);
+    }
+
+    /**
+     * 解析语义服务响应：填充未命中条目的裁剪结果并写缓存（线程安全：只读写局部 CropItem）
+     */
+    private void applyHighlightResponse(String questionHash, List<CropItem> misses,
+                                        SemanticHighlightResponse response) {
         if (response == null || CollUtil.isEmpty(response.getResults())) {
             return;
         }
@@ -148,15 +204,50 @@ public class ContextCropper {
         }
 
         // 写缓存（仅未命中的条目）
-        if (cacheEnabled) {
+        if (searchProperties.getCrop().isCacheEnabled()) {
             for (CropItem item : misses) {
                 if (item.cropped != null) {
                     writeCache(questionHash, item.chunk.getId(), item.cropped);
                 }
             }
         }
+    }
 
-        applyResults(items);
+    /**
+     * 超时路径的后台补写缓存：仅将服务结果写入 Redis，不修改 chunk 文本。
+     * 独立于 {@link #applyHighlightResponse} 的可选调用路径，异常全部静默。
+     */
+    private void writeMissCacheQuietly(String questionHash, List<CropItem> misses,
+                                       SemanticHighlightResponse response) {
+        try {
+            if (!searchProperties.getCrop().isCacheEnabled()
+                    || response == null || CollUtil.isEmpty(response.getResults())) {
+                return;
+            }
+            for (SemanticHighlightResponse.ChunkHighlightResult result : response.getResults()) {
+                if (result == null) continue;
+                List<Integer> highlightedIndices = result.getHighlightedIndices();
+                List<String> sentences = result.getSentences();
+                if (CollUtil.isEmpty(highlightedIndices) || CollUtil.isEmpty(sentences)) {
+                    continue;
+                }
+                String cropped = highlightedIndices.stream()
+                        .filter(idx -> idx >= 0 && idx < sentences.size())
+                        .map(sentences::get)
+                        .collect(Collectors.joining());
+                if (cropped.isBlank()) {
+                    continue;
+                }
+                for (CropItem item : misses) {
+                    if (item.chunk.getId() != null && item.chunk.getId().equals(result.getChunkId())) {
+                        writeCache(questionHash, item.chunk.getId(), cropped);
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("语义裁剪超时后台写缓存失败，忽略: {}", e.getMessage());
+        }
     }
 
     // 将裁剪结果（命中缓存或 Python 返回）替换回 chunk 文本

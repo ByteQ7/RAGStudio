@@ -7,6 +7,7 @@ import com.byteq.ai.ragstudio.aimodel.dao.entity.AiProviderDO;
 import com.byteq.ai.ragstudio.aimodel.dao.entity.DefaultModelConfigDO;
 import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiModelMapper;
 import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiProviderMapper;
+import com.byteq.ai.ragstudio.aimodel.enums.AiModelErrorCode;
 import com.byteq.ai.ragstudio.aimodel.dao.mapper.DefaultModelConfigMapper;
 import com.byteq.ai.ragstudio.aimodel.service.DefaultModelConfigService;
 import com.byteq.ai.ragstudio.framework.convention.DefaultModelService;
@@ -71,7 +72,7 @@ public class DefaultModelConfigServiceImpl implements DefaultModelConfigService,
                         .last("LIMIT 1")
         );
         if (model == null) {
-            throw new ClientException("模型不存在或已禁用：" + modelId);
+            throw new ClientException("模型不存在或已禁用：" + modelId, AiModelErrorCode.MODEL_NOT_FOUND);
         }
 
         // Rerank 场景校验模型能力

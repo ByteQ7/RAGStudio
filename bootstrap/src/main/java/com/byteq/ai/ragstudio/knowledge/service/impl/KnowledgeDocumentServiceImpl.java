@@ -23,6 +23,7 @@ import com.byteq.ai.ragstudio.core.parser.DocumentParserSelector;
 import com.byteq.ai.ragstudio.core.parser.ParserType;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
+import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.framework.mq.producer.MessageQueueProducer;
 import com.byteq.ai.ragstudio.ingestion.dao.entity.IngestionPipelineDO;
 import com.byteq.ai.ragstudio.ingestion.dao.mapper.IngestionPipelineMapper;
@@ -49,6 +50,7 @@ import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeBaseMapper;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentChunkLogMapper;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.byteq.ai.ragstudio.knowledge.enums.DocumentStatus;
+import com.byteq.ai.ragstudio.knowledge.enums.KnowledgeErrorCode;
 import com.byteq.ai.ragstudio.knowledge.enums.ProcessMode;
 import com.byteq.ai.ragstudio.knowledge.enums.SourceType;
 import com.byteq.ai.ragstudio.knowledge.handler.RemoteFileFetcher;
@@ -136,7 +138,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     public KnowledgeDocumentVO upload(String kbId, KnowledgeDocumentUploadRequest requestParam, MultipartFile file) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
-        Assert.notNull(kbDO, () -> new ClientException("知识库不存在"));
+        Assert.notNull(kbDO, () -> new ClientException("知识库不存在", KnowledgeErrorCode.KB_NOT_FOUND));
 
         SourceType sourceType = SourceType.normalize(requestParam.getSourceType());
         validateSourceAndSchedule(sourceType, requestParam);
@@ -200,7 +202,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     );
                     if (updated == 0) {
                         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-                        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+                        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
                         throw new ClientException("文档分块操作正在进行中，请稍后再试");
                     }
                     KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
@@ -321,11 +323,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         // Phase 2: Vector store operations outside DB transaction.
         // Retry up to 3 times if vector store operations fail.
+        boolean vectorPersisted = false;
         int maxRetries = 3;
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 vectorStoreService.deleteDocumentVectors(collectionName, docId, effectiveDim);
                 vectorStoreService.indexDocumentChunks(collectionName, docId, effectiveDim, chunkResults);
+                vectorPersisted = true;
                 break;
             } catch (Exception e) {
                 log.warn("向量存储操作失败（第{}/{}次），collectionName={}, docId={}, chunkCount={}",
@@ -342,6 +346,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     }
                 }
             }
+        }
+
+        // 向量写入最终失败时，将文档状态回退为 FAILED 并保留分块记录，
+        // 用户可感知失败并通过重新分块重试（避免 DB 显示 SUCCESS 但检索静默丢文档）
+        if (!vectorPersisted) {
+            KnowledgeDocumentDO failedDocumentDO = KnowledgeDocumentDO.builder()
+                    .id(docId)
+                    .status(DocumentStatus.FAILED.getCode())
+                    .updatedBy(UserContext.getUsername())
+                    .build();
+            documentMapper.updateById(failedDocumentDO);
+            log.error("向量存储写入失败，文档状态已置为 FAILED: docId={}", docId);
         }
 
         return chunks.size();
@@ -818,7 +834,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(String docId) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
 
         // 禁止在文档分块运行时删除
         if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
@@ -841,7 +857,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     public KnowledgeDocumentVO get(String docId) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
         return BeanUtil.toBean(documentDO, KnowledgeDocumentVO.class);
     }
 
@@ -859,7 +875,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Transactional(rollbackFor = Exception.class)
     public void update(String docId, KnowledgeDocumentUpdateRequest requestParam) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
 
         // 禁止在文档分块运行时修改
         if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
@@ -1033,7 +1049,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     public void enable(String docId, boolean enabled) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
 
         // 禁止在文档分块运行时修改
         if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
@@ -1084,8 +1100,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     })
                     .toList();
             if (CollUtil.isEmpty(vectorChunks)) {
-                log.warn("启用文档时未找到任何 Chunk，跳过向量重建，docId={}", docId);
-                return;
+                // 无分块时若静默返回，文档将永远无法启用且用户无从感知；
+                // 直接抛错，提示先执行分块
+                throw new ServiceException("文档没有可用的分块，无法启用，请先执行分块: docId=" + docId);
             }
             chunkEmbeddingService.embed(vectorChunks, kbDO.getEmbeddingModel(), kbDO.getDimension());
         }
@@ -1171,7 +1188,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private String resolveCollectionName(String kbId) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
         if (kbDO == null) {
-            throw new ClientException("知识库不存在: " + kbId);
+            throw new ClientException("知识库不存在: " + kbId, KnowledgeErrorCode.KB_NOT_FOUND);
         }
         return kbDO.getCollectionName();
     }
@@ -1180,7 +1197,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private int resolveDimension(String kbId) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
         if (kbDO == null) {
-            throw new ClientException("知识库不存在: " + kbId);
+            throw new ClientException("知识库不存在: " + kbId, KnowledgeErrorCode.KB_NOT_FOUND);
         }
         if (kbDO.getDimension() != null && kbDO.getDimension() > 0) {
             return kbDO.getDimension();
@@ -1274,6 +1291,27 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         for (String key : mode.getDefaultConfig().keySet()) {
             if (!config.containsKey(key)) {
                 throw new ClientException("分块参数缺少必要字段: " + key);
+            }
+            Object value = config.get(key);
+            if (value == null) {
+                throw new ClientException("分块参数不能为空: " + key);
+            }
+            int num;
+            if (value instanceof Number n) {
+                num = n.intValue();
+            } else if (value instanceof String s && s.matches("-?\\d+")) {
+                num = Integer.parseInt(s.trim());
+            } else {
+                throw new ClientException("分块参数必须为整数: " + key);
+            }
+            // 大小类参数必须 >= 1（<=0 会导致切分死循环），重叠类参数必须 >= 0
+            boolean overlapParam = key.endsWith("overlapSize") || key.endsWith("overlapChars");
+            if (overlapParam) {
+                if (num < 0) {
+                    throw new ClientException("分块参数 " + key + " 不能为负数");
+                }
+            } else if (num < 1) {
+                throw new ClientException("分块参数 " + key + " 必须大于等于 1");
             }
         }
         return json;

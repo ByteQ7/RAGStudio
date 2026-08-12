@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.ingestion.util;
 
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
+import com.byteq.ai.ragstudio.ingestion.enums.IngestionErrorCode;
 import lombok.RequiredArgsConstructor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -23,8 +24,40 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class HttpClientHelper {
 
+    /** 手动跟随重定向的最大跳数（含首跳请求） */
+    private static final int MAX_REDIRECTS = 5;
+
     @Qualifier("syncHttpClient")
     private final OkHttpClient client;
+
+    /**
+     * 执行请求并手动跟随重定向，每一跳都经过 SSRF 校验。
+     * <p>
+     * 底层 OkHttp 已禁用自动重定向（见 HttpClientConfig），此处逐跳校验
+     * Location 目标，防止攻击者通过 302 跳转到内网/云元数据地址绕过 SSRF 防护。
+     * </p>
+     */
+    private Response executeWithRedirectGuard(Request request, int redirectsLeft) throws IOException {
+        if (redirectsLeft <= 0) {
+            throw new IOException("重定向次数超过限制(" + MAX_REDIRECTS + ")");
+        }
+        // 对每一跳的完整 URL 做 SSRF 校验（含用户可控的首跳）
+        SsrfGuard.validate(request.url().toString());
+        Response response = client.newCall(request).execute();
+        if (response.isRedirect()) {
+            String location = response.header("Location");
+            response.close();
+            if (location == null) {
+                throw new IOException("重定向响应缺少 Location 头");
+            }
+            Request next = request.newBuilder()
+                    .url(request.url().resolve(location))
+                    .method(request.method(), null)
+                    .build();
+            return executeWithRedirectGuard(next, redirectsLeft - 1);
+        }
+        return response;
+    }
 
     /**
      * 发起 HTTP GET 请求获取资源内容（无大小限制）
@@ -68,11 +101,11 @@ public class HttpClientHelper {
         }
         Response response = null;
         try {
-            response = client.newCall(builder.get().build()).execute();
+            response = executeWithRedirectGuard(builder.get().build(), MAX_REDIRECTS);
             if (!response.isSuccessful()) {
                 String body = response.body() != null ? response.body().string() : "";
                 response.close();
-                throw new ServiceException("网络请求失败: " + response.code() + " " + body);
+                throw new ServiceException("网络请求失败: " + response.code() + " " + body, IngestionErrorCode.NETWORK_REQUEST_FAILED);
             }
             ResponseBody responseBody = response.body();
             String contentType = response.header("Content-Type");
@@ -83,7 +116,7 @@ public class HttpClientHelper {
             Long contentLength = parseContentLength(response.header("Content-Length"));
             if (maxBytes > 0 && contentLength != null && contentLength > maxBytes) {
                 response.close();
-                throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes");
+                throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes", IngestionErrorCode.FILE_TOO_LARGE);
             }
             InputStream bodyStream = responseBody == null
                     ? InputStream.nullInputStream()
@@ -93,7 +126,7 @@ public class HttpClientHelper {
             if (response != null) {
                 response.close();
             }
-            throw new ServiceException("网络请求失败: " + e.getMessage());
+            throw new ServiceException("网络请求失败: " + e.getMessage(), IngestionErrorCode.NETWORK_REQUEST_FAILED);
         } catch (Exception e) {
             if (response != null) {
                 response.close();
@@ -113,10 +146,10 @@ public class HttpClientHelper {
         if (headers != null) {
             headers.forEach(builder::addHeader);
         }
-        try (Response response = client.newCall(builder.get().build()).execute()) {
+        try (Response response = executeWithRedirectGuard(builder.get().build(), MAX_REDIRECTS)) {
             if (!response.isSuccessful()) {
                 String body = response.body() != null ? response.body().string() : "";
-                throw new ServiceException("网络请求失败: " + response.code() + " " + body);
+                throw new ServiceException("网络请求失败: " + response.code() + " " + body, IngestionErrorCode.NETWORK_REQUEST_FAILED);
             }
             String contentType = response.header("Content-Type");
             String disposition = response.header("Content-Disposition");
@@ -125,7 +158,7 @@ public class HttpClientHelper {
             String lastModified = response.header("Last-Modified");
             Long contentLength = parseContentLength(response.header("Content-Length"));
             if (maxBytes > 0 && contentLength != null && contentLength > maxBytes) {
-                throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes");
+                throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes", IngestionErrorCode.FILE_TOO_LARGE);
             }
 
             byte[] bytes;
@@ -138,7 +171,7 @@ public class HttpClientHelper {
             }
             return new HttpFetchResponse(bytes, contentType, fileName, etag, lastModified, contentLength);
         } catch (IOException e) {
-            throw new ServiceException("网络请求失败: " + e.getMessage());
+            throw new ServiceException("网络请求失败: " + e.getMessage(), IngestionErrorCode.NETWORK_REQUEST_FAILED);
         }
     }
 
@@ -158,9 +191,9 @@ public class HttpClientHelper {
         if (headers != null) {
             headers.forEach(builder::addHeader);
         }
-        try (Response response = client.newCall(builder.head().build()).execute()) {
+        try (Response response = executeWithRedirectGuard(builder.head().build(), MAX_REDIRECTS)) {
             if (!response.isSuccessful()) {
-                throw new ServiceException("网络请求失败: " + response.code());
+                throw new ServiceException("网络请求失败: " + response.code(), IngestionErrorCode.NETWORK_REQUEST_FAILED);
             }
             String contentType = response.header("Content-Type");
             String disposition = response.header("Content-Disposition");
@@ -170,7 +203,7 @@ public class HttpClientHelper {
             Long contentLength = parseContentLength(response.header("Content-Length"));
             return new HttpHeadResponse(etag, lastModified, contentType, contentLength, fileName);
         } catch (IOException e) {
-            throw new ServiceException("网络请求失败: " + e.getMessage());
+            throw new ServiceException("网络请求失败: " + e.getMessage(), IngestionErrorCode.NETWORK_REQUEST_FAILED);
         }
     }
 
@@ -238,7 +271,7 @@ public class HttpClientHelper {
             while ((len = in.read(buffer)) != -1) {
                 total += len;
                 if (maxBytes > 0 && total > maxBytes) {
-                    throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes");
+                    throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes", IngestionErrorCode.FILE_TOO_LARGE);
                 }
                 out.write(buffer, 0, len);
             }
@@ -280,7 +313,7 @@ public class HttpClientHelper {
             private void ensureWithinLimit(int delta) {
                 total += delta;
                 if (total > maxBytes) {
-                    throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes");
+                    throw new ServiceException("文件大小超过限制: " + maxBytes + " bytes", IngestionErrorCode.FILE_TOO_LARGE);
                 }
             }
         };

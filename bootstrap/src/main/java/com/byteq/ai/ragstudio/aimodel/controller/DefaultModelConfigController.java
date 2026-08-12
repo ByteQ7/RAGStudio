@@ -5,6 +5,7 @@ import com.byteq.ai.ragstudio.aimodel.service.DefaultModelConfigService;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.web.Results;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
+@SaCheckRole("admin")
 @RequestMapping("/ai-model-config/defaults")
 @RequiredArgsConstructor
 public class DefaultModelConfigController {

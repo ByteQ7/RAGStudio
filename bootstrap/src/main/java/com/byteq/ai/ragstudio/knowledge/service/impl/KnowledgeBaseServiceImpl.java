@@ -21,6 +21,7 @@ import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
+import com.byteq.ai.ragstudio.knowledge.enums.KnowledgeErrorCode;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorSpaceId;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorSpaceSpec;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorStoreAdmin;
@@ -81,7 +82,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                         .eq(KnowledgeBaseDO::getName, name)
         );
         if (count > 0) {
-            throw new ServiceException("知识库名称已存在：" + requestParam.getName());
+            throw new ClientException("知识库名称已存在：" + requestParam.getName(), KnowledgeErrorCode.KB_NAME_EXIST);
         }
 
         // 校验并解析向量维度
@@ -142,7 +143,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     public void update(KnowledgeBaseUpdateRequest requestParam) {
         KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(requestParam.getId());
         if (kb == null) {
-            throw new ClientException("知识库不存在：" + requestParam.getId());
+            throw new ClientException("知识库不存在：" + requestParam.getId(), KnowledgeErrorCode.KB_NOT_FOUND);
         }
 
         boolean embeddingChanged = StringUtils.hasText(requestParam.getEmbeddingModel())
@@ -185,7 +186,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     public void rename(String kbId, KnowledgeBaseUpdateRequest requestParam) {
         KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(kbId);
         if (kb == null) {
-            throw new ClientException("知识库不存在");
+            throw new ClientException("知识库不存在", KnowledgeErrorCode.KB_NOT_FOUND);
         }
 
         if (!StringUtils.hasText(requestParam.getName())) {
@@ -200,7 +201,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                         .ne(KnowledgeBaseDO::getId, kbId)
         );
         if (count > 0) {
-            throw new ServiceException("知识库名称已存在：" + requestParam.getName());
+            throw new ClientException("知识库名称已存在：" + requestParam.getName(), KnowledgeErrorCode.KB_NAME_EXIST);
         }
 
         kb.setName(requestParam.getName());
@@ -224,7 +225,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     public void delete(String kbId) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
         if (kbDO == null) {
-            throw new ClientException("知识库不存在");
+            throw new ClientException("知识库不存在", KnowledgeErrorCode.KB_NOT_FOUND);
         }
 
         Long docCount = knowledgeDocumentMapper.selectCount(
@@ -411,7 +412,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     public KnowledgeBaseVO queryById(String kbId) {
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(kbId);
         if (kbDO == null) {
-            throw new ClientException("知识库不存在");
+            throw new ClientException("知识库不存在", KnowledgeErrorCode.KB_NOT_FOUND);
         }
         return BeanUtil.toBean(kbDO, KnowledgeBaseVO.class);
     }

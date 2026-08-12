@@ -8,6 +8,7 @@ export interface AiProvider {
   displayName?: string | null;
   baseUrl: string;
   apiKey?: string | null;
+  hasApiKey?: boolean | null;
   endpoints?: Record<string, string> | null;
   enabled: number;
   iconUrl?: string | null;

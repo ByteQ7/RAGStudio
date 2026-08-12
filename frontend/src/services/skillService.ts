@@ -3,6 +3,11 @@ import { api } from "@/services/api";
 export interface SkillSummary {
   name: string;
   description: string;
+  version: string;
+  type: string;
+  errors: string;
+  warnings: string;
+  loaded: string;
 }
 
 export async function listSkills(): Promise<SkillSummary[]> {

@@ -7,6 +7,7 @@ import com.byteq.ai.ragstudio.mcp.controller.request.McpServerUpdateRequest;
 import com.byteq.ai.ragstudio.mcp.controller.vo.McpServerVO;
 import com.byteq.ai.ragstudio.mcp.service.DynamicMcpConnectionManager;
 import com.byteq.ai.ragstudio.mcp.service.McpServerService;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,6 +30,7 @@ import java.util.List;
  */
 @Slf4j
 @RestController
+@SaCheckRole("admin")
 @RequiredArgsConstructor
 public class McpServerController {
 

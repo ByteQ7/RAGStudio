@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.rag.core.retrieve.channel;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
+import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RetrieverService;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RrfMerger;
@@ -73,6 +74,7 @@ public class RrfHybridChannel implements SearchChannel {
     }
 
     @Override
+    @RagTraceNode(name = "rrf-混合检索", type = "HYBRID_RETRIEVE")
     public SearchChannelResult search(SearchContext context) {
         long startTime = System.currentTimeMillis();
         List<String> collections = context.getSelectedCollectionNames();

@@ -123,8 +123,8 @@ public class SemanticHighlightClient {
         } catch (Exception e) {
             throw new RemoteException("语义服务请求序列化失败: " + e.getMessage());
         }
-        log.info("=== 语义服务请求 URL: {} ===", url);
-        log.info("=== 语义服务请求 JSON: {} ===", json);
+        log.debug("语义服务请求 URL: {}", url);
+        log.debug("语义服务请求 JSON（含问题与候选文本）: {}", truncate(json, 2000));
 
         // 服务启动初期可能尚未就绪，最多重试 2 次 (间隔 1s, 2s)
         int maxAttempts = 2;
@@ -171,7 +171,7 @@ public class SemanticHighlightClient {
             }
         }
         throw new RemoteException("语义服务不可用(重试" + (maxAttempts + 1) + "次均失败): "
-                + lastIoException.getMessage());
+                + (lastIoException == null ? "未知错误" : lastIoException.getMessage()));
     }
 
     /** 截断长文本用于日志 */

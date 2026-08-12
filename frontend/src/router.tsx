@@ -9,7 +9,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { Loading } from "@/components/common/Loading";
 
 const lazyPage = <T extends Record<string, unknown>, K extends keyof T>(importer: () => Promise<T>, namedExport: K) =>
-  lazy(() => importer().then((m) => ({ default: m[namedExport] as unknown as React.ComponentType })));
+  lazy(() => importer().then((m) => ({ default: m[namedExport] as unknown as React.ComponentType<unknown> })));
 
 const DashboardPage = lazyPage(() => import("@/pages/admin/dashboard/DashboardPage"), "DashboardPage");
 const KnowledgeListPage = lazyPage(() => import("@/pages/admin/knowledge/KnowledgeListPage"), "KnowledgeListPage");

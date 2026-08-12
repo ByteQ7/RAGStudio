@@ -100,10 +100,14 @@ export const nodeTypeChipClass = (type?: string | null): string => {
   const normalized = (type || "").trim().toUpperCase();
   if (normalized === "ROOT") return "bg-indigo-100 text-indigo-700";
   if (normalized === "USER_TTFT") return "bg-rose-100 text-rose-700";
-  if (normalized === "LLM_PROVIDER") return "bg-orange-100 text-orange-700";
+  if (normalized === "LLM_PROVIDER" || normalized === "LLM_CALL") return "bg-orange-100 text-orange-700";
   if (normalized === "LLM_ROUTING") return "bg-amber-100 text-amber-700";
   if (normalized === "REWRITE") return "bg-teal-100 text-teal-700";
-  if (normalized === "RETRIEVE" || normalized === "RAG_NODE") return "bg-blue-100 text-blue-700";
+  if (normalized === "TOOL_CALL") return "bg-violet-100 text-violet-700";
+  if (normalized === "EMBEDDING") return "bg-cyan-100 text-cyan-700";
+  if (normalized === "RETRIEVE" || normalized === "RAG_NODE"
+      || normalized === "RETRIEVE_CHANNEL" || normalized === "HYBRID_RETRIEVE"
+      || normalized === "VECTOR_RETRIEVE" || normalized === "KEYWORD_RETRIEVE") return "bg-blue-100 text-blue-700";
   if (normalized === "TITLE_GEN") return "bg-gray-100 text-gray-700";
   if (normalized.startsWith("MCP")) return "bg-cyan-100 text-cyan-700";
   return "bg-gray-100 text-gray-600";

@@ -4,6 +4,7 @@ import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.ingestion.util.HttpClientHelper;
 import com.byteq.ai.ragstudio.ingestion.util.SsrfGuard;
+import com.byteq.ai.ragstudio.knowledge.enums.KnowledgeErrorCode;
 import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
@@ -122,7 +123,7 @@ public class RemoteFileFetcher {
             CopyResult copyResult = copyWithLimitAndDigest(response.bodyStream(), tempFile, maxBytes);
             if (copyResult.size == 0) {
                 deleteTempFileQuietly(tempFile);
-                throw new ClientException("远程文件内容为空");
+                throw new ServiceException("远程文件内容为空", KnowledgeErrorCode.DOCUMENT_PROCESS_FAILED);
             }
 
             String hash = copyResult.sha256Hex;
@@ -138,7 +139,7 @@ public class RemoteFileFetcher {
             return RemoteFetchResult.changed(tempFile, copyResult.size, response.contentType(), fileName, hash, etag, fetchLastModified);
         } catch (IOException e) {
             deleteTempFileQuietly(tempFile);
-            throw new ServiceException("远程文件拉取失败: " + e.getMessage());
+            throw new ServiceException("远程文件拉取失败: " + e.getMessage(), KnowledgeErrorCode.DOCUMENT_PROCESS_FAILED);
         } catch (RuntimeException e) {
             deleteTempFileQuietly(tempFile);
             throw e;
@@ -158,7 +159,7 @@ public class RemoteFileFetcher {
     // 校验远程文件大小是否超过允许的最大值
     private void checkSizeLimit(long maxBytes, Long contentLength) {
         if (maxBytes > 0 && contentLength != null && contentLength > maxBytes) {
-            throw new ClientException("远程文件大小超过限制: " + maxBytes + " bytes");
+            throw new ClientException("远程文件大小超过限制: " + maxBytes + " bytes", KnowledgeErrorCode.REMOTE_FILE_TOO_LARGE);
         }
     }
 
@@ -170,13 +171,13 @@ public class RemoteFileFetcher {
             tempFile = Files.createTempFile("knowledge-upload-", ".tmp");
             long size = copyWithLimit(remoteStream, tempFile, maxBytes);
             if (size == 0) {
-                throw new ClientException("远程文件内容为空");
+                throw new ServiceException("远程文件内容为空", KnowledgeErrorCode.DOCUMENT_PROCESS_FAILED);
             }
             try (InputStream tempInputStream = Files.newInputStream(tempFile)) {
                 return fileStorageService.upload(bucketName, prefix, tempInputStream, size, fileName, contentType);
             }
         } catch (IOException e) {
-            throw new ServiceException("远程文件上传失败: " + e.getMessage());
+            throw new ServiceException("远程文件上传失败: " + e.getMessage(), KnowledgeErrorCode.DOCUMENT_PROCESS_FAILED);
         } finally {
             if (tempFile != null) {
                 try {
@@ -197,7 +198,7 @@ public class RemoteFileFetcher {
             while ((len = inputStream.read(buffer)) != -1) {
                 total += len;
                 if (maxBytes > 0 && total > maxBytes) {
-                    throw new ClientException("远程文件大小超过限制: " + maxBytes + " bytes");
+                    throw new ClientException("远程文件大小超过限制: " + maxBytes + " bytes", KnowledgeErrorCode.REMOTE_FILE_TOO_LARGE);
                 }
                 outputStream.write(buffer, 0, len);
             }
@@ -216,7 +217,7 @@ public class RemoteFileFetcher {
                 while ((len = inputStream.read(buffer)) != -1) {
                     total += len;
                     if (maxBytes > 0 && total > maxBytes) {
-                        throw new ClientException("远程文件大小超过限制: " + maxBytes + " bytes");
+                        throw new ClientException("远程文件大小超过限制: " + maxBytes + " bytes", KnowledgeErrorCode.REMOTE_FILE_TOO_LARGE);
                     }
                     outputStream.write(buffer, 0, len);
                     digest.update(buffer, 0, len);

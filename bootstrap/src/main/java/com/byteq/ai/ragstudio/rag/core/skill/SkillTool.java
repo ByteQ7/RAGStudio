@@ -1,8 +1,8 @@
 package com.byteq.ai.ragstudio.rag.core.skill;
 
 import cn.hutool.core.util.StrUtil;
-import com.byteq.ai.ragstudio.rag.core.agent.Tool;
-import com.byteq.ai.ragstudio.rag.core.agent.ToolResult;
+import com.byteq.ai.ragstudio.rag.core.tool.Tool;
+import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.MediaType;
@@ -72,7 +72,9 @@ public class SkillTool implements Tool {
     public ToolResult execute(Map<String, Object> params) {
         String type = definition.getType();
         if (StrUtil.isBlank(type)) {
-            return ToolResult.failure(name(), "SKILL 类型未定义（type 字段为空）");
+            // 纯知识型技能不注册为可调用工具；若被直接调用（防御），指引通过 tool_reader 激活
+            return ToolResult.failure(name(),
+                    "SKILL [" + name() + "] 为纯知识型技能（无执行配置），请使用 tool_reader 的 read 动作加载其指令");
         }
 
         return switch (type.trim().toLowerCase()) {

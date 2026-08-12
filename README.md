@@ -18,19 +18,19 @@
 
 ## Overview
 
-**RAGStudio** is a **Java 17 + Spring Boot 3.5** powered AI Q&A platform. All requests flow through a **ReACT Agent Loop** — the LLM autonomously reasons, calls tools (KB search, MCP, custom skills), observes results, and iterates until producing a final answer.
+**RAGStudio** is a **Java 17 + Spring Boot 3.5** powered AI Q&A platform. All requests flow through an **AgentScope ReActAgent** — the LLM autonomously reasons, calls tools (KB search, MCP, custom skills), observes results, and iterates until producing a final answer.
 
 ### Key Capabilities
 
 | Capability | Description |
 |------------|-------------|
-| **ReACT Agent Loop** | Thought → Action → Observation cycle replaces traditional linear RAG pipelines |
+| **AgentScope Agent Engine** | ReActAgent (native tool calling) with streaming event bus mapped to SSE; replaces the custom JSON ReACT loop and OkHttp model layer |
 | **Multi-Model Routing** | DB-driven dynamic config, automatic failover across BaiLian / DeepSeek / SiliconFlow |
 | **Hybrid Search** | pgvector semantic + tsvector keyword, fused via RRF (Reciprocal Rank Fusion) |
 | **MCP Protocol** | Dynamic external tool discovery and autonomous Agent invocation |
 | **Deep Thinking** | Configurable reasoning depth (0–100%) with step-by-step chain-of-thought |
 | **Multi-Modal Chat** | Image upload (paste/file), S3 storage, presigned HTTP URLs for browser display |
-| **Retrieval Quality** | KB semantic selection with anti-miss safeguards + score-cluster dynamic TopK + multimodal Rerank (images sent as base64 data URIs) — **95% answer accuracy** on a 65-question eval set |
+| **Retrieval Quality** | KB semantic selection with anti-miss safeguards + score-cluster dynamic TopK + multimodal Rerank (images sent as base64 data URIs) — **97% answer accuracy** on a 100-question eval set |
 | **SKILL System** | YAML-defined custom tools loaded from `skills/` dir — no Java or MCP server required |
 | **Full-Chain Tracing** | Lightweight distributed tracing for every pipeline stage |
 | **Ingestion Pipeline** | Visual document processing pipeline: fetch → parse → chunk → enhance → index |
@@ -58,7 +58,7 @@ StreamChatPipeline
 | Layer | Stack |
 |-------|-------|
 | Backend | Java 17, Spring Boot 3.5, MyBatis-Plus, RocketMQ, Sa-Token |
-| AI Engine | ReACT Agent Loop + Spring AI (OpenAI-compatible) |
+| AI Engine | AgentScope ReActAgent (OpenAI-compatible / DashScope / Anthropic) |
 | Vector Store | PostgreSQL + pgvector (HNSW index) + tsvector (GIN index) |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand |
 | Infrastructure | Redis, Docker sandbox (SKILL isolation), S3 storage |
@@ -120,7 +120,7 @@ Iteration 0:  Thought → need today's date
                Observation → June 21, 2026
 
 Iteration 1:  Thought → check festival
-               Action → web_search({"query": "June 21 holiday"})
+               Action → web-search({"query": "June 21 holiday"})
                Observation → Father's Day
 
 Iteration 2:  Thought → information sufficient
@@ -131,7 +131,7 @@ Iteration 2:  Thought → information sufficient
 - **Plan-then-Execute**: Multi-step tasks start with a Plan field, then execute step by step
 - **KB Relevance Check**: Before entering the loop, a light LLM call determines which KBs are relevant — only those are searched
 - **Missing Parameters**: Searchable params (dates) auto-retrieved; user-specific params (cities) prompt a clarifying question
-- **Format Correction**: If LLM skips ReACT format, an auto-correction prompt is injected and retried once
+- **Native Tool Calling**: AgentScope ReActAgent drives the loop with native function calling; tool results are injected as observations
 
 ### Deep Thinking
 
@@ -154,7 +154,7 @@ Two parallel search channels fused via RRF:
 
 RRF formula: `score = Σ 1/(60 + rank)` — no manual weight tuning needed.
 
-A post-processing chain (dedup → Rerank → dynamic TopK) refines the results: text and image chunks are jointly scored by a multimodal Rerank model (e.g. qwen3-vl-rerank), with images sent as base64 data URIs (no public URL required). Score-cluster-aware dynamic TopK decides how many chunks reach the LLM based on the score distribution. **95% answer accuracy** on a 65-question internal eval set.
+A post-processing chain (dedup → Rerank → dynamic TopK) refines the results: text and image chunks are jointly scored by a multimodal Rerank model (e.g. qwen3-vl-rerank), with images sent as base64 data URIs (no public URL required). Score-cluster-aware dynamic TopK decides how many chunks reach the LLM based on the score distribution. **97% answer accuracy** on a 100-question internal eval set.
 
 ### Knowledge Base & Documents
 
@@ -171,19 +171,24 @@ A post-processing chain (dedup → Rerank → dynamic TopK) refines the results:
 
 ### SKILL System
 
-Define custom tools as YAML in `skills/{name}/` — no code needed:
+Define skills as `SKILL.md` (metadata source of truth) in `skills/{name}/` — no code needed:
 
-```yaml
-# skills/my-tool/skill.yaml
-name: my-tool
-description: "Query internal API"
-type: http
-url: https://internal.example.com/api
-```
+````markdown
+# skills/my-skill/SKILL.md
+---
+name: my-skill
+description: "Query internal API. Use when the user asks about xxx."
+---
 
+## Steps
+...
+````
+
+- `name`/`description` live in the SKILL.md frontmatter (Agent Skills open standard — portable across agents)
+- Optional `skill.yaml` declares execution config; without it the skill is knowledge-only (activated via `tool_reader`)
 - Types: `http` (REST API), `script` (shell scripts), `command` (executables)
 - `script`/`command` run in Docker sandbox (`--read-only`, `--cap-drop=ALL`, `--network=none`, 30s timeout)
-- Auto-loaded at startup, no additional configuration needed
+- Auto-loaded at startup; load failures show diagnostics in the admin Skills page
 
 ### Tracing & Monitoring
 

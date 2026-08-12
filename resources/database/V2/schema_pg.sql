@@ -170,6 +170,7 @@ CREATE TABLE t_knowledge_base (
     embedding_model    VARCHAR(128) NOT NULL,
     dimension          INTEGER     NOT NULL DEFAULT 1536,
     collection_name    VARCHAR(128) NOT NULL,
+    supports_image_embedding SMALLINT NOT NULL DEFAULT 0,
     created_by         VARCHAR(64)  NOT NULL,
     updated_by         VARCHAR(64),
     create_time        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -184,11 +185,11 @@ COMMENT ON COLUMN t_knowledge_base.embedding_provider IS '嵌入模型供应商�
 COMMENT ON COLUMN t_knowledge_base.embedding_model IS '嵌入模型标识';
 COMMENT ON COLUMN t_knowledge_base.dimension IS '向量维度';
 COMMENT ON COLUMN t_knowledge_base.collection_name IS 'Collection名称';
+COMMENT ON COLUMN t_knowledge_base.supports_image_embedding IS '是否支持图像嵌入: 1-是，0-否。由嵌入模型的多模态能力自动判断';
 COMMENT ON COLUMN t_knowledge_base.created_by IS '创建人';
 COMMENT ON COLUMN t_knowledge_base.updated_by IS '修改人';
 COMMENT ON COLUMN t_knowledge_base.create_time IS '创建时间';
 COMMENT ON COLUMN t_knowledge_base.update_time IS '更新时间';
-COMMENT ON COLUMN t_knowledge_base.deleted IS '是否删除 0：正常 1：删除';
 
 -- Entity: KnowledgeDocumentDO (@TableName="t_knowledge_document", @TableId=ASSIGN_ID, @TableLogic)
 -- chunk_config uses JsonbTypeHandler
@@ -664,10 +665,11 @@ COMMENT ON COLUMN t_ingestion_task_node.deleted IS '是否删除 0：正常 1：
 -- 向量按维度分表，入库维度均 ≤ 2000，统一使用 HNSW 索引。
 -- 预创建常用维度表，其他维度由 PgVectorStoreAdmin 在运行时动态创建。
 CREATE TABLE t_knowledge_vector_1024 (
-    id        VARCHAR(64) PRIMARY KEY,
-    content   TEXT,
-    metadata  JSONB,
-    embedding vector(1024)
+    id           VARCHAR(64) PRIMARY KEY,
+    content      TEXT,
+    metadata     JSONB,
+    embedding    vector(1024),
+    content_type VARCHAR(32) DEFAULT 'TEXT'
 );
 CREATE INDEX idx_kv_1024_metadata ON t_knowledge_vector_1024 USING gin(metadata);
 CREATE INDEX idx_kv_1024_embedding ON t_knowledge_vector_1024 USING hnsw (embedding vector_cosine_ops);
@@ -675,10 +677,11 @@ CREATE INDEX idx_kv_1024_content_trgm ON t_knowledge_vector_1024 USING gin (cont
 COMMENT ON TABLE t_knowledge_vector_1024 IS '知识库向量存储表（1024维）';
 
 CREATE TABLE t_knowledge_vector_1536 (
-    id        VARCHAR(64) PRIMARY KEY,
-    content   TEXT,
-    metadata  JSONB,
-    embedding vector(1536)
+    id           VARCHAR(64) PRIMARY KEY,
+    content      TEXT,
+    metadata     JSONB,
+    embedding    vector(1536),
+    content_type VARCHAR(32) DEFAULT 'TEXT'
 );
 CREATE INDEX idx_kv_1536_metadata ON t_knowledge_vector_1536 USING gin(metadata);
 CREATE INDEX idx_kv_1536_embedding ON t_knowledge_vector_1536 USING hnsw (embedding vector_cosine_ops);
@@ -745,6 +748,7 @@ CREATE TABLE t_ai_provider (
     endpoints    JSONB,
     enabled      SMALLINT     NOT NULL DEFAULT 1,
     icon_url     VARCHAR(500),
+    api_protocol VARCHAR(32)  DEFAULT 'openai',
     create_time  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted      SMALLINT     NOT NULL DEFAULT 0,
@@ -759,6 +763,7 @@ COMMENT ON COLUMN t_ai_provider.api_key IS 'API密钥';
 COMMENT ON COLUMN t_ai_provider.endpoints IS '端点映射JSON';
 COMMENT ON COLUMN t_ai_provider.enabled IS '是否启用 1：启用 0：禁用';
 COMMENT ON COLUMN t_ai_provider.icon_url IS '供应商图标URL';
+COMMENT ON COLUMN t_ai_provider.api_protocol IS 'API 协议类型: openai / dashscope / anthropic';
 COMMENT ON COLUMN t_ai_provider.create_time IS '创建时间';
 COMMENT ON COLUMN t_ai_provider.update_time IS '更新时间';
 COMMENT ON COLUMN t_ai_provider.deleted IS '是否删除 0：正常 1：删除';
@@ -777,6 +782,7 @@ CREATE TABLE t_ai_model (
     supports_multimodal SMALLINT     NOT NULL DEFAULT 0,
     dimension           TEXT,
     custom_url        VARCHAR(500),
+    api_protocol      VARCHAR(32),
     create_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted           SMALLINT     NOT NULL DEFAULT 0,
@@ -797,6 +803,7 @@ COMMENT ON COLUMN t_ai_model.supports_thinking IS '是否支持深度思考 1：
 COMMENT ON COLUMN t_ai_model.supports_multimodal IS '是否支持多模态(图片识别) 1：是 0：否';
 COMMENT ON COLUMN t_ai_model.dimension IS '向量维度（仅embedding模型）';
 COMMENT ON COLUMN t_ai_model.custom_url IS '自定义URL（覆盖供应商地址）';
+COMMENT ON COLUMN t_ai_model.api_protocol IS 'API 协议类型覆盖: openai / dashscope / anthropic，NULL=继承供应商';
 COMMENT ON COLUMN t_ai_model.create_time IS '创建时间';
 COMMENT ON COLUMN t_ai_model.update_time IS '更新时间';
 COMMENT ON COLUMN t_ai_model.deleted IS '是否删除 0：正常 1：删除';

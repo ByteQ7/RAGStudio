@@ -31,4 +31,14 @@ public class RAGConfigProperties {
      */
     @Value("${rag.query-rewrite.enabled:true}")
     private Boolean queryRewriteEnabled;
+
+    /**
+     * 简单问题跳过 LLM 改写开关
+     * <p>
+     * 无对话历史、问题较短且不含指代/追问意图时，规则归一化 + 规则拆分已足够，
+     * 直接跳过一次固定 LLM 往返，降低首包延迟。默认开启。
+     * </p>
+     */
+    @Value("${rag.query-rewrite.skip-simple:true}")
+    private Boolean queryRewriteSkipSimple;
 }

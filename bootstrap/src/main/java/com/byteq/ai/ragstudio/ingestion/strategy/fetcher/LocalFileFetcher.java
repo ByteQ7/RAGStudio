@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.ingestion.strategy.fetcher;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.ingestion.domain.context.DocumentSource;
 import com.byteq.ai.ragstudio.ingestion.domain.enums.SourceType;
+import com.byteq.ai.ragstudio.ingestion.enums.IngestionErrorCode;
 import com.byteq.ai.ragstudio.ingestion.util.MimeTypeDetector;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
@@ -47,8 +48,8 @@ public class LocalFileFetcher implements DocumentFetcher {
 
     /**
      * 允许访问的本地文件基目录列表（逗号分隔）。
-     * 如果为空则不限制基目录，但仍会拒绝包含 ".." 的路径。
-     * 示例: "/data/docs,/opt/uploads"
+     * 为空时默认限制为应用工作目录（user.dir），防止任意文件读取；
+     * 如需访问其他目录请显式配置。示例: "/data/docs,/opt/uploads"
      */
     @Value("${ragstudio.fetcher.local.allowed-base-dirs:}")
     private String allowedBaseDirsConfig;
@@ -105,7 +106,7 @@ public class LocalFileFetcher implements DocumentFetcher {
                 // 检查文件大小，防止 OOM
                 long fileSize = Files.size(realPath);
                 if (fileSize > maxFileSize) {
-                    throw new ServiceException("文件大小超过限制: " + fileSize + " bytes, 最大允许: " + maxFileSize + " bytes");
+                    throw new ServiceException("文件大小超过限制: " + fileSize + " bytes, 最大允许: " + maxFileSize + " bytes", IngestionErrorCode.FILE_TOO_LARGE);
                 }
 
                 bytes = Files.readAllBytes(realPath);
@@ -157,12 +158,15 @@ public class LocalFileFetcher implements DocumentFetcher {
 
     /**
      * 解析配置的允许基目录列表
+     * <p>
+     * 未配置时返回应用工作目录（user.dir）作为默认基目录，确保默认拒绝读取任意路径。
+     * </p>
      *
-     * @return 基目录列表，如果未配置则返回空列表
+     * @return 基目录列表
      */
     private List<String> parseAllowedBaseDirs() {
         if (!StringUtils.hasText(allowedBaseDirsConfig)) {
-            return List.of();
+            return List.of(System.getProperty("user.dir"));
         }
         return Arrays.stream(allowedBaseDirsConfig.split(","))
                 .map(String::trim)
@@ -182,7 +186,7 @@ public class LocalFileFetcher implements DocumentFetcher {
     private byte[] readWithLimit(InputStream is, long maxSize, String location) throws Exception {
         byte[] data = is.readNBytes((int) maxSize + 1);
         if (data.length > maxSize) {
-            throw new ServiceException("文件大小超过限制: " + maxSize + " bytes, 来源: " + location);
+            throw new ServiceException("文件大小超过限制: " + maxSize + " bytes, 来源: " + location, IngestionErrorCode.FILE_TOO_LARGE);
         }
         return data;
     }

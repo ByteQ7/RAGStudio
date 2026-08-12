@@ -2,6 +2,7 @@ package com.byteq.ai.ragstudio.rag.core.agent;
 
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 
+import com.byteq.ai.ragstudio.rag.core.tool.Tool;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,6 +53,18 @@ public class AgentContext {
     /** 用户 ID（用于持久化 Observation 到对话历史） */
     private final String userId;
 
+    /** 当前请求选择的知识库 ID 列表（空列表表示无知识库可用） */
+    private final List<String> knowledgeBaseIds;
+
+    /** 知识库概要文本（名称 + collection + 描述，注入 rag_search 工具描述） */
+    private final String kbSummaryText;
+
+    /** 系统查询改写结果（上下文补全 + 指代消解，供 rag_search 弱追问替换） */
+    private final String rewrittenQuery;
+
+    /** 查询改写阶段拆分的子问题列表（供 rag_search 多问句并行召回，避免重复支付改写成本） */
+    private final List<String> subQuestions;
+
     // ==================== 运行时累积 ====================
 
     /** Agent 推理步骤记录（用于前端回放和日志） */
@@ -92,6 +105,28 @@ public class AgentContext {
                         List<Tool> tools, int maxIterations, long timeoutMs,
                         List<String> imageUrls, int thinkingLevel,
                         String conversationId, String userId) {
+        this(question, history, kbContext, kbRelevant, tools, maxIterations, timeoutMs,
+                imageUrls, thinkingLevel, conversationId, userId, List.of(), null, null);
+    }
+
+    public AgentContext(String question, List<ChatMessage> history,
+                        String kbContext, boolean kbRelevant,
+                        List<Tool> tools, int maxIterations, long timeoutMs,
+                        List<String> imageUrls, int thinkingLevel,
+                        String conversationId, String userId,
+                        List<String> knowledgeBaseIds, String kbSummaryText, String rewrittenQuery) {
+        this(question, history, kbContext, kbRelevant, tools, maxIterations, timeoutMs,
+                imageUrls, thinkingLevel, conversationId, userId,
+                knowledgeBaseIds, kbSummaryText, rewrittenQuery, List.of());
+    }
+
+    public AgentContext(String question, List<ChatMessage> history,
+                        String kbContext, boolean kbRelevant,
+                        List<Tool> tools, int maxIterations, long timeoutMs,
+                        List<String> imageUrls, int thinkingLevel,
+                        String conversationId, String userId,
+                        List<String> knowledgeBaseIds, String kbSummaryText, String rewrittenQuery,
+                        List<String> subQuestions) {
         this.question = question;
         this.history = history != null ? List.copyOf(history) : List.of();
         this.kbContext = kbContext != null ? kbContext : "";
@@ -103,6 +138,10 @@ public class AgentContext {
         this.thinkingLevel = Math.max(0, Math.min(100, thinkingLevel));
         this.conversationId = conversationId;
         this.userId = userId;
+        this.knowledgeBaseIds = knowledgeBaseIds != null ? List.copyOf(knowledgeBaseIds) : List.of();
+        this.kbSummaryText = kbSummaryText;
+        this.rewrittenQuery = rewrittenQuery;
+        this.subQuestions = subQuestions != null ? List.copyOf(subQuestions) : List.of();
     }
 
     /** 标记循环开始 */
@@ -143,6 +182,10 @@ public class AgentContext {
     public int getThinkingLevel() { return thinkingLevel; }
     public String getConversationId() { return conversationId; }
     public String getUserId() { return userId; }
+    public List<String> getKnowledgeBaseIds() { return knowledgeBaseIds; }
+    public String getKbSummaryText() { return kbSummaryText; }
+    public String getRewrittenQuery() { return rewrittenQuery; }
+    public List<String> getSubQuestions() { return subQuestions; }
 
     /** 是否包含 KB 上下文 */
     public boolean hasKb() {

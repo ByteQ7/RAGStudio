@@ -808,13 +808,11 @@ const SimpleAreaChart = ({
 
 const TrafficOverviewSection = ({
                                   trends,
-                                  overview,
                                   timeWindow,
                                   loading,
                                   className
                                 }: {
   trends: DashboardTrendBundle;
-  overview: DashboardOverview | null;
   timeWindow: DashboardTimeWindow;
   loading?: boolean;
   className?: string;
@@ -823,10 +821,6 @@ const TrafficOverviewSection = ({
     const points = trends.messages?.series?.[0]?.data || [];
     return points.map((p) => ({ ts: p.ts, value: p.value }));
   }, [trends.messages]);
-
-  const deltaPct = overview?.kpis?.messages24h?.deltaPct;
-  const change = toChange(deltaPct);
-  const showChange = change.trend !== "flat";
 
   return (
       <DashCard className={cn("flex flex-col", className)}>
@@ -1468,7 +1462,6 @@ export function DashboardPage() {
             <KPISection overview={overview} />
             <TrafficOverviewSection
                 trends={trends}
-                overview={overview}
                 timeWindow={timeWindow}
                 loading={loading}
                 className="h-[300px]"

@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -164,23 +165,23 @@ public class RetrievalEngine {
                 return chunks;
             }
 
-            // 构建 chunkId → kbName 映射
-            java.util.Map<String, String> chunkKbNameMap = new java.util.HashMap<>();
-            // 构建 chunkId → docName 映射
-            java.util.Map<String, String> chunkDocNameMap = new java.util.HashMap<>();
+            // 构建 chunkId → kbName/docName/文档元数据映射
+            Map<String, String> chunkKbNameMap = new HashMap<>();
+            Map<String, String> chunkDocNameMap = new HashMap<>();
+            Map<String, KnowledgeDocumentDO> chunkDocumentMap = new HashMap<>();
             // 获取所有涉及的文档 ID
             java.util.Set<String> docIds = chunkDOs.stream()
                     .map(KnowledgeChunkDO::getDocId)
                     .filter(Objects::nonNull)
                     .collect(java.util.stream.Collectors.toSet());
             // 查询文档名称
-            java.util.Map<String, String> docNameMap = new java.util.HashMap<>();
+            Map<String, KnowledgeDocumentDO> documentMap = new HashMap<>();
             if (CollUtil.isNotEmpty(docIds)) {
                 java.util.List<KnowledgeDocumentDO> docs = knowledgeDocumentMapper.selectList(
                         com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
                                 .in(KnowledgeDocumentDO::getId, docIds));
                 for (KnowledgeDocumentDO doc : docs) {
-                    docNameMap.put(doc.getId(), doc.getDocName());
+                    documentMap.put(doc.getId(), doc);
                 }
             }
             // 填充每个 chunk 的 kbName 和 docName
@@ -189,9 +190,12 @@ public class RetrievalEngine {
                 if (kbName != null) {
                     chunkKbNameMap.put(c.getId(), kbName);
                 }
-                String docName = docNameMap.get(c.getDocId());
-                if (docName != null) {
-                    chunkDocNameMap.put(c.getId(), docName);
+                KnowledgeDocumentDO document = documentMap.get(c.getDocId());
+                if (document != null) {
+                    chunkDocumentMap.put(c.getId(), document);
+                    if (document.getDocName() != null) {
+                        chunkDocNameMap.put(c.getId(), document.getDocName());
+                    }
                 }
             }
             for (RetrievedChunk chunk : chunks) {
@@ -202,6 +206,23 @@ public class RetrievalEngine {
                 String dn = chunkDocNameMap.get(chunk.getId());
                 if (dn != null) {
                     chunk.setDocName(dn);
+                }
+                KnowledgeDocumentDO document = chunkDocumentMap.get(chunk.getId());
+                if (document != null) {
+                    Map<String, Object> metadata = new HashMap<>();
+                    if (chunk.getMetadata() != null) {
+                        metadata.putAll(chunk.getMetadata());
+                    }
+                    if (document.getCreateTime() != null) {
+                        metadata.put("document_created_at", document.getCreateTime().toInstant().toString());
+                    }
+                    if (document.getUpdateTime() != null) {
+                        metadata.put("document_updated_at", document.getUpdateTime().toInstant().toString());
+                    }
+                    if (document.getSourceType() != null && !document.getSourceType().isBlank()) {
+                        metadata.put("source_type", document.getSourceType());
+                    }
+                    chunk.setMetadata(metadata);
                 }
             }
         } finally {

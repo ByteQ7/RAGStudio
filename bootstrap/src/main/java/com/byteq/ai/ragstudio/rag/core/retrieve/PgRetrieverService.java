@@ -15,6 +15,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -41,6 +42,26 @@ public class PgRetrieverService implements RetrieverService {
 
     /** pg_trgm 扩展可用性缓存（null=未探测），决定关键词检索使用 similarity 还是位置降级打分 */
     private volatile Boolean trgmAvailable;
+
+    /** collection → 维度缓存：检索路径每次按 collection 查库解析维度，热点 collection 高频重复 */
+    private final Map<String, CacheEntry<Integer>> dimensionCache = new ConcurrentHashMap<>();
+
+    /** collection → embedding 模型缓存：同上，避免每次检索重复查库 */
+    private final Map<String, CacheEntry<String>> modelCache = new ConcurrentHashMap<>();
+
+    /**
+     * collection 元数据缓存 TTL：维度/模型变更需重建向量表（t_knowledge_vector_{dim}）。
+     * 缓存过长会拉大"重建向量表 → 检索切到新表"的生效时间窗（期间仍查旧表，
+     * 旧表删除后检索降级为空结果）。60s 窗口在热点检索路径上已足够抵消重复查库开销。
+     */
+    private static final long COLLECTION_META_CACHE_TTL_MS = 60_000L;
+
+    /** 带时间戳的缓存条目 */
+    private record CacheEntry<T>(T value, long timestamp) {
+        boolean expired() {
+            return System.currentTimeMillis() - timestamp > COLLECTION_META_CACHE_TTL_MS;
+        }
+    }
 
     /** 缺失 pg_trgm 时 similarity 函数不存在的错误特征 */
     private static final String TRGM_FUNCTION_MISSING = "does not exist";
@@ -436,10 +457,18 @@ public class PgRetrieverService implements RetrieverService {
 
     private Integer resolveDimensionFromCollection(String collectionName) {
         if (collectionName == null || collectionName.isBlank()) return null;
+        CacheEntry<Integer> cached = dimensionCache.get(collectionName);
+        if (cached != null && !cached.expired()) {
+            return cached.value();
+        }
         try {
-            return jdbcTemplate.queryForObject(
+            Integer dimension = jdbcTemplate.queryForObject(
                     "SELECT dimension FROM t_knowledge_base WHERE collection_name = ? LIMIT 1",
                     Integer.class, collectionName);
+            if (dimension != null && dimension > 0) {
+                dimensionCache.put(collectionName, new CacheEntry<>(dimension, System.currentTimeMillis()));
+            }
+            return dimension;
         } catch (Exception e) {
             log.debug("通过 collectionName 查询 KB 维度失败: {}", collectionName);
             return null;
@@ -448,10 +477,18 @@ public class PgRetrieverService implements RetrieverService {
 
     private String resolveEmbeddingModelFromCollection(String collectionName) {
         if (collectionName == null || collectionName.isBlank()) return null;
+        CacheEntry<String> cached = modelCache.get(collectionName);
+        if (cached != null && !cached.expired()) {
+            return cached.value();
+        }
         try {
-            return jdbcTemplate.queryForObject(
+            String model = jdbcTemplate.queryForObject(
                     "SELECT embedding_model FROM t_knowledge_base WHERE collection_name = ? LIMIT 1",
                     String.class, collectionName);
+            if (model != null && !model.isBlank()) {
+                modelCache.put(collectionName, new CacheEntry<>(model, System.currentTimeMillis()));
+            }
+            return model;
         } catch (Exception e) {
             log.debug("通过 collectionName 查询 KB embedding 模型失败: {}", collectionName);
             return null;

@@ -1,6 +1,3 @@
---- section: format_reminder ---
-【格式要求】请严格按照 JSON 格式输出。每次输出必须是一个完整的 JSON 对象，包含 thought 字段。需要调用工具时包含 action + action_input，回答时包含 action: "finish" + final_answer。绝对不要输出非 JSON 格式的文本。
-
 --- section: multi_turn ---
 【注意事项】这是多轮对话，请审阅前序对话内容后再回答当前问题。如果当前问题需要多步推理，请先给出 Plan 再执行。
 

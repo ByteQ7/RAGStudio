@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -88,6 +89,10 @@ public class SandboxExecutor {
             pb.redirectErrorStream(false);
 
             Process process = pb.start();
+            // 并发排空 stdout/stderr：若先 waitFor 再读流，子进程输出超过管道缓冲（约 64KB）
+            // 时会阻塞写管道而永不退出，导致必然超时且输出全部丢失
+            CompletableFuture<String> stdoutFuture = CompletableFuture.supplyAsync(() -> readStream(process.getInputStream()));
+            CompletableFuture<String> stderrFuture = CompletableFuture.supplyAsync(() -> readStream(process.getErrorStream()));
             boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
 
             long duration = System.currentTimeMillis() - start;
@@ -103,8 +108,9 @@ public class SandboxExecutor {
                         .build();
             }
 
-            String stdout = readStream(process.getInputStream());
-            String stderr = readStream(process.getErrorStream());
+            // 进程已退出，管道已关闭，读流必然结束
+            String stdout = stdoutFuture.join();
+            String stderr = stderrFuture.join();
             int exitCode = process.exitValue();
 
             String output = stdout;
@@ -143,7 +149,11 @@ public class SandboxExecutor {
             cmd.add("info");
             Process process = new ProcessBuilder(cmd).start();
             boolean finished = process.waitFor(5, TimeUnit.SECONDS);
-            return finished && process.exitValue() == 0;
+            if (!finished) {
+                process.destroyForcibly();
+                return false;
+            }
+            return process.exitValue() == 0;
         } catch (Exception e) {
             return false;
         }

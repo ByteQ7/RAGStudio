@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.admin.controller;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +23,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
+@SaCheckRole("admin")
 @RequiredArgsConstructor
 @RequestMapping("/admin/skills")
 public class SkillController {

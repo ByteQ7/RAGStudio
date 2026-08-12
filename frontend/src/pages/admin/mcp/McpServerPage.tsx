@@ -138,7 +138,8 @@ export function McpServerPage() {
       description: server.description || "",
       enabled: server.enabled,
       transportType: server.transportType,
-      headers: server.headers || ""
+      // 后端出于安全考虑不回传 headers 原文；留空提交时不修改已配置的 headers
+      headers: ""
     });
     setDialogMode("edit");
     setEditingId(server.id);
@@ -476,7 +477,7 @@ export function McpServerPage() {
                 onChange={(e) => setForm({ ...form, headers: e.target.value })}
               />
               <p className="text-xs text-gray-400">
-                用于需要鉴权的外部 MCP Server，留空表示无需自定义请求头
+                用于需要鉴权的外部 MCP Server；出于安全考虑已配置的请求头不回显，留空表示不修改
               </p>
             </div>
           </div>

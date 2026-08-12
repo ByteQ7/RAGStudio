@@ -2,6 +2,7 @@ package com.byteq.ai.ragstudio.infra.embedding;
 
 import com.byteq.ai.ragstudio.infra.enums.ModelCapability;
 import com.byteq.ai.ragstudio.framework.exception.RemoteException;
+import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
@@ -77,6 +78,7 @@ public class RoutingEmbeddingService implements EmbeddingService {
      * @return 文本的向量表示
      */
     @Override
+    @RagTraceNode(name = "embedding", type = "EMBEDDING")
     public List<Float> embed(String text) {
         return executor.executeWithFallback(
                 ModelCapability.EMBEDDING,
@@ -100,6 +102,7 @@ public class RoutingEmbeddingService implements EmbeddingService {
      * @return 文本的向量表示
      */
     @Override
+    @RagTraceNode(name = "embedding", type = "EMBEDDING")
     public List<Float> embed(String text, String modelId) {
         return executor.executeWithFallback(
                 ModelCapability.EMBEDDING,
@@ -143,6 +146,7 @@ public class RoutingEmbeddingService implements EmbeddingService {
      * @return 文本向量列表，顺序与输入一致
      */
     @Override
+    @RagTraceNode(name = "embedding-batch", type = "EMBEDDING")
     public List<List<Float>> embedBatch(List<String> texts) {
         return executor.executeWithFallback(
                 ModelCapability.EMBEDDING,
@@ -162,6 +166,7 @@ public class RoutingEmbeddingService implements EmbeddingService {
      * @return 文本向量列表，顺序与输入一致
      */
     @Override
+    @RagTraceNode(name = "embedding-batch", type = "EMBEDDING")
     public List<List<Float>> embedBatch(List<String> texts, String modelId) {
         return executor.executeWithFallback(
                 ModelCapability.EMBEDDING,
@@ -174,6 +179,7 @@ public class RoutingEmbeddingService implements EmbeddingService {
     }
 
     @Override
+    @RagTraceNode(name = "embedding-batch", type = "EMBEDDING")
     public List<List<Float>> embedBatch(List<String> texts, String modelId, Integer dimension) {
         if (dimension == null || dimension <= 0) {
             return embedBatch(texts, modelId);

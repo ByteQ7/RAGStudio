@@ -1,6 +1,6 @@
 package com.byteq.ai.ragstudio.rag.config;
 
-import com.byteq.ai.ragstudio.infra.springai.AiLogHolder;
+import com.byteq.ai.ragstudio.infra.ailog.AiLogHolder;
 import com.byteq.ai.ragstudio.rag.service.AiLogService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;

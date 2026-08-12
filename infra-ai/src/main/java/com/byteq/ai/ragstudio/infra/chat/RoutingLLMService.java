@@ -14,7 +14,7 @@ import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
-import com.byteq.ai.ragstudio.infra.springai.AiLogHolder;
+import com.byteq.ai.ragstudio.infra.ailog.AiLogHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;

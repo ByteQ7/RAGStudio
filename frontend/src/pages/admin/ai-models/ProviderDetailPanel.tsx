@@ -37,10 +37,8 @@ import {
   type AiProvider,
   type AiProviderPayload,
   type AiModel,
-  type AiModelPayload,
   type ConnectivityResult,
-  checkConnectivity,
-  updateProvider
+  checkConnectivity
 } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
 import { ModelGroupList } from "./ModelGroupList";
@@ -63,18 +61,11 @@ interface ProviderDetailPanelProps {
   togglingModelEnabledId: string | null;
   // Fetch models
   onFetchModels: () => void;
-  fetchingModels: boolean;
   // Add model manually
   onAddModel: (providerId: string) => void;
 }
 
 // ==================== Helpers ====================
-
-function maskApiKey(key?: string | null): string {
-  if (!key) return "";
-  if (key.length <= 8) return "••••••••";
-  return `${key.slice(0, 4)}••••••••${key.slice(-4)}`;
-}
 
 // ==================== Component ====================
 
@@ -92,7 +83,6 @@ export function ProviderDetailPanel({
   onModelPriorityChange,
   togglingModelEnabledId,
   onFetchModels,
-  fetchingModels,
   onAddModel
 }: ProviderDetailPanelProps) {
   // ---------- Local form state ----------
@@ -113,7 +103,8 @@ export function ProviderDetailPanel({
   const resetForm = useCallback((p: AiProvider) => {
     setDisplayName(p.displayName || "");
     setBaseUrl(p.baseUrl);
-    setApiKey(p.apiKey || "");
+    // 后端只返回掩码 Key，编辑框留空；留空提交时不修改已配置的 Key
+    setApiKey("");
     setEndpointsJson(
       p.endpoints ? JSON.stringify(p.endpoints, null, 2) : ""
     );
@@ -196,13 +187,9 @@ export function ProviderDetailPanel({
   };
 
   const handleCopyApiKey = async () => {
-    if (!provider?.apiKey) return;
-    try {
-      await navigator.clipboard.writeText(provider.apiKey);
-      toast.success("API Key 已复制");
-    } catch {
-      toast.error("复制失败");
-    }
+    // 后端出于安全考虑仅返回掩码，完整 Key 不可复制
+    if (!provider?.hasApiKey) return;
+    toast.info("出于安全考虑，完整 API Key 不再回显，请在服务端配置文件中管理");
   };
 
   // ---------- Empty state ----------
@@ -386,7 +373,7 @@ export function ProviderDetailPanel({
                 <div className="relative">
                   <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   <Input
-                    value={editing ? apiKey : maskApiKey(provider.apiKey)}
+                    value={editing ? apiKey : provider.hasApiKey ? "••••••••••••" : ""}
                     onChange={(e) => setApiKey(e.target.value)}
                     disabled={!editing}
                     type={showApiKey || editing ? "text" : "password"}
@@ -394,7 +381,15 @@ export function ProviderDetailPanel({
                       "h-10 pl-10 pr-20 text-sm font-mono rounded-xl",
                       !editing && "bg-gray-50 text-gray-500 border-gray-100"
                     )}
-                    placeholder={editing ? "sk-..." : ""}
+                    placeholder={
+                      editing
+                        ? provider.hasApiKey
+                          ? "已配置，留空则不修改"
+                          : "sk-..."
+                        : provider.hasApiKey
+                          ? "已配置"
+                          : "未配置"
+                    }
                   />
                   <div className="absolute right-3 top-1/2 flex -translate-y-1/2 gap-1">
                     {editing && (
@@ -410,11 +405,12 @@ export function ProviderDetailPanel({
                         )}
                       </button>
                     )}
-                    {!editing && provider.apiKey && (
+                    {!editing && provider.hasApiKey && (
                       <button
                         type="button"
                         className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
                         onClick={handleCopyApiKey}
+                        title="复制 API Key"
                       >
                         <Copy className="h-3.5 w-3.5" />
                       </button>
@@ -595,14 +591,9 @@ export function ProviderDetailPanel({
                   size="sm"
                   className="h-9 gap-1.5 text-xs rounded-xl"
                   onClick={onFetchModels}
-                  disabled={fetchingModels}
                 >
-                  {fetchingModels ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  )}
-                  {fetchingModels ? "获取中..." : "从供应商获取"}
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  从供应商获取
                 </Button>
               </div>
             </div>

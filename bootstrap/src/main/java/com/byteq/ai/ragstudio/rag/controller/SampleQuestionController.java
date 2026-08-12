@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.rag.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.rag.controller.request.SampleQuestionCreateRequest;
@@ -74,6 +75,7 @@ public class SampleQuestionController {
      * @return 新创建的示例问题 ID
      */
     @PostMapping("/sample-questions")
+    @SaCheckRole("admin")
     public Result<String> create(@RequestBody SampleQuestionCreateRequest requestParam) {
         return Results.success(sampleQuestionService.create(requestParam));
     }
@@ -86,6 +88,7 @@ public class SampleQuestionController {
      * @return 操作结果
      */
     @PutMapping("/sample-questions/{id}")
+    @SaCheckRole("admin")
     public Result<Void> update(@PathVariable String id, @RequestBody SampleQuestionUpdateRequest requestParam) {
         sampleQuestionService.update(id, requestParam);
         return Results.success();
@@ -98,6 +101,7 @@ public class SampleQuestionController {
      * @return 操作结果
      */
     @DeleteMapping("/sample-questions/{id}")
+    @SaCheckRole("admin")
     public Result<Void> delete(@PathVariable String id) {
         sampleQuestionService.delete(id);
         return Results.success();

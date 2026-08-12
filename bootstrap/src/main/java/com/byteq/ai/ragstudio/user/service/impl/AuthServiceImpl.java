@@ -7,6 +7,7 @@ import com.byteq.ai.ragstudio.user.controller.request.LoginRequest;
 import com.byteq.ai.ragstudio.user.controller.vo.LoginVO;
 import com.byteq.ai.ragstudio.user.dao.entity.UserDO;
 import com.byteq.ai.ragstudio.user.dao.mapper.UserMapper;
+import com.byteq.ai.ragstudio.user.enums.UserErrorCode;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.security.PasswordHasher;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
@@ -57,10 +58,10 @@ public class AuthServiceImpl implements AuthService {
         }
         UserDO user = findByUsername(username);
         if (user == null || !PasswordHasher.matches(password, user.getPassword())) {
-            throw new ClientException("用户名或密码错误");
+            throw new ClientException("用户名或密码错误", UserErrorCode.PASSWORD_VERIFY_FAILED);
         }
         if (user.getId() == null) {
-            throw new ClientException("用户信息异常");
+            throw new ClientException("用户信息异常", UserErrorCode.USER_NOT_FOUND);
         }
         String loginId = user.getId().toString();
         StpUtil.login(loginId);

@@ -62,6 +62,9 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
                         .eq(ConversationMessageDO::getUserId, userId)
                         .eq(ConversationMessageDO::getDeleted, 0)
                         .orderByDesc(ConversationMessageDO::getCreateTime)
+                        // 同一毫秒内插入的多条消息（如流式完成落库与标题更新）排序不稳定，
+                        // 以 id 作为次级排序保证顺序确定性
+                        .orderByDesc(ConversationMessageDO::getId)
                         .last("limit " + maxMessages)
         );
         if (CollUtil.isEmpty(dbMessages)) {
@@ -94,7 +97,7 @@ public class JdbcConversationMemoryStore implements ConversationMemoryStore {
         }
 
         Integer tl = message.getThinkingLevel();
-        log.warn("存储消息 thinkingLevel={}, role={}, conversationId={}", tl, message.getRole(), conversationId);
+        log.debug("存储消息 thinkingLevel={}, role={}, conversationId={}", tl, message.getRole(), conversationId);
         ConversationMessageBO conversationMessage = ConversationMessageBO.builder()
                 .conversationId(conversationId)
                 .userId(userId)

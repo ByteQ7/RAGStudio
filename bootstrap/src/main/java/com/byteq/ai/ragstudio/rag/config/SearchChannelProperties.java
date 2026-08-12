@@ -34,6 +34,16 @@ public class SearchChannelProperties {
     private int maxFinalChunks = 5;
 
     /**
+     * 送入远程 Rerank 的全局候选数量上限。
+     * <p>
+     * 多知识库场景下粗召候选可能膨胀到上百条（per-kb-overflow-cap × KB 数），
+     * 远程 Rerank 输入量线性放大且结果只取前几条，性价比极低。
+     * 在 Rerank 前先按 RRF/向量分数截断到该上限，再发送远程调用。
+     * </p>
+     */
+    private int maxRerankCandidates = 40;
+
+    /**
      * Rerank 最低分数阈值，低于此分数的 chunk 被丢弃（0 = 不启用）
      */
     private double rerankMinScore = 0.3;
@@ -75,11 +85,11 @@ public class SearchChannelProperties {
      * 知识库语义选择阈值（余弦相似度）
      * <p>
      * 用户问题向量与知识库（名称+描述+文档名）向量相似度高于该阈值的知识库才会被选中检索。
-     * 若没有任何知识库超过该阈值，则降级保留相似度最高的 1 个知识库（分数需 ≥ 阈值的 60%），
-     * 避免因阈值过严导致"不选知识库"。
+     * 没有任何知识库超过该阈值时判定为与知识库无关，不检索（不降级保留），
+     * 避免实时信息（天气/新闻）等明显无关问题被误判为相关。
      * </p>
      */
-    private double kbSelectionThreshold = 0.30;
+    private double kbSelectionThreshold = 0.32;
 
     /**
      * 知识库语义选择最大数量
@@ -139,6 +149,15 @@ public class SearchChannelProperties {
          * 裁剪缓存 TTL（小时），与 embedding 缓存保持一致
          */
         private int cacheTtlHours = 6;
+
+        /**
+         * 裁剪调用硬超时（毫秒）：超时直接保留原文进入后续流程，不阻塞回答。
+         * 后台任务仍会完成并把结果写入缓存，后续相同(问题, chunk)请求可直接命中。
+         * 0 或负数表示不限制（保持原有同步阻塞行为）。
+         * 注意：CPU 语义模型实测约 1.9s/20句/1 chunk，默认值偏保守，
+         * 长内容大概率超时跳过裁剪（让位于延迟）；如需保留裁剪效果请调大或置 0。
+         */
+        private long timeoutMs = 2000;
     }
 
     /**

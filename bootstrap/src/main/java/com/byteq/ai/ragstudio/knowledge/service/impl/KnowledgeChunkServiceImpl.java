@@ -27,6 +27,7 @@ import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.infra.embedding.EmbeddingService;
 import com.byteq.ai.ragstudio.infra.token.TokenCounterService;
 import com.byteq.ai.ragstudio.knowledge.enums.DocumentStatus;
+import com.byteq.ai.ragstudio.knowledge.enums.KnowledgeErrorCode;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorStoreService;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeChunkService;
 import lombok.RequiredArgsConstructor;
@@ -61,7 +62,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     @Override
     public IPage<KnowledgeChunkVO> pageQuery(String docId, KnowledgeChunkPageRequest requestParam) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
 
         LambdaQueryWrapper<KnowledgeChunkDO> queryWrapper = new LambdaQueryWrapper<KnowledgeChunkDO>()
                 .eq(KnowledgeChunkDO::getDocId, docId)
@@ -119,7 +120,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     @Transactional(rollbackFor = Exception.class)
     public KnowledgeChunkVO create(String docId, KnowledgeChunkCreateRequest requestParam) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
         if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
             throw new ClientException("文档正在分块处理中，暂不支持新增 Chunk");
         }
@@ -195,7 +196,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         }
 
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
 
         boolean needAutoIndex = requestParams.stream().anyMatch(request -> request.getIndex() == null);
         int nextIndex = 0;
@@ -282,13 +283,13 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     @Transactional(rollbackFor = Exception.class)
     public void update(String docId, String chunkId, KnowledgeChunkUpdateRequest requestParam) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
         if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
             throw new ClientException("文档正在分块处理中，暂不支持修改 Chunk");
         }
 
         KnowledgeChunkDO chunkDO = chunkMapper.selectById(chunkId);
-        Assert.notNull(chunkDO, () -> new ClientException("Chunk 不存在"));
+        Assert.notNull(chunkDO, () -> new ClientException("Chunk 不存在", KnowledgeErrorCode.CHUNK_NOT_FOUND));
         Assert.isTrue(chunkDO.getDocId().equals(docId), () -> new ClientException("Chunk 不属于该文档"));
 
         String newContent = requestParam.getContent();
@@ -332,17 +333,17 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(String docId, String chunkId) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
         if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
             throw new ClientException("文档正在分块处理中，暂不支持删除 Chunk");
         }
 
         KnowledgeChunkDO chunkDO = chunkMapper.selectById(chunkId);
-        Assert.notNull(chunkDO, () -> new ClientException("Chunk 不存在"));
+        Assert.notNull(chunkDO, () -> new ClientException("Chunk 不存在", KnowledgeErrorCode.CHUNK_NOT_FOUND));
         Assert.isTrue(chunkDO.getDocId().equals(docId), () -> new ClientException("Chunk 不属于该文档"));
 
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
-        Assert.notNull(kbDO, () -> new ServiceException("知识库不存在"));
+        Assert.notNull(kbDO, () -> new ClientException("知识库不存在", KnowledgeErrorCode.KB_NOT_FOUND));
         String collectionName = kbDO.getCollectionName();
         int dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : 1536;
 
@@ -365,14 +366,14 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     @Transactional(rollbackFor = Exception.class)
     public void enableChunk(String docId, String chunkId, boolean enabled) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
         if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
             throw new ClientException("文档正在分块处理中，暂不支持修改 Chunk 状态");
         }
         validateDocumentEnabledForChunkEnable(documentDO, enabled);
 
         KnowledgeChunkDO chunkDO = chunkMapper.selectById(chunkId);
-        Assert.notNull(chunkDO, () -> new ClientException("Chunk 不存在"));
+        Assert.notNull(chunkDO, () -> new ClientException("Chunk 不存在", KnowledgeErrorCode.CHUNK_NOT_FOUND));
         Assert.isTrue(chunkDO.getDocId().equals(docId), () -> new ClientException("Chunk 不属于该文档"));
 
         // 如果状态没变，直接返回
@@ -416,7 +417,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         }
 
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
         if (DocumentStatus.RUNNING.getCode().equals(documentDO.getStatus())) {
             throw new ClientException("文档正在分块处理中，暂不支持批量修改 Chunk 状态");
         }
@@ -507,7 +508,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     @Override
     public List<KnowledgeChunkVO> listByDocId(String docId) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        Assert.notNull(documentDO, () -> new ClientException("文档不存在"));
+        Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
 
         List<KnowledgeChunkDO> chunkDOList = chunkMapper.selectList(
                 Wrappers.lambdaQuery(KnowledgeChunkDO.class)

@@ -4,11 +4,12 @@ import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
+import com.byteq.ai.ragstudio.knowledge.enums.KnowledgeErrorCode;
+import com.byteq.ai.ragstudio.knowledge.controller.vo.KnowledgeBaseVO;
+import com.byteq.ai.ragstudio.knowledge.controller.vo.KnowledgeDocumentVO;
+import com.byteq.ai.ragstudio.knowledge.service.KnowledgeBaseService;
+import com.byteq.ai.ragstudio.knowledge.service.KnowledgeDocumentService;
 import com.byteq.ai.ragstudio.framework.web.Results;
-import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeBaseDO;
-import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeDocumentDO;
-import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeBaseMapper;
-import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,14 +48,14 @@ public class DocumentPreviewController {
     private static final Set<String> TEXT_FILE_TYPES = Set.of("txt", "markdown", "md", "csv", "json", "xml", "yaml", "yml", "log");
     private static final Set<String> OFFICE_FILE_TYPES = Set.of("docx", "xlsx", "pptx", "odt", "ods", "odp");
 
-    private final KnowledgeDocumentMapper documentMapper;
-    private final KnowledgeBaseMapper knowledgeBaseMapper;
+    private final KnowledgeDocumentService documentService;
+    private final KnowledgeBaseService knowledgeBaseService;
     private final FileStorageService fileStorageService;
 
-    private void checkPermission(KnowledgeDocumentDO doc) {
-        KnowledgeBaseDO kb = knowledgeBaseMapper.selectById(doc.getKbId());
+    private void checkPermission(KnowledgeDocumentVO doc) {
+        KnowledgeBaseVO kb = knowledgeBaseService.queryById(doc.getKbId());
         if (kb == null) {
-            throw new ClientException("所属知识库不存在");
+            throw new ClientException("所属知识库不存在", KnowledgeErrorCode.KB_NOT_FOUND);
         }
         String role = UserContext.getRole();
         String username = UserContext.getUsername();
@@ -74,8 +75,8 @@ public class DocumentPreviewController {
      */
     @PostMapping("/knowledge-base/docs/{docId}/preview")
     public Result<Map<String, Object>> preview(@PathVariable("docId") String docId) {
-        KnowledgeDocumentDO doc = documentMapper.selectById(docId);
-        if (doc == null) throw new ClientException("文档不存在");
+        KnowledgeDocumentVO doc = documentService.get(docId);
+        if (doc == null) throw new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND);
         checkPermission(doc);
 
         if (doc.getFileUrl() == null || doc.getFileUrl().isBlank()) {
@@ -111,7 +112,12 @@ public class DocumentPreviewController {
      */
     @GetMapping("/knowledge-base/docs/{docId}/preview/file")
     public ResponseEntity<InputStreamResource> previewFile(@PathVariable("docId") String docId) {
-        KnowledgeDocumentDO doc = documentMapper.selectById(docId);
+        KnowledgeDocumentVO doc;
+        try {
+            doc = documentService.get(docId);
+        } catch (ClientException e) {
+            return ResponseEntity.notFound().build();
+        }
         if (doc == null) return ResponseEntity.notFound().build();
         checkPermission(doc);
 

@@ -18,14 +18,14 @@
 
 ## 概述
 
-**RAGStudio** 基于 **Java 17 + Spring Boot 3.5** 构建，所有请求统一走 **ReACT Agent 循环**（JSON 结构化 Thought → Action → Observation），LLM 自主推理、调用工具、观察结果，直到给出最终答案。
+**RAGStudio** 基于 **Java 17 + Spring Boot 3.5** 构建，所有请求统一走 **AgentScope ReActAgent 循环**（原生工具调用），LLM 自主推理、调用工具、观察结果，直到给出最终答案。
 
 ### 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| **ReACT Agent 循环** | JSON 结构化输出（`{"action":"finish","final_answer":"..."}`），状态严格隔离，零跨状态串扰 |
-| **纯 OkHttp 模型调用** | 移除 LangChain4j 依赖，自研统 `ModelHttpClient` 支持同步/流式/Embedding/连通性探测 |
+| **AgentScope ReActAgent** | 基于 AgentScope 编排框架的原生工具调用 ReACT 循环，事件流实时透传 SSE |
+| **AgentScope 模型调用层** | 自研 OkHttp 模型客户端已替换为 AgentScope（OpenAI 兼容 / DashScope / Anthropic），支持同步/流式/深度思考参数 |
 | **Native Function Calling 就绪** | 工具定义自动转为 OpenAI `tools` 格式，API 响应 `tool_calls` 结构已完整解析 |
 | **统一工具发现** | `tool_reader` 遍历 MCP + SKILL 注册表，LLM 运行态自主发现和调用任意工具 |
 | **多模型路由** | 数据库驱动动态配置，百炼/DeepSeek/SiliconFlow 故障秒级切换 |
@@ -34,7 +34,7 @@
 | **顺序 Chunk 引用** | 知识块编号 `[^chunk_1][^chunk_2]` 替代长 Snowflake ID，LLM 引用准确率大幅提升 |
 | **深度思考** | 0–100% 可调推理深度，分步链式思考过程可见 |
 | **多模态知识库** | 图片/PDF/Office 文档多模态分块与嵌入，IMAGE chunk 独立向量检索，检索结果图片直通多模态 LLM |
-| **检索质量优化** | 知识库语义选择防误杀 + 分数簇感知动态 TopK + 多模态 Rerank（图片 base64 直传），65 题评测集问答准确率 95% |
+| **检索质量优化** | 知识库语义选择防误杀 + 分数簇感知动态 TopK + 多模态 Rerank（图片 base64 直传），100 题评测集问答准确率 97% |
 | **SKILL 技能系统** | 写 YAML 定义工具，零代码接入 Agent 循环 |
 | **全链路追踪** | 自研轻量级分布式追踪，记录管线每个阶段耗时 |
 | **数据摄取管线** | 可视化编排的文档处理流水线：抓取 → 解析 → 分块 → 增强 → 索引 |
@@ -119,20 +119,21 @@ cd frontend && npm install && npm run dev   # → http://localhost:5173
 ### Agent 循环
 
 ```
-迭代 0:  LLM → {"action":"time_now","action_input":{}}
+迭代 0:  LLM → 调用 time_now
          系统 → Observation: 2026年6月21日
 
-迭代 1:  LLM → {"action":"web_search","action_input":{"query":"6月21日节日"}}
+迭代 1:  LLM → 调用 web-search("6月21日节日")
          系统 → Observation: 父亲节
 
-迭代 2:  LLM → {"action":"finish","final_answer":"今天是2026年6月21日，父亲节。"}
+迭代 2:  LLM → 直接回答：今天是2026年6月21日，父亲节。
          → 流式推送至前端
 ```
 
-- **JSON 结构化输出**：LLM 输出纯 JSON，解析器提取 `action` / `final_answer` 字段，不再做文本正则猜测
-- **工具全量注册**：MCP + SKILL 全部注册到 ToolRegistry，LLM 通过 `tool_reader` 运行态发现和调用任意工具
-- **OBSERVATION 角色隔离**：工具结果以独立角色注入，LLM 不会误认为用户发言
-- **格式校正**：LLM 未按 JSON 格式输出时自动注入纠正提示重试
+- **AgentScope 原生工具调用**：ReActAgent 驱动循环，工具定义自动转为各厂商 function calling 格式，无需手工 JSON 解析
+- **工具全量注册**：MCP + SKILL 全部注册到 Toolkit，LLM 通过 `tool_reader` 运行态发现和调用任意工具
+- **事件流透传**：`streamEvents()` 28 种类型化事件映射为 SSE（content / think / agent_step / citation）
+- **引用溯源**：`[^chunk_N]` 编号 + 回答后匹配，chunk 定位到具体知识库文档
+- **深度思考**：thinking 参数经 ReasoningRouter 适配为各模型原生参数，思考内容经 think 通道实时透出
 
 ### 深度思考
 
@@ -155,7 +156,7 @@ cd frontend && npm install && npm run dev   # → http://localhost:5173
 
 RRF 公式：`score = Σ 1/(60 + rank)`，无需人工调权重。
 
-检索后处理链（去重 → Rerank → 动态 TopK）进一步精排：文本/图片统一由多模态 Rerank 模型（如 qwen3-vl-rerank）语义打分（图片以 base64 data URI 直传，不依赖公网地址），分数簇感知动态 TopK 按分数分布决定送入 LLM 的条数。65 题内部评测集问答准确率 **95%**。
+检索后处理链（去重 → Rerank → 动态 TopK）进一步精排：文本/图片统一由多模态 Rerank 模型（如 qwen3-vl-rerank）语义打分（图片以 base64 data URI 直传，不依赖公网地址），分数簇感知动态 TopK 按分数分布决定送入 LLM 的条数。100 题内部评测集问答准确率 **97%**。
 
 ### 知识库与文档
 
@@ -172,19 +173,24 @@ RRF 公式：`score = Σ 1/(60 + rank)`，无需人工调权重。
 
 ### SKILL 技能系统
 
-写 YAML 文件放到 `skills/{name}/` 即可，无需写 Java 或搭 MCP：
+在 `skills/{name}/` 目录下写 `SKILL.md`（元数据标准来源）即可，无需写 Java 或搭 MCP：
 
-```yaml
-# skills/my-tool/skill.yaml
-name: my-tool
-description: "查询内部 API"
-type: http
-url: https://internal.example.com/api
-```
+````markdown
+# skills/my-skill/SKILL.md
+---
+name: my-skill
+description: "查询内部 API。当用户询问 xxx 时使用。"
+---
 
+## 使用步骤
+...
+````
+
+- `name`/`description` 写在 SKILL.md frontmatter（兼容 Agent Skills 开放标准，可跨端复用）
+- 可选 `skill.yaml` 声明执行配置；无执行配置则为纯知识型技能（通过 `tool_reader` 激活）
 - 类型：`http`（REST API）、`script`（脚本）、`command`（命令）
 - `script`/`command` 在 Docker 沙箱隔离运行（只读文件系统、去权、无网络、30 秒超时）
-- 启动时自动加载，无需额外配置
+- 启动时自动加载；加载失败会在管理后台"技能"页展示诊断原因
 
 ### 链路追踪
 

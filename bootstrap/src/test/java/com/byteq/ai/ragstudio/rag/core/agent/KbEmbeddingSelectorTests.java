@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * 知识库语义选择器测试：
- * 覆盖 topK 截断、分数接近度扩量、阈值降级三条决策路径。
+ * 覆盖 topK 截断、分数接近度扩量、全低于阈值判无关三条决策路径。
  */
 class KbEmbeddingSelectorTests {
 
@@ -137,18 +137,17 @@ class KbEmbeddingSelectorTests {
     }
 
     @Test
-    void allBelowThresholdFallsBackToBestEffort() {
+    void allBelowThresholdIsNotRelevant() {
+        // 全部低于阈值 → 判定为与知识库无关，不降级保留任何库（防止天气/闲聊等明显无关问题被误判相关）
         properties.setKbSelectionTopK(8);
-        properties.setKbSelectionThreshold(0.30);
+        properties.setKbSelectionThreshold(0.32);
         properties.setKbSelectionTieBandRatio(0.10);
-        // 全部低于阈值但最高分 ≥ 0.30*0.6 → 降级保留最高分 1 个
         double[] cosines = {0.20, 0.19, 0.18, 0.17, 0.16, 0.15, 0.14, 0.13};
         KbEmbeddingSelector selector = selectorWith(cosines);
 
         KbEmbeddingSelector.SelectionResult result = selector.select("测试问题", List.of(), kbInfos());
 
-        assertTrue(result.relevant());
-        assertEquals(1, result.selected().size());
-        assertTrue(selectedIds(result).contains("kb-0"));
+        assertTrue(!result.relevant());
+        assertTrue(result.selected().isEmpty());
     }
 }

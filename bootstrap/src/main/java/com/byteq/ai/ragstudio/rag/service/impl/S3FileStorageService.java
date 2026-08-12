@@ -7,6 +7,7 @@ import com.byteq.ai.ragstudio.rag.util.FileTypeDetector;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.tika.Tika;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -25,7 +26,10 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * S3 文件存储服务实现类
@@ -45,6 +49,22 @@ public class S3FileStorageService implements FileStorageService {
     private static final Duration PRESIGN_DURATION = Duration.ofMinutes(10);
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int READ_TIMEOUT_MS = 60_000;
+
+    /**
+     * 允许访问的 S3 bucket 白名单（逗号分隔，默认 ragstudio）。
+     * <p>
+     * 防止用户传入任意 s3://bucket/key 访问存储桶内任意对象（越权枚举/下载/删除）。
+     * </p>
+     */
+    @Value("${rag.s3.allowed-buckets:ragstudio}")
+    private String allowedBuckets;
+
+    private Set<String> allowedBucketSet() {
+        return Arrays.stream(allowedBuckets.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
+    }
 
     // 通过预签名 URL 流式上传 MultipartFile，使用 Tika 自动探测 Content-Type
     @Override
@@ -309,11 +329,19 @@ public class S3FileStorageService implements FileStorageService {
         if (bucket == null || bucket.isBlank()) {
             throw new IllegalArgumentException("Invalid s3 url (bucket missing): " + url);
         }
+        checkBucketAllowed(bucket);
         String key = (path != null && path.startsWith("/")) ? path.substring(1) : path;
         if (key == null || key.isBlank()) {
             throw new IllegalArgumentException("Invalid s3 url (key missing): " + url);
         }
         return new S3Location(bucket, key);
+    }
+
+    // 校验 bucket 是否在白名单内，防止越权访问存储桶内任意对象
+    private void checkBucketAllowed(String bucket) {
+        if (!allowedBucketSet().contains(bucket)) {
+            throw new IllegalArgumentException("S3 bucket 不在白名单内，拒绝访问: " + bucket);
+        }
     }
 
     private record S3Location(String bucket, String key) {
@@ -343,6 +371,7 @@ public class S3FileStorageService implements FileStorageService {
     // 校验 bucket 名称不为空
     private void validateBucketName(String bucketName) {
         Assert.notBlank(bucketName, "bucketName 不能为空");
+        checkBucketAllowed(bucketName);
     }
 
     // 构建文件存储结果 DTO

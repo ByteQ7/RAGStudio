@@ -205,17 +205,13 @@ export function KnowledgeListPage() {
 
   const renderEmbeddingModel = (model?: string) => {
     if (!model) return "-";
-    const parts = model.split("-");
-    if (parts.length < 2) {
-      return <span className="text-sm text-gray-700">{model}</span>;
-    }
-    const head = parts.slice(0, -1).join("-");
-    const tail = parts[parts.length - 1];
     return (
-      <div className="flex flex-col text-xs text-gray-500">
-        <span className="font-medium text-gray-700">{head}</span>
-        <span>{tail}</span>
-      </div>
+      <span
+        className="block max-w-[220px] truncate whitespace-nowrap text-sm text-gray-700"
+        title={model}
+      >
+        {model}
+      </span>
     );
   };
 

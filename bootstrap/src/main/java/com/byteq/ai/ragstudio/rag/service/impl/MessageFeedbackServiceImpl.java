@@ -9,6 +9,7 @@ import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.mq.producer.MessageQueueProducer;
 import com.byteq.ai.ragstudio.rag.controller.request.MessageFeedbackRequest;
 import com.byteq.ai.ragstudio.rag.dao.entity.ConversationMessageDO;
+import com.byteq.ai.ragstudio.rag.enums.RagErrorCode;
 import com.byteq.ai.ragstudio.rag.dao.entity.MessageFeedbackDO;
 import com.byteq.ai.ragstudio.rag.dao.mapper.ConversationMessageMapper;
 import com.byteq.ai.ragstudio.rag.dao.mapper.MessageFeedbackMapper;
@@ -46,7 +47,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
     public void submitFeedbackAsync(String messageId, MessageFeedbackRequest request) {
         String userId = UserContext.getUserId();
         Assert.notBlank(userId, () -> new ClientException("未获取到当前登录用户"));
-        Assert.notBlank(messageId, () -> new ClientException("消息ID不能为空"));
+        Assert.notBlank(messageId, () -> new ClientException("消息ID不能为空", RagErrorCode.MESSAGE_ID_EMPTY));
         Assert.notNull(request, () -> new ClientException("反馈内容不能为空"));
         Integer vote = request.getVote();
         Assert.notNull(vote, () -> new ClientException("反馈值不能为空"));
@@ -68,7 +69,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
     public void submitFeedback(String messageId, MessageFeedbackRequest request) {
         String userId = UserContext.getUserId();
         Assert.notBlank(userId, () -> new ClientException("未获取到当前登录用户"));
-        Assert.notBlank(messageId, () -> new ClientException("消息ID不能为空"));
+        Assert.notBlank(messageId, () -> new ClientException("消息ID不能为空", RagErrorCode.MESSAGE_ID_EMPTY));
         Assert.notNull(request, () -> new ClientException("反馈内容不能为空"));
 
         Integer vote = request.getVote();
@@ -179,7 +180,7 @@ public class MessageFeedbackServiceImpl implements MessageFeedbackService {
     public void submitFeedbackByEvent(MessageFeedbackEvent event) {
         String messageId = event.getMessageId();
         String userId = event.getUserId();
-        Assert.notBlank(messageId, () -> new ClientException("消息ID不能为空"));
+        Assert.notBlank(messageId, () -> new ClientException("消息ID不能为空", RagErrorCode.MESSAGE_ID_EMPTY));
         Assert.notBlank(userId, () -> new ClientException("用户ID不能为空"));
         Assert.notNull(event.getVote(), () -> new ClientException("反馈值不能为空"));
 

@@ -8,6 +8,8 @@ import com.byteq.ai.ragstudio.rag.core.retrieve.RetrievalEngine;
 import com.byteq.ai.ragstudio.rag.core.rewrite.FollowUpQueryUtil;
 import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
 import com.byteq.ai.ragstudio.rag.dto.RetrievalContext;
+import com.byteq.ai.ragstudio.rag.core.tool.Tool;
+import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import lombok.extern.slf4j.Slf4j;
 
@@ -46,6 +48,9 @@ public class RagSearchTool implements Tool {
     private final String userOriginalQuestion;
     /** 系统查询改写结果（含上下文补全与指代消解），追问/重试场景优先使用 */
     private final String rewrittenQuery;
+
+    /** 查询改写阶段拆分的子问题列表：Agent 检索时复用，多问句查询按子问题并行召回 */
+    private final List<String> subQuestions;
     /** 检索到的 Chunk 回调（用于引用溯源） */
     private Consumer<List<RetrievedChunk>> chunksConsumer;
 
@@ -105,12 +110,33 @@ public class RagSearchTool implements Tool {
                          String kbSummaryText,
                          String userOriginalQuestion,
                          String rewrittenQuery) {
+        this(retrievalEngine, searchProperties, knowledgeBaseIds, kbSummaryText, userOriginalQuestion,
+                rewrittenQuery, null);
+    }
+
+    /**
+     * @param retrievalEngine       检索引擎
+     * @param searchProperties      检索配置（TopK 等）
+     * @param knowledgeBaseIds      当前请求选择的知识库 ID 列表
+     * @param kbSummaryText         知识库概要，用于工具描述中让 LLM 了解知识库内容
+     * @param userOriginalQuestion  用户的原始提问（未经改写，用于重排序阶段）
+     * @param rewrittenQuery        系统查询改写结果（含上下文补全与指代消解）
+     * @param subQuestions          改写阶段拆分的子问题（多问句并行召回复用，可为 null）
+     */
+    public RagSearchTool(RetrievalEngine retrievalEngine,
+                         SearchChannelProperties searchProperties,
+                         List<String> knowledgeBaseIds,
+                         String kbSummaryText,
+                         String userOriginalQuestion,
+                         String rewrittenQuery,
+                         List<String> subQuestions) {
         this.retrievalEngine = retrievalEngine;
         this.searchProperties = searchProperties;
         this.knowledgeBaseIds = knowledgeBaseIds != null ? List.copyOf(knowledgeBaseIds) : List.of();
         this.kbSummaryText = kbSummaryText;
         this.userOriginalQuestion = userOriginalQuestion;
         this.rewrittenQuery = rewrittenQuery;
+        this.subQuestions = subQuestions != null ? List.copyOf(subQuestions) : List.of();
     }
 
     /** 设置 Chunk 收集回调（Agent 模式下用于引用溯源） */
@@ -191,9 +217,14 @@ public class RagSearchTool implements Tool {
         }
 
         try {
-            // 使用 RewriteResult 兼容现有检索 API，直接以 query 作为主问题
-            RewriteResult rewriteResult = new RewriteResult(query, List.of(query));
             int citationStartIndex = citationStartIndexSupplier != null ? citationStartIndexSupplier.getAsInt() : 0;
+            // 复用改写阶段的子问题列表（多问句并行召回），避免重新支付 LLM 改写成本。
+            // 仅首次检索携带：Agent 后续细化检索（query 更精准）不再掺入首轮子问题，
+            // 避免候选池膨胀与弱相关结果混入
+            boolean firstSearch = citationStartIndex == 0;
+            RewriteResult rewriteResult = CollUtil.isNotEmpty(subQuestions) && firstSearch
+                    ? new RewriteResult(query, subQuestions)
+                    : new RewriteResult(query, List.of(query));
             RetrievalContext ctx = retrievalEngine.retrieveByKnowledgeBases(
                     knowledgeBaseIds, rewriteResult, topK, userOriginalQuestion, citationStartIndex);
 

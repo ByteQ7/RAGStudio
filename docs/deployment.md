@@ -118,12 +118,6 @@ psql -U postgres -d ragstudio -f resources/database/V2/schema_pg.sql
 
 # 导入初始数据
 psql -U postgres -d ragstudio -f resources/database/V2/init_data_pg.sql
-
-# 运行增量迁移（如果存在）
-for f in resources/database/V2/migration/*.sql; do
-  echo "执行迁移: $f"
-  psql -U postgres -d ragstudio -f "$f"
-done
 ```
 
 ### 3. 环境变量配置

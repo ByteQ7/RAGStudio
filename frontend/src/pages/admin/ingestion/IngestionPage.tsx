@@ -261,7 +261,6 @@ export function IngestionPage() {
   }>({ open: false, pipeline: null });
   const [pipelineDeleteTarget, setPipelineDeleteTarget] = useState<IngestionPipeline | null>(null);
 
-  const [pipelineOptions, setPipelineOptions] = useState<IngestionPipeline[]>([]);
   const [embeddingModels, setEmbeddingModels] = useState<AiModel[]>([]);
 
   useEffect(() => {
@@ -293,15 +292,6 @@ export function IngestionPage() {
     }
   };
 
-  const loadPipelineOptions = async () => {
-    try {
-      const data = await getIngestionPipelines(1, 200);
-      setPipelineOptions(data.records || []);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
   const loadTasks = async (pageNo = taskPageNo, status = taskStatus) => {
     setTaskLoading(true);
     try {
@@ -324,10 +314,6 @@ export function IngestionPage() {
   }, [taskPageNo, taskStatus]);
 
   useEffect(() => {
-    loadPipelineOptions();
-  }, []);
-
-  useEffect(() => {
     if (tabParam === "tasks" || tabParam === "pipelines") {
       setActiveTab(tabParam);
       return;
@@ -348,13 +334,11 @@ export function IngestionPage() {
   const handlePipelineRefresh = () => {
     setPipelinePageNo(1);
     loadPipelines(1, pipelineKeyword);
-    loadPipelineOptions();
   };
 
   const handleTaskRefresh = () => {
     setTaskPageNo(1);
     loadTasks(1, taskStatus);
-    loadPipelineOptions();
   };
 
   const handlePipelineDelete = async () => {
@@ -364,7 +348,6 @@ export function IngestionPage() {
       toast.success("删除成功");
       setPipelineDeleteTarget(null);
       await loadPipelines(1, pipelineKeyword);
-      await loadPipelineOptions();
     } catch (error) {
       toast.error(getErrorMessage(error, "删除失败"));
       console.error(error);
@@ -623,7 +606,6 @@ export function IngestionPage() {
           }
           setPipelineDialog({ open: false, mode: "create", pipeline: null });
           await loadPipelines(1, pipelineKeyword);
-          await loadPipelineOptions();
         }}
       />
 

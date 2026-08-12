@@ -82,6 +82,8 @@ rag:
 
   query-rewrite:
     enabled: true
+    # 简单问题跳过 LLM 改写：无历史 + 短问题 + 无指代/追问意图时用规则归一化+规则拆分，省一次 LLM 往返
+    skip-simple: true
 
   rate-limit:
     global:
@@ -138,14 +140,18 @@ rag:
     # - top-k 默认覆盖全部用户选定知识库：选库排序受嵌入模型稳定性影响，硬截断会把正确知识库
     #   整体排除导致检索零召回；相关度裁剪交由检索阶段的 rerank + 动态 TopK 完成
     # - tie-band-ratio：与第 topK 名分数接近（差距 ≤10%）的候选库一并保留，防模型分数抖动误截
+    # - 全部低于阈值时判定为无关、不检索（已移除"降级保留最佳库"兜底，避免天气/闲聊等
+    #   明显无关问题被强制触发知识库检索）
     kb-selection-top-k: 8
     kb-selection-tie-band-ratio: 0.10
-    kb-selection-threshold: 0.30
+    kb-selection-threshold: 0.32
 
     # 语义裁剪（ContextCropper）性能优化（CPU-only 环境）
     # - min-chars：参与裁剪文本总字符数低于该值 → 跳过裁剪保原文（短内容裁剪收益接近 0）
     # - max-sentences-per-chunk：每条 chunk 最多裁剪句数（0=不限制；长 chunk 尾部句子贡献递减）
     # - cache-enabled：裁剪结果 Redis 缓存（(问题, chunk) 幂等，追问/重复提问直接命中）
+    # - timeout-ms：硬超时，超时保留原文不阻塞回答；后台完成后仍写缓存供后续命中。
+    #   CPU 语义模型实测约 1.9s/20句/1 chunk，默认值偏保守（让位于延迟），需保留裁剪效果可调大或置 0
     crop:
       min-chars: 800
       # 每条 chunk 最多裁剪句数：长 chunk 尾部句子贡献递减，限制后裁剪时延线性下降
@@ -153,6 +159,10 @@ rag:
       max-sentences-per-chunk: 20
       cache-enabled: true
       cache-ttl-hours: 6
+      timeout-ms: 2000
+
+    # 远程 Rerank 全局候选数量上限：多知识库粗召候选先截断再送 Rerank，避免输入量线性膨胀
+    max-rerank-candidates: 40
 
     channels:
       # 向量全局检索（当前已禁用：VectorGlobalSearchChannel.isEnabled() 返回 false）
@@ -184,7 +194,9 @@ rag:
       failure-threshold: 2
       open-duration-ms: 30000
     stream:
-      message-chunk-size: 1
+      # SSE 消息分块大小（字符）：过小会导致事件数/flush 次数线性膨胀，
+      # 1 字符/事件在长回答下产生数千个 SSE 事件与 servlet flush，徒增 CPU 与网络开销
+      message-chunk-size: ${SSE_MESSAGE_CHUNK_SIZE:16}
     http:
       connect-timeout-seconds: 10
       # 同步调用读超时 60s：配合 chat 的 fallback 次数上限，避免模型挂起/降级时

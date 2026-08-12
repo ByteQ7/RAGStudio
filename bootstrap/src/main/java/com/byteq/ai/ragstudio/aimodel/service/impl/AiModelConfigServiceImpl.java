@@ -13,6 +13,7 @@ import com.byteq.ai.ragstudio.aimodel.controller.request.ModelPriorityItem;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.AiModelVO;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.AiProviderVO;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.ConnectivityResultVO;
+import com.byteq.ai.ragstudio.aimodel.enums.AiModelErrorCode;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.FetchModelsResultVO;
 import com.byteq.ai.ragstudio.aimodel.controller.vo.RemoteModelInfoVO;
 import com.byteq.ai.ragstudio.aimodel.adapter.ProviderAdapter;
@@ -25,6 +26,7 @@ import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiProviderMapper;
 import com.byteq.ai.ragstudio.aimodel.service.AiModelConfigService;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
+import com.byteq.ai.ragstudio.framework.security.UrlSafetyValidator;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.http.ModelHttpClient;
@@ -79,6 +81,8 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         if (StrUtil.isBlank(request.getBaseUrl())) {
             throw new ClientException("API 基础地址不能为空");
         }
+        // 管理员录入地址仅做协议/格式校验（内网模型服务为合法场景）
+        String baseUrl = UrlSafetyValidator.validateHttpUrl(request.getBaseUrl(), "API 基础地址");
 
         Map<String, String> mergedEndpoints = fillDefaultEndpoints(
                 request.getName(), request.getEndpoints());
@@ -86,7 +90,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         AiProviderDO provider = AiProviderDO.builder()
                 .name(request.getName().trim())
                 .displayName(request.getDisplayName())
-                .baseUrl(request.getBaseUrl().trim())
+                .baseUrl(baseUrl)
                 .apiKey(request.getApiKey())
                 .apiProtocol(StrUtil.isNotBlank(request.getApiProtocol()) ? request.getApiProtocol() : "openai")
                 .endpoints(serializeEndpoints(mergedEndpoints))
@@ -98,12 +102,12 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                     new LambdaQueryWrapper<AiProviderDO>().eq(AiProviderDO::getName, request.getName())
             );
             if (count > 0) {
-                throw new ServiceException("供应商标识已存在：" + request.getName());
+                throw new ClientException("供应商标识已存在：" + request.getName(), AiModelErrorCode.PROVIDER_NAME_EXIST);
             }
 
             providerMapper.insert(provider);
         } catch (DuplicateKeyException e) {
-            throw new ClientException("供应商标识已存在：" + request.getName());
+            throw new ClientException("供应商标识已存在：" + request.getName(), AiModelErrorCode.PROVIDER_NAME_EXIST);
         }
         log.info("创建 AI 供应商: id={}, name={}", provider.getId(), provider.getName());
 
@@ -115,14 +119,15 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public void updateProvider(String id, AiProviderUpdateRequest request) {
         AiProviderDO existing = providerMapper.selectById(id);
         if (existing == null) {
-            throw new ClientException("供应商不存在：" + id);
+            throw new ClientException("供应商不存在：" + id, AiModelErrorCode.PROVIDER_NOT_FOUND);
         }
 
         if (StrUtil.isNotBlank(request.getDisplayName())) {
             existing.setDisplayName(request.getDisplayName());
         }
         if (StrUtil.isNotBlank(request.getBaseUrl())) {
-            existing.setBaseUrl(request.getBaseUrl().trim());
+            // 管理员录入地址仅做协议/格式校验（内网模型服务为合法场景）
+            existing.setBaseUrl(UrlSafetyValidator.validateHttpUrl(request.getBaseUrl(), "API 基础地址"));
         }
         if (request.getApiKey() != null) {
             existing.setApiKey(request.getApiKey());
@@ -152,7 +157,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         providerMapper.updateById(existing);
         log.info("更新 AI 供应商: id={}, name={}", id, existing.getName());
 
-        // 清除该供应商下所有模型的 Spring AI 实例缓存
+        // 清除该供应商下所有模型的模型实例缓存（AgentScope 按请求构建，无缓存）
         evictModelsByProvider(id);
         configCache.reloadAndNotify();
     }
@@ -162,7 +167,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public void deleteProvider(String id) {
         AiProviderDO existing = providerMapper.selectById(id);
         if (existing == null) {
-            throw new ClientException("供应商不存在：" + id);
+            throw new ClientException("供应商不存在：" + id, AiModelErrorCode.PROVIDER_NOT_FOUND);
         }
 
         // 检查是否有关联的已启用模型
@@ -178,7 +183,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         providerMapper.deleteById(id);
         log.info("删除 AI 供应商: id={}, name={}", id, existing.getName());
 
-        // 清除该供应商下所有模型的 Spring AI 实例缓存
+        // 清除该供应商下所有模型的模型实例缓存（AgentScope 按请求构建，无缓存）
         evictModelsByProvider(id);
         configCache.reloadAndNotify();
     }
@@ -187,7 +192,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public AiProviderVO getProvider(String id) {
         AiProviderDO provider = providerMapper.selectById(id);
         if (provider == null) {
-            throw new ClientException("供应商不存在：" + id);
+            throw new ClientException("供应商不存在：" + id, AiModelErrorCode.PROVIDER_NOT_FOUND);
         }
         return toProviderVO(provider);
     }
@@ -221,7 +226,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         // 校验供应商存在
         AiProviderDO provider = providerMapper.selectById(request.getProviderId());
         if (provider == null) {
-            throw new ClientException("供应商不存在：" + request.getProviderId());
+            throw new ClientException("供应商不存在：" + request.getProviderId(), AiModelErrorCode.PROVIDER_NOT_FOUND);
         }
 
         AiModelDO model = AiModelDO.builder()
@@ -245,7 +250,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                     new LambdaQueryWrapper<AiModelDO>().eq(AiModelDO::getModelId, request.getModelId())
             );
             if (count > 0) {
-                throw new ServiceException("模型标识已存在：" + request.getModelId());
+                throw new ClientException("模型标识已存在：" + request.getModelId(), AiModelErrorCode.MODEL_NAME_EXIST);
             }
 
             // 如果设置为默认，先取消同 capability 下的其他默认
@@ -255,7 +260,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
             modelMapper.insert(model);
         } catch (DuplicateKeyException e) {
-            throw new ClientException("模型标识已存在：" + request.getModelId());
+            throw new ClientException("模型标识已存在：" + request.getModelId(), AiModelErrorCode.MODEL_NAME_EXIST);
         }
         log.info("创建 AI 模型: id={}, modelId={}, capability={}", model.getId(), model.getModelId(), model.getCapability());
 
@@ -267,7 +272,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public void updateModel(String id, AiModelUpdateRequest request) {
         AiModelDO existing = modelMapper.selectById(id);
         if (existing == null) {
-            throw new ClientException("模型不存在：" + id);
+            throw new ClientException("模型不存在：" + id, AiModelErrorCode.MODEL_NOT_FOUND);
         }
 
         LambdaUpdateWrapper<AiModelDO> wrapper = new LambdaUpdateWrapper<AiModelDO>()
@@ -276,7 +281,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         if (StrUtil.isNotBlank(request.getProviderId()) && !request.getProviderId().equals(existing.getProviderId())) {
             AiProviderDO provider = providerMapper.selectById(request.getProviderId());
             if (provider == null) {
-                throw new ClientException("供应商不存在：" + request.getProviderId());
+                throw new ClientException("供应商不存在：" + request.getProviderId(), AiModelErrorCode.PROVIDER_NOT_FOUND);
             }
             wrapper.set(AiModelDO::getProviderId, request.getProviderId());
         }
@@ -319,7 +324,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public void deleteModel(String id) {
         AiModelDO existing = modelMapper.selectById(id);
         if (existing == null) {
-            throw new ClientException("模型不存在：" + id);
+            throw new ClientException("模型不存在：" + id, AiModelErrorCode.MODEL_NOT_FOUND);
         }
 
         // 先物理删除之前软删除的同 model_id 记录，避免 uk_ai_model_model_id 冲突
@@ -336,7 +341,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public AiModelVO getModel(String id) {
         AiModelDO model = modelMapper.selectById(id);
         if (model == null) {
-            throw new ClientException("模型不存在：" + id);
+            throw new ClientException("模型不存在：" + id, AiModelErrorCode.MODEL_NOT_FOUND);
         }
         return toModelVO(model);
     }
@@ -381,7 +386,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public void setDefaultModel(String id) {
         AiModelDO model = modelMapper.selectById(id);
         if (model == null) {
-            throw new ClientException("模型不存在：" + id);
+            throw new ClientException("模型不存在：" + id, AiModelErrorCode.MODEL_NOT_FOUND);
         }
 
         // 取消同 capability 下的其他默认模型
@@ -433,7 +438,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     /**
-     * 清除指定供应商下所有模型的 Spring AI 实例缓存
+     * 清除指定供应商下所有模型的模型实例缓存（AgentScope 按请求构建，无缓存）
      */
     private void evictModelsByProvider(String providerId) {
         List<AiModelDO> models = modelMapper.selectList(
@@ -450,6 +455,9 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 CopyOptions.create().setIgnoreProperties("endpoints"));
         // 解析 endpoints JSON
         vo.setEndpoints(parseEndpoints(provider.getEndpoints()));
+        // 密钥掩码返回，完整密钥不暴露给前端
+        vo.setApiKey(maskApiKey(provider.getApiKey()));
+        vo.setHasApiKey(StrUtil.isNotBlank(provider.getApiKey()));
         // 统计该供应商下的模型数量
         Long modelCount = modelMapper.selectCount(
                 new LambdaQueryWrapper<AiModelDO>()
@@ -543,11 +551,25 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
     // ==================== 连通性检查 & 远程模型 ====================
 
+    /**
+     * 密钥掩码：仅保留后 4 位，用于前端展示（完整密钥不回传）
+     */
+    private static String maskApiKey(String apiKey) {
+        if (StrUtil.isBlank(apiKey)) {
+            return null;
+        }
+        String trimmed = apiKey.trim();
+        if (trimmed.length() <= 4) {
+            return "******";
+        }
+        return "******" + trimmed.substring(trimmed.length() - 4);
+    }
+
     @Override
     public ConnectivityResultVO checkConnectivity(String providerId) {
         AiProviderDO provider = providerMapper.selectById(providerId);
         if (provider == null) {
-            throw new ClientException("供应商不存在：" + providerId);
+            throw new ClientException("供应商不存在：" + providerId, AiModelErrorCode.PROVIDER_NOT_FOUND);
         }
 
         ProviderAdapter adapter = adapterRegistry.getAdapter(provider.getName());
@@ -588,7 +610,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             );
         }
         if (model == null) {
-            throw new ClientException("模型不存在：" + id);
+            throw new ClientException("模型不存在：" + id, AiModelErrorCode.MODEL_NOT_FOUND);
         }
         AiProviderDO provider = providerMapper.selectById(model.getProviderId());
         if (provider == null) {
@@ -845,7 +867,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public FetchModelsResultVO fetchRemoteModels(String providerId) {
         AiProviderDO provider = providerMapper.selectById(providerId);
         if (provider == null) {
-            throw new ClientException("供应商不存在：" + providerId);
+            throw new ClientException("供应商不存在：" + providerId, AiModelErrorCode.PROVIDER_NOT_FOUND);
         }
 
         ProviderAdapter adapter = adapterRegistry.getAdapter(provider.getName());
@@ -898,6 +920,10 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                             .eq(AiModelDO::getProviderId, request.getProviderId())
                             .last("LIMIT 1")
             );
+            // capability 可能为空，统一兜底为 CHAT，避免重新启用分支 NPE 中断整个批次
+            String capability = StrUtil.isNotBlank(request.getCapability())
+                    ? request.getCapability().toUpperCase()
+                    : "CHAT";
             if (existing != null) {
                 if (existing.getEnabled() == 1) {
                     log.info("模型已存在且已启用，跳过: providerId={}, modelId={}", request.getProviderId(), request.getModelId());
@@ -908,7 +934,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 update.setId(existing.getId());
                 update.setEnabled(1);
                 update.setModelName(request.getModelName().trim());
-                update.setCapability(request.getCapability().toUpperCase());
+                update.setCapability(capability);
                 update.setIsDefault(request.getIsDefault() != null ? request.getIsDefault() : 0);
                 update.setPriority(request.getPriority() != null ? request.getPriority() : 100);
                 update.setSupportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0);
@@ -938,7 +964,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                         .providerId(request.getProviderId())
                         .modelId(request.getModelId().trim())
                         .modelName(request.getModelName().trim())
-                        .capability(request.getCapability().toUpperCase())
+                        .capability(capability)
                         .isDefault(request.getIsDefault() != null ? request.getIsDefault() : 0)
                         .priority(request.getPriority() != null ? request.getPriority() : 100)
                         .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
@@ -968,7 +994,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     public void updateProviderIcon(String providerId, String iconUrl) {
         AiProviderDO existing = providerMapper.selectById(providerId);
         if (existing == null) {
-            throw new ClientException("供应商不存在：" + providerId);
+            throw new ClientException("供应商不存在：" + providerId, AiModelErrorCode.PROVIDER_NOT_FOUND);
         }
 
         existing.setIconUrl(iconUrl);

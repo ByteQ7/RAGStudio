@@ -10,6 +10,7 @@ import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.security.PasswordHasher;
 import com.byteq.ai.ragstudio.user.controller.request.ChangePasswordRequest;
+import com.byteq.ai.ragstudio.user.enums.UserErrorCode;
 import com.byteq.ai.ragstudio.user.controller.request.UserCreateRequest;
 import com.byteq.ai.ragstudio.user.controller.request.UserPageRequest;
 import com.byteq.ai.ragstudio.user.controller.request.UserUpdateRequest;
@@ -175,7 +176,7 @@ public class UserServiceImpl implements UserService {
                         .eq(UserDO::getId, loginUser.getUserId())
                         .eq(UserDO::getDeleted, 0)
         );
-        Assert.notNull(record, () -> new ClientException("用户不存在"));
+        Assert.notNull(record, () -> new ClientException("用户不存在", UserErrorCode.USER_NOT_FOUND));
         if (!PasswordHasher.matches(current, record.getPassword())) {
             throw new ClientException("当前密码不正确");
         }
@@ -193,7 +194,7 @@ public class UserServiceImpl implements UserService {
                         .eq(UserDO::getId, userId)
                         .eq(UserDO::getDeleted, 0)
         );
-        Assert.notNull(record, () -> new ClientException("用户不存在"));
+        Assert.notNull(record, () -> new ClientException("用户不存在", UserErrorCode.USER_NOT_FOUND));
         record.setAvatar(iconUrl);
         userMapper.updateById(record);
     }
@@ -205,7 +206,7 @@ public class UserServiceImpl implements UserService {
                         .eq(UserDO::getId, id)
                         .eq(UserDO::getDeleted, 0)
         );
-        Assert.notNull(record, () -> new ClientException("用户不存在"));
+        Assert.notNull(record, () -> new ClientException("用户不存在", UserErrorCode.USER_NOT_FOUND));
         return record;
     }
 

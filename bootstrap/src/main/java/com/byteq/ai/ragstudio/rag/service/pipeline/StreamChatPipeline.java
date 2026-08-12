@@ -6,31 +6,17 @@ import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
 import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
-import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentContext;
+import com.byteq.ai.ragstudio.rag.core.agent.AgentScopeReActExecutor;
 import com.byteq.ai.ragstudio.rag.core.agent.KbEmbeddingSelector;
-import com.byteq.ai.ragstudio.rag.core.agent.OrchestratorAgent;
-import com.byteq.ai.ragstudio.rag.core.agent.QaSubAgent;
-import com.byteq.ai.ragstudio.rag.core.agent.ReActPromptBuilder;
-import com.byteq.ai.ragstudio.rag.core.agent.ReActResponseParser;
-import com.byteq.ai.ragstudio.rag.core.agent.ToolSubAgent;
-import com.byteq.ai.ragstudio.rag.core.agent.ToolRetriever;
-import com.byteq.ai.ragstudio.rag.core.mcp.McpParameterExtractor;
-import com.byteq.ai.ragstudio.rag.core.prompt.RAGPromptService;
 import com.byteq.ai.ragstudio.rag.core.rewrite.QueryRewriteService;
 import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
-import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
 import com.byteq.ai.ragstudio.rag.core.skill.SandboxExecutor;
-import okhttp3.OkHttpClient;
-import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
 import com.byteq.ai.ragstudio.rag.core.memory.ConversationMemoryService;
 import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeBaseDO;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeBaseMapper;
-import com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader;
-import com.byteq.ai.ragstudio.rag.core.retrieve.RetrievalEngine;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
-import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
 import com.byteq.ai.ragstudio.rag.service.handler.StreamTaskManager;
 import lombok.RequiredArgsConstructor;
@@ -63,44 +49,20 @@ import java.util.function.Supplier;
 @RequiredArgsConstructor
 public class StreamChatPipeline {
 
-    /** 检索通道配置，用于控制 TopK 等检索参数 */
-    private final SearchChannelProperties searchProperties;
-
     /** 对话记忆服务，负责加载和管理对话历史 */
     private final ConversationMemoryService memoryService;
 
     /** 查询改写服务，负责对用户问题进行语义改写和拆分 */
     private final QueryRewriteService queryRewriteService;
 
-    /** 检索引擎，负责从向量数据库检索相关内容 */
-    private final RetrievalEngine retrievalEngine;
-
-    /** 大语言模型服务，负责调用 LLM 生成回答 */
-    private final LLMService llmService;
-
-    /** RAG Prompt 构建服务，负责组装包含检索上下文的 Prompt */
-    private final RAGPromptService promptBuilder;
-
-    /** Prompt 模板加载器，负责加载各种提示词模板文件 */
-    private final PromptTemplateLoader promptTemplateLoader;
-
     /** 流式任务管理器，负责管理流式对话任务的取消和状态跟踪 */
     private final StreamTaskManager taskManager;
-
-    /** MCP 工具注册表，用于获取可用工具列表和调用工具 */
-    private final McpToolRegistry mcpToolRegistry;
-
-    /** MCP 参数提取器，用于从用户问题中提取工具调用参数 */
-    private final McpParameterExtractor mcpParameterExtractor;
 
     /** 链路追踪记录服务，用于记录各阶段的执行耗时 */
     private final RagTraceRecordService traceRecordService;
 
-    /** SKILL 加载器，从 Redis/本地提供用户自定义 Agent 工具 */
-    private final SkillLoader skillLoader;
-
-    /** HTTP 客户端，用于执行 http 类型的 SKILL */
-    private final OkHttpClient syncHttpClient;
+    /** AgentScope ReActAgent 执行器（替代自研 JSON ReACT 循环） */
+    private final AgentScopeReActExecutor agentscopeExecutor;
 
     /** Docker 沙箱执行器，用于安全执行 script/command 类型的 SKILL */
     private SandboxExecutor sandboxExecutor;
@@ -116,10 +78,6 @@ public class StreamChatPipeline {
 
     @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.cpus:0.5}")
     private String sandboxCpus;
-
-    /** ReACT 迭代流式化开关：true 时 final_answer 生成过程中实时透出（首字体验），false 回退为完成后回放 */
-    @org.springframework.beans.factory.annotation.Value("${rag.agent.stream-finish:true}")
-    private boolean agentStreamFinish;
 
     @jakarta.annotation.PostConstruct
     public void initSandbox() {
@@ -137,9 +95,6 @@ public class StreamChatPipeline {
     /** 链路追踪配置，用于判断是否启用追踪 */
     private final RagTraceProperties traceProperties;
 
-    /** 工具语义检索器，按用户问题筛选相关工具注入 Prompt */
-    private final ToolRetriever toolRetriever;
-
     /** 知识库语义选择器（嵌入模型，多模态），按用户问题自动选择相关知识库 */
     private final KbEmbeddingSelector kbEmbeddingSelector;
 
@@ -149,16 +104,8 @@ public class StreamChatPipeline {
     /** 知识库 DAO，用于查询知识库名称和描述 */
     private final KnowledgeBaseMapper knowledgeBaseMapper;
 
-    /** ReACT 响应解析器（无状态单例） */
-    private final ReActResponseParser reactResponseParser;
-
-    /** ReACT Prompt 构建器（无状态单例） */
-    private final ReActPromptBuilder reactPromptBuilder;
-
     /** Agent 模式标识 */
-    private static final String MODE_AGENT = "agent";
 
-    private static final String MCP_CALL_PREFIX = "__MCP_CALL__:";
 
     /** 取消异常前缀标识，用于在 catch 中区分用户取消 vs 其他 IllegalStateException */
     private static final String CANCEL_MARKER = "任务已被用户取消";
@@ -194,7 +141,7 @@ public class StreamChatPipeline {
     // ==================== Agent 模式 ====================
 
     /**
-     * Agent 模式执行流程：记忆加载 → 查询改写 → 相关性判断+KB过滤 → AgentLoop
+     * Agent 模式执行流程：记忆加载 → 查询改写 → 相关性判断+KB过滤 → AgentScope ReActAgent
      */
     private void doExecuteAgent(StreamChatContext ctx) {
         String userOriginalQuestion = ctx.getQuestion();
@@ -241,9 +188,34 @@ public class StreamChatPipeline {
                             kb.getId(), kb.getName(), kb.getDescription(), kb.getCollectionName()))
                     .toList();
 
-            // 使用嵌入模型（多模态）按语义相似度选择相关知识库，高于阈值的全部命中
-            KbEmbeddingSelector.SelectionResult selection = traceNode("知识库选择", "KB_SELECT", () ->
-                    kbEmbeddingSelector.select(userOriginalQuestion, imageDataUris, kbInfos));
+            // 使用嵌入模型（多模态）按语义相似度选择相关知识库，高于阈值的全部命中。
+            // 单知识库 + 无图片 + 轻量文本相关性命中时跳过语义选择：
+            // 省一次批量 Embedding 远程调用（显然相关场景选库收益≈0）；
+            // 文本相关性未命中则仍走语义选库，保留"无关问题不检索"的过滤能力
+            boolean singleKbFastPath = ctx.getKnowledgeBaseIds().size() == 1
+                    && CollUtil.isEmpty(ctx.getImageUrls())
+                    && kbTextLikelyRelated(userOriginalQuestion, kbInfos.stream()
+                            .filter(kb -> kb.id().equals(ctx.getKnowledgeBaseIds().get(0)))
+                            .findFirst().orElse(null));
+            KbEmbeddingSelector.SelectionResult selection;
+            if (singleKbFastPath) {
+                String kbId = ctx.getKnowledgeBaseIds().get(0);
+                KbEmbeddingSelector.KbInfo sole = kbInfos.stream()
+                        .filter(kb -> kb.id().equals(kbId))
+                        .findFirst()
+                        .orElse(null);
+                if (sole != null) {
+                    selection = KbEmbeddingSelector.SelectionResult.relevant("单知识库直接检索（跳过语义选库）",
+                            List.of(new KbEmbeddingSelector.SelectedKb(sole.id(), sole.name(), 1.0)));
+                    log.info("单知识库直接检索，跳过语义选库: kbId={}", kbId);
+                } else {
+                    selection = traceNode("知识库选择", "KB_SELECT", () ->
+                            kbEmbeddingSelector.select(userOriginalQuestion, imageDataUris, kbInfos));
+                }
+            } else {
+                selection = traceNode("知识库选择", "KB_SELECT", () ->
+                        kbEmbeddingSelector.select(userOriginalQuestion, imageDataUris, kbInfos));
+            }
             checkCancellation(ctx);
 
             kbRelevant = selection.relevant();
@@ -287,35 +259,7 @@ public class StreamChatPipeline {
             kbSummaryText = "";
         }
 
-        // 4. 构建 Agent 注册中心
-        OrchestratorAgent orchestrator = new OrchestratorAgent();
-
-        // Q&A Agent
-        QaSubAgent qaSubAgent = traceNode("工具注册", "TOOL_REGISTRY", () -> new QaSubAgent(
-                llmService, retrievalEngine, searchProperties,
-                mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor,
-                reactResponseParser, reactPromptBuilder, promptTemplateLoader,
-                () -> taskManager.isCancelled(ctx.getTaskId()),
-                finalKbIds, kbSummaryText, effectiveRewrittenQuestion,
-                traceRecordService, toolRetriever, agentStreamFinish
-        ));
-        orchestrator.register(qaSubAgent);
-
-        // Tool Agent（纯工具执行）
-        try {
-            ToolSubAgent toolAgent = new ToolSubAgent(
-                    mcpToolRegistry, skillLoader, syncHttpClient, sandboxExecutor,
-                    traceRecordService);
-            orchestrator.register(toolAgent);
-        } catch (Exception e) {
-            log.warn("Tool Agent 注册失败，跳过", e);
-        }
-        // 注：不再注册 Title Agent。会话标题改由 createOrUpdate 异步生成（见 ConversationServiceImpl），
-        // 避免每次对话在 TTFT 关键路径上串行两次 LLM 标题调用（原 TitleSubAgent 产物无人消费，纯浪费）。
-
-        checkCancellation(ctx);
-
-        // 5. 构建 AgentContext
+        // 4. 构建 AgentContext
         AgentContext agentCtx = new AgentContext(
                 userOriginalQuestion,
                 ctx.getHistory(),
@@ -327,12 +271,19 @@ public class StreamChatPipeline {
                 ctx.getImageUrls(),
                 ctx.getDeepThinkingLevel(),
                 ctx.getConversationId(),
-                ctx.getUserId()
+                ctx.getUserId(),
+                finalKbIds,
+                kbSummaryText,
+                effectiveRewrittenQuestion,
+                // 复用改写阶段拆分的子问题：多问句查询按子问题并行召回，避免重复支付改写成本
+                rewriteResult.subQuestions()
         );
 
-        // 5. 执行 Orchestrator（Task 驱动，SSE 事件透传）
+        // 5. 执行 AgentScope ReActAgent（Task 驱动，SSE 事件透传）
+        // join 等待 Agent 事件流完全结束：trace 节点记录完整 Agent 时长，
+        // 同时让限流 permit / 会话并发锁自然持有到流式回答真正结束
         traceNode("Agent循环", "AGENT_LOOP", () -> {
-            orchestrator.run(ctx.getQuestion(), agentCtx, ctx.getCallback());
+            agentscopeExecutor.run(agentCtx, ctx.getTaskId(), sandboxExecutor, ctx.getCallback()).join();
             return null;
         });
 
@@ -351,6 +302,40 @@ public class StreamChatPipeline {
                 userMsg
         );
         ctx.setHistory(history);
+    }
+
+    /**
+     * 轻量文本相关性判断（单知识库快路径用）：
+     * 问题与知识库名称/描述存在双向包含或 2-gram 重叠时判定为相关。
+     * <ul>
+     *   <li>相关 → 跳过语义选库（省一次 Embedding 远程调用）</li>
+     *   <li>无法判断（库无名称描述/问题过短）→ 放行快路径（单库场景选库收益本来就低）</li>
+     *   <li>不相关 → 仍走语义选库，保留"无关问题不检索"的过滤能力</li>
+     * </ul>
+     */
+    private boolean kbTextLikelyRelated(String question, KbEmbeddingSelector.KbInfo kb) {
+        if (StrUtil.isBlank(question) || kb == null) {
+            return false;
+        }
+        String q = question.trim().toLowerCase().replaceAll("[\\s?？。，,！!；;、：:]", "");
+        if (q.length() < 2) {
+            return true;
+        }
+        String kbText = StrUtil.nullToEmpty(kb.name()).toLowerCase()
+                + StrUtil.nullToEmpty(kb.description()).toLowerCase();
+        if (kbText.isBlank()) {
+            return true;
+        }
+        if (kbText.contains(q)) {
+            return true;
+        }
+        // 2-gram 重叠：中文问题与库描述无需分词即可捕捉"报销/年假/制度"等业务词
+        for (int i = 0; i + 2 <= q.length(); i++) {
+            if (kbText.contains(q.substring(i, i + 2))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ==================== 链路追踪 ====================

@@ -1,6 +1,8 @@
 package com.byteq.ai.ragstudio.rag.core.agent;
 
 import cn.hutool.core.collection.CollUtil;
+import com.byteq.ai.ragstudio.rag.core.tool.Tool;
+import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.ImageContent;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;

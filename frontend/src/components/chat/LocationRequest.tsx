@@ -56,7 +56,6 @@ export function LocationRequest() {
     const FALLBACK_TIMEOUT_MS = 8000;
     const startTs = Date.now();
     let bestAccuracy = Infinity;
-    let watchId: number;
 
     const fallbackTimer = window.setTimeout(() => {
       // 兜底超时：有位置就用，没有则 fallback 到手动输入
@@ -71,7 +70,7 @@ export function LocationRequest() {
       }
     }, FALLBACK_TIMEOUT_MS);
 
-    watchId = navigator.geolocation.watchPosition(
+    const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const accuracy = pos.coords.accuracy;
         // 保存坐标：首次获取或精度比之前更好时更新

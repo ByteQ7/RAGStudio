@@ -23,15 +23,15 @@ public enum ChunkingMode {
         @Override
         public ChunkingOptions createOptions(Map<String, Object> config) {
             return new FixedSizeOptions(
-                    toInt(config, "chunkSize", 512),
-                    toInt(config, "overlapSize", 128));
+                    Math.max(1, toInt(config, "chunkSize", 512)),
+                    Math.max(0, toInt(config, "overlapSize", 128)));
         }
 
         @Override
         public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize) {
             return new FixedSizeOptions(
-                    targetSize != null ? targetSize : 512,
-                    overlapSize != null ? overlapSize : 128);
+                    targetSize != null ? Math.max(1, targetSize) : 512,
+                    overlapSize != null ? Math.max(0, overlapSize) : 128);
         }
     },
 
@@ -45,16 +45,16 @@ public enum ChunkingMode {
         @Override
         public ChunkingOptions createOptions(Map<String, Object> config) {
             return new RecursiveOptions(
-                    toInt(config, "chunkSize", 800),
-                    toInt(config, "overlapSize", 128),
+                    Math.max(1, toInt(config, "chunkSize", 800)),
+                    Math.max(0, toInt(config, "overlapSize", 128)),
                     null);
         }
 
         @Override
         public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize) {
             return new RecursiveOptions(
-                    targetSize != null ? targetSize : 800,
-                    overlapSize != null ? overlapSize : 128,
+                    targetSize != null ? Math.max(1, targetSize) : 800,
+                    overlapSize != null ? Math.max(0, overlapSize) : 128,
                     null);
         }
     },
@@ -63,18 +63,18 @@ public enum ChunkingMode {
         @Override
         public ChunkingOptions createOptions(Map<String, Object> config) {
             return new TextBoundaryOptions(
-                    toInt(config, "targetChars", 1400),
-                    toInt(config, "overlapChars", 0),
-                    toInt(config, "maxChars", 1800),
-                    toInt(config, "minChars", 600));
+                    Math.max(1, toInt(config, "targetChars", 1400)),
+                    Math.max(0, toInt(config, "overlapChars", 0)),
+                    Math.max(1, toInt(config, "maxChars", 1800)),
+                    Math.max(0, toInt(config, "minChars", 600)));
         }
 
         @Override
         public ChunkingOptions createDefaultOptions(Integer targetSize, Integer overlapSize) {
-            int target = targetSize != null ? targetSize : 1400;
+            int target = targetSize != null ? Math.max(1, targetSize) : 1400;
             return new TextBoundaryOptions(
                     target,
-                    overlapSize != null ? overlapSize : 0,
+                    overlapSize != null ? Math.max(0, overlapSize) : 0,
                     (int) Math.round(target * 1.3),
                     (int) Math.round(target * 0.4));
         }

@@ -55,6 +55,8 @@ public class AnthropicProtocol implements ModelProtocol {
 
         List<Map<String, Object>> systemMessages = new ArrayList<>();
         List<Map<String, Object>> userAssistantMessages = new ArrayList<>();
+        String lastRole = null;
+        Map<String, Object> lastMessage = null;
 
         for (ChatMessage msg : messages) {
             if (msg.getRole() == ChatMessage.Role.SYSTEM) {
@@ -65,10 +67,8 @@ public class AnthropicProtocol implements ModelProtocol {
                 continue;
             }
             String role = msg.getRole() == ChatMessage.Role.ASSISTANT ? "assistant" : "user";
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("role", role);
-            List<Map<String, Object>> contentBlocks = new ArrayList<>();
 
+            List<Map<String, Object>> contentBlocks = new ArrayList<>();
             if (msg.getContent() != null && !msg.getContent().isBlank()) {
                 Map<String, Object> textBlock = new LinkedHashMap<>();
                 textBlock.put("type", "text");
@@ -86,10 +86,26 @@ public class AnthropicProtocol implements ModelProtocol {
                 }
             }
 
-            if (!contentBlocks.isEmpty()) {
-                m.put("content", contentBlocks);
+            // 空 content 消息直接跳过（Anthropic API 会 400）
+            if (contentBlocks.isEmpty()) {
+                continue;
             }
+
+            // 连续同角色消息合并为一条，避免 Anthropic API 拒绝交替序列要求
+            if (role.equals(lastRole) && lastMessage != null) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> existingBlocks =
+                        (List<Map<String, Object>>) lastMessage.get("content");
+                existingBlocks.addAll(contentBlocks);
+                continue;
+            }
+
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("role", role);
+            m.put("content", contentBlocks);
             userAssistantMessages.add(m);
+            lastRole = role;
+            lastMessage = m;
         }
 
         if (!systemMessages.isEmpty()) {

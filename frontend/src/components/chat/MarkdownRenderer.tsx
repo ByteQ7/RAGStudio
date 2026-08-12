@@ -407,7 +407,7 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
       comps.pre = ({ children }: any) => <>{children}</>;
     }
 
-    comps.code = ({ className, children, node, ...props }: any) => {
+    comps.code = ({ className, children, ...props }: any) => {
       const rawLang = /language-(\w[\w+-]*)/.exec(className || "")?.[1] ?? null;
       const language = resolveLanguage(rawLang);
       const value = extractText(children).replace(/\n$/, "");
@@ -475,7 +475,7 @@ export function MarkdownRenderer({ content, compact = false, citations }: Markdo
 
     /* Full-mode-only overrides for richer layout elements */
     if (!compact) {
-      comps.img = ({ src, alt, ...props }: any) => {
+      comps.img = ({ src, alt }: any) => {
         if (!src) return null;
         return <ImageLinkCard href={src} alt={alt} />;
       };
