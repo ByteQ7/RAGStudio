@@ -93,17 +93,37 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
                 .collect(Collectors.toList());
 
         String userRerankModelId = resolveUserRerankModelId();
-        boolean modelSupportsMultimodal = userRerankModelId != null
-                && isMultimodalRerankModel(userRerankModelId);
+        String effectiveRerankModelId = userRerankModelId;
+        boolean modelSupportsMultimodal = effectiveRerankModelId != null
+                && isMultimodalRerankModel(effectiveRerankModelId);
+        if (effectiveRerankModelId == null) {
+            // 无显式 rerank 配置：自动路由将使用 rerank 组的默认模型，
+            // 按其多模态能力决定图片 Chunk 是否参与重排（此前直接走文本分支，多模态模型形同虚设）
+            String autoDefaultId = resolveAutoRerankDefaultId();
+            modelSupportsMultimodal = autoDefaultId != null && isMultimodalRerankModel(autoDefaultId);
+            effectiveRerankModelId = autoDefaultId;
+        }
 
         String rerankQuery = resolveRerankQuery(context);
 
         if (modelSupportsMultimodal) {
             // 预解析图片 Chunk 的可访问地址（s3:// → base64 data URI），供 rerank 服务下载
             imageChunkResolver.enrichRerankImageUrls(chunks);
-            return processWithMultimodalRerank(textChunks, imageChunks, rerankQuery, userRerankModelId);
+            return processWithMultimodalRerank(textChunks, imageChunks, rerankQuery, effectiveRerankModelId);
         } else {
-            return processWithTextRerank(textChunks, imageChunks, rerankQuery, userRerankModelId);
+            return processWithTextRerank(textChunks, imageChunks, rerankQuery, effectiveRerankModelId);
+        }
+    }
+
+    /** 自动路由（无显式配置）时的 rerank 模型：取 rerank 组的默认模型 */
+    private String resolveAutoRerankDefaultId() {
+        try {
+            DynamicModelConfig config = modelConfigProvider.getConfig();
+            DynamicModelConfig.ModelGroup group = config.getRerankGroup();
+            return group != null ? group.getDefaultModel() : null;
+        } catch (Exception e) {
+            log.debug("获取自动路由 rerank 默认模型失败", e);
+            return null;
         }
     }
 

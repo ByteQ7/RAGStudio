@@ -129,6 +129,23 @@ public class SearchChannelProperties {
     public static class Crop {
 
         /**
+         * 是否启用语义裁剪（句子级 Chunk 裁剪）。
+         * 开启时本地模型目录缺失或模型加载失败，应用启动直接报错（fail-fast）。
+         */
+        private boolean enabled = false;
+
+        /**
+         * 裁剪模型路径：bge-small-zh-v1.5 量化 ONNX 模型目录
+         * （需包含 config.json、vocab.txt 与 onnx/model_quantized.onnx 或 onnx/model.onnx）
+         */
+        private String modelPath = "";
+
+        /**
+         * 余弦相似度阈值，分数 ≥ 该值的句子被保留（bge 模型建议初始值 0.35，按业务微调）
+         */
+        private double threshold = 0.35;
+
+        /**
          * 参与裁剪的非图片 chunk 文本总字符数低于该值时跳过裁剪、保留原文。
          * 短检索内容裁剪收益接近 0，但成本固定（CPU 推理）。
          */
@@ -138,7 +155,7 @@ public class SearchChannelProperties {
          * 每条 chunk 最多参与裁剪的句子数（0 = 不限制）。
          * 长 chunk 尾部句子对准确度贡献边际递减，限制后可线性降低裁剪时延。
          */
-        private int maxSentencesPerChunk = 0;
+        private int maxSentencesPerChunk = 20;
 
         /**
          * 裁剪结果 Redis 缓存开关：key=(sha1(question), chunkId)，命中直接复用结果。
@@ -151,13 +168,9 @@ public class SearchChannelProperties {
         private int cacheTtlHours = 6;
 
         /**
-         * 裁剪调用硬超时（毫秒）：超时直接保留原文进入后续流程，不阻塞回答。
-         * 后台任务仍会完成并把结果写入缓存，后续相同(问题, chunk)请求可直接命中。
-         * 0 或负数表示不限制（保持原有同步阻塞行为）。
-         * 注意：CPU 语义模型实测约 1.9s/20句/1 chunk，默认值偏保守，
-         * 长内容大概率超时跳过裁剪（让位于延迟）；如需保留裁剪效果请调大或置 0。
+         * 兼容字段：进程内推理为毫秒级，已无远程调用超时语义，保留字段避免破坏既有配置。
          */
-        private long timeoutMs = 2000;
+        private long timeoutMs = 0;
     }
 
     /**

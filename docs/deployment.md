@@ -11,7 +11,7 @@ RAGStudio 是一个基于 Java 17 + Spring Boot 3.5 的企业级 Agentic RAG 平
 | **ReACT Agent 循环** | Thought → Action → Observation 循环替代传统线性 RAG 管线 |
 | **多模型路由** | 数据库驱动动态配置，百炼/DeepSeek/SiliconFlow 故障秒级切换 |
 | **混合检索** | pgvector 语义 + tsvector 关键词，RRF 融合排序 |
-| **语义裁剪** | 用 Cross-encoder 模型对 Chunk 逐句打分，裁剪无关句子，节省 LLM Token |
+| **语义裁剪** | 进程内 bge-small-zh-v1.5 模型对 Chunk 逐句打分，裁剪无关句子，节省 LLM Token |
 | **MCP 协议** | 运行态发现和调用外部工具，Agent 自主决策 |
 | **深度思考** | 0–100% 可调推理深度，分步链式思考过程可见 |
 | **多模态对话** | 图片上传（文件/粘贴），S3 存储 + 预签名 HTTP 展示 |
@@ -58,11 +58,11 @@ RAGStudio 是一个基于 Java 17 + Spring Boot 3.5 的企业级 Agentic RAG 平
 ### 可选组件
 
 ```
-┌──────────────────┐
-│ 语义裁剪服务     │  ← Python 微服务 (Cross-encoder 0.6B)
-│ skills/          │     占用 1-1.5GB 内存
-│ semantic-highlight│     http://localhost:8001
-└──────────────────┘
+┌──────────────────────────────┐
+│ 语义裁剪模型（进程内）       │  bge-small-zh-v1.5 量化版
+│ resources/models/           │  约 90MB，CPU 单句 ~10ms
+│ bge-small-zh-v1.5           │  由后端进程内加载（无独立服务）
+└──────────────────────────────┘
 ```
 
 ---
@@ -120,7 +120,18 @@ psql -U postgres -d ragstudio -f resources/database/V2/schema_pg.sql
 psql -U postgres -d ragstudio -f resources/database/V2/init_data_pg.sql
 ```
 
-### 3. 环境变量配置
+### 3. 上传 AI 供应商图标（S3）
+
+初始化数据中 17 家供应商的 `icon_url` 指向 `s3://ragstudio/provider-icons/<name>.svg`，
+首次部署需将图标上传到 S3（配置读取 `.env` 的 `RUSTFS_URL / RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY`，
+需先完成第 4 步环境变量配置后再执行）：
+
+```bash
+./scripts/upload-provider-icons.sh          # 幂等上传，已存在则跳过
+./scripts/upload-provider-icons.sh --force  # 强制覆盖
+```
+
+### 4. 环境变量配置
 
 ```bash
 cp .env-example .env
@@ -151,7 +162,7 @@ SANDBOX_ENABLED=true                      # 如有Docker则开启
 
 完整配置项见 `.env-example`。
 
-### 4. 启动后端
+### 5. 启动后端
 
 ```bash
 cd bootstrap
@@ -159,7 +170,7 @@ mvn spring-boot:run
 # → http://localhost:9090/api/ragstudio
 ```
 
-### 5. 启动前端
+### 6. 启动前端
 
 ```bash
 cd frontend
@@ -170,67 +181,46 @@ npm run dev
 
 ---
 
-## 可选组件：语义裁剪服务
+## 可选组件：语义裁剪
 
-裁剪服务是一个独立的 Python 微服务，对检索到的 Chunk 逐句打分，只保留与问题相关的句子。
+语义裁剪已迁移为进程内方案：在检索后、重排序前，用 bge-small-zh-v1.5（量化版，约 90MB）对每个 Chunk 逐句打分，只保留与问题相关的句子，并完整保留代码块。
 
-### 启动方式一：Docker 镜像（推荐）
+### 准备模型文件（首次部署）
+
+模型文件需先下载到本地目录（默认 `resources/models/bge-small-zh-v1.5`），包含 `config.json`、`vocab.txt` 与 `onnx/model_quantized.onnx`（或 `onnx/model.onnx`）。
 
 ```bash
-# 进入裁剪服务目录
-cd resources/docker/semantic-highlight
+# 方式一：脚本下载（推荐）
+bash resources/models/bge-small-zh-v1.5/download.sh
 
-# 加载镜像（已构建好的 tar 文件）
-docker load -i ragstudio-highlight.tar
-
-# 启动
-docker compose up -d
-
-# 验证
-curl http://localhost:8001/health
-# 输出: {"status":"ok","model_loaded":true,"device":"cpu"}
+# 方式二：手动下载（无脚本环境）
+mkdir -p resources/models/bge-small-zh-v1.5/onnx
+curl -L -o resources/models/bge-small-zh-v1.5/config.json \
+  https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/config.json
+curl -L -o resources/models/bge-small-zh-v1.5/vocab.txt \
+  https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/vocab.txt
+curl -L -o resources/models/bge-small-zh-v1.5/onnx/model_quantized.onnx \
+  https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx
 ```
 
-### 启动方式二：自行构建
+### 启用语义裁剪
+
+在 `.env` 中设置（默认关闭）：
 
 ```bash
-cd resources/docker/semantic-highlight
-
-# 构建镜像（约需 5-10 分钟，首次需下载模型）
-docker build -t ragstudio-highlight:latest .
-
-# 启动
-docker compose up -d
+RAG_CROP_ENABLED=true
+RAG_CROP_MODEL_PATH=./resources/models/bge-small-zh-v1.5
+RAG_CROP_THRESHOLD=0.35
 ```
 
-### 启动方式三：直接运行 Python（无需 Docker）
+> 注意：开启后应用启动时会校验本地模型目录与模型文件，缺失或加载失败则启动报错（fail-fast）。
+
+### 关闭语义裁剪
+
+如不需要此功能，修改 `.env`：
 
 ```bash
-cd resources/docker/semantic-highlight
-
-# 安装依赖
-pip install -r requirements.txt
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-
-# 启动
-bash start.sh
-# 或: QUANTIZE=int8 uvicorn main:app --host 0.0.0.0 --port 8001
-```
-
-### 验证裁剪功能
-
-```bash
-curl -X POST http://localhost:8001/highlight \
-  -H "Content-Type: application/json" \
-  -d '{"question":"年假政策","chunks":[{"id":"1","text":"公司年假制度规定员工每年享有带薪年假。事假需提前申请。"}],"threshold":0.2}'
-```
-
-### 关闭裁剪
-
-如果不需要此功能，修改 `.env`：
-
-```bash
-SEMANTIC_HIGHLIGHT_ENABLED=false
+RAG_CROP_ENABLED=false
 ```
 
 ---
@@ -256,8 +246,8 @@ SEMANTIC_HIGHLIGHT_ENABLED=false
 | `SERVER_PORT` | `9090` | 后端服务端口 |
 | `MAX_FILE_SIZE` | `50MB` | 上传文件大小限制 |
 | `MAX_REQUEST_SIZE` | `100MB` | 上传请求大小限制 |
-| `SEMANTIC_HIGHLIGHT_ENABLED` | `true` | 语义裁剪开关 |
-| `SEMANTIC_HIGHLIGHT_BASE_URL` | `http://localhost:8001` | 裁剪服务地址 |
+| `RAG_CROP_ENABLED` | `false` | 语义裁剪开关（默认关闭） |
+| `RAG_CROP_MODEL_PATH` | `./resources/models/bge-small-zh-v1.5` | 裁剪模型目录 |
 | `SEMANTIC_HIGHLIGHT_READ_TIMEOUT` | `120s` | 裁剪服务超时 |
 | `SANDBOX_ENABLED` | `true` | Docker 沙箱开关 |
 | `SANDBOX_IMAGE` | `sandbox:latest` | 沙箱镜像 |
@@ -301,9 +291,9 @@ DEMO_MODE=false
 
 ### Q: 启动报数据库连接失败
 检查 `.env` 中 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 是否正确，确认 PostgreSQL 已启动。
+### Q: 语义裁剪未生效
 
-### Q: 语义裁剪服务连接超时
-确认裁剪服务已启动：`curl http://localhost:8001/health`。如不需要可关闭：`SEMANTIC_HIGHLIGHT_ENABLED=false`。
+确认 `.env` 中 `RAG_CROP_ENABLED=true`，并检查 `RAG_CROP_MODEL_PATH` 目录包含 `config.json`、`vocab.txt`、`onnx/model_quantized.onnx`（或 `onnx/model.onnx`）。如不需要可关闭：`RAG_CROP_ENABLED=false`。
 
 ### Q: Agent 重复检索结果为空
 提示词已优化——Agent 会在关键词不足时先用 `[USER_CHOICE]` 让用户补充信息，再检索。确保 `rag_search` 工具的 query 参数使用 3-5 个关键词和同义词。

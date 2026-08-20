@@ -347,8 +347,21 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     @Override
-    public List<AiModelVO> listModels(String capability) {
-        // 只查询已启用且有 API Key 的供应商
+    public List<AiModelVO> listModels(String capability, boolean includeDisabled) {
+        // 模型管理页：返回数据库全部模型（模型只有存在与否，不按启用状态过滤）
+        if (includeDisabled) {
+            LambdaQueryWrapper<AiModelDO> wrapper = new LambdaQueryWrapper<AiModelDO>()
+                    .eq(StrUtil.isNotBlank(capability), AiModelDO::getCapability, capability != null ? capability.toUpperCase() : null)
+                    .orderByAsc(AiModelDO::getCapability)
+                    .orderByAsc(AiModelDO::getPriority);
+            List<AiModelDO> allModels = modelMapper.selectList(wrapper);
+            Map<String, String> allProviderNames = loadProviderNameMap();
+            return allModels.stream()
+                    .map(m -> toModelVO(m, allProviderNames))
+                    .collect(Collectors.toList());
+        }
+
+        // 可用模型：只查询已启用且有 API Key 的供应商
         List<AiProviderDO> activeProviders = providerMapper.selectList(
                 new LambdaQueryWrapper<AiProviderDO>()
                         .eq(AiProviderDO::getEnabled, 1)
@@ -643,14 +656,19 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 model.getModelId(), capability, baseUrl);
 
         return switch (capability.toUpperCase()) {
-            case "CHAT" -> checkChatModelConnectivity(baseUrl, apiKey, model.getModelId(), endpoints);
+            case "CHAT" -> checkChatModelConnectivity(baseUrl, apiKey, effectiveModelName(model), endpoints);
             case "EMBEDDING" -> checkEmbeddingModelConnectivity(model, provider, baseUrl, apiKey, endpoints);
             case "RERANK" -> checkRerankModelConnectivity(model, provider, baseUrl, apiKey, endpoints);
             default -> {
                 log.warn("未知的模型能力类型: {}，使用 CHAT 方式兜底", model.getCapability());
-                yield checkChatModelConnectivity(baseUrl, apiKey, model.getModelId(), endpoints);
+                yield checkChatModelConnectivity(baseUrl, apiKey, effectiveModelName(model), endpoints);
             }
         };
+    }
+
+    /** 连通性探测等请求体使用供应商侧实际模型名（modelName），modelId 仅为逻辑标识 */
+    private String effectiveModelName(AiModelDO model) {
+        return StrUtil.isNotBlank(model.getModelName()) ? model.getModelName() : model.getModelId();
     }
 
     /**
@@ -703,7 +721,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                             : "openai";
 
             DynamicModelConfig.ModelEntry entry = DynamicModelConfig.ModelEntry.builder()
-                    .id(model.getModelId()).provider(provider.getName()).model(model.getModelId())
+                    .id(model.getModelId()).provider(provider.getName()).model(effectiveModelName(model))
                     .protocol(protocol).build();
             DynamicModelConfig.ProviderEntry providerEntry = DynamicModelConfig.ProviderEntry.builder()
                     .name(provider.getName()).url(baseUrl).apiKey(apiKey)
@@ -714,7 +732,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             ModelProtocol proto = protocolRegistry.get(target.protocolName());
             String url = chatModelFactory.resolveEmbeddingUrl(target);
 
-            Object requestBody = proto.buildEmbeddingRequest(model.getModelId(), List.of("test"), null);
+            Object requestBody = proto.buildEmbeddingRequest(effectiveModelName(model), List.of("test"), null);
             String body = objectMapper.writeValueAsString(requestBody);
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -758,7 +776,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             String url = proto.resolveRerankUrl(baseUrl);
 
             Map<String, Object> requestBody = proto.buildRerankRequest(
-                    model.getModelId(), "test", List.of("test document"));
+                    effectiveModelName(model), "test", List.of("test document"));
             String body = objectMapper.writeValueAsString(requestBody);
 
             HttpRequest request = HttpRequest.newBuilder()

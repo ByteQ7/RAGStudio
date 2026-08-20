@@ -15,7 +15,8 @@
 【问题重写】
     ↓
 【多通道并行检索】
-    ├─→ VectorGlobalSearchChannel（向量全局检索，始终执行）
+    ├─→ VectorGlobalSearchChannel（向量全局检索，当前已禁用：isEnabled() 固定返回 false）
+    ├─→ RrfHybridChannel（混合检索：向量 + 关键词 per-KB RRF 融合，启用后独占检索）
     └─→ KnowledgeBaseSelectionChannel（知识库选择检索，选择 KB 时启用）
     ↓
 【结果聚合】
@@ -50,7 +51,8 @@ public interface SearchChannel {
 
 | 通道 | 类名 | 说明 |
 |------|------|------|
-| 向量全局检索 | `VectorGlobalSearchChannel` | 在所有知识库中执行向量检索，始终启用 |
+| 向量全局检索 | `VectorGlobalSearchChannel` | 在所有知识库中执行向量检索；**当前已禁用**（`isEnabled()` 固定返回 false，仅保留实现与配置） |
+| 混合检索 | `RrfHybridChannel` | 向量 + 关键词 per-KB RRF 融合（`hybrid-rrf.enabled=true` 时启用，并独占检索路径） |
 | 知识库选择检索 | `KnowledgeBaseSelectionChannel` | 仅当用户在前端选择了特定知识库时启用 |
 
 **扩展示例**：
@@ -290,6 +292,6 @@ public boolean isEnabled(SearchContext context) {
 
 ## 未来扩展
 
-1. **ES 关键词检索通道**：基于 Elasticsearch 的全文检索
-2. **缓存机制**：对检索结果进行缓存，提升性能
-3. **监控和统计**：记录各通道的命中率、耗时等指标
+1. **ES 关键词检索通道**：基于 Elasticsearch 的全文检索（当前使用 PostgreSQL/pg_trgm，未实现）
+2. **检索结果缓存**：对检索结果进行缓存，提升性能（当前仅有 Embedding / 语义裁剪缓存，不等同于检索结果缓存，未实现）
+3. **监控和统计**：记录各通道的命中率、耗时等指标（当前有日志与链路追踪，通道级持久化统计未实现）

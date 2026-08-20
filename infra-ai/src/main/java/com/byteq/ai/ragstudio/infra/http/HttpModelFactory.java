@@ -30,6 +30,14 @@ public class HttpModelFactory {
     private final ReasoningRouter reasoningRouter;
     private final ProtocolRegistry protocolRegistry;
 
+    /**
+     * 允许读取的 S3 bucket 白名单（逗号分隔，默认 ragstudio），
+     * 与 {@code S3FileStorageService} 的 rag.s3.allowed-buckets 同源，
+     * 防止用户可控 URL 访问存储桶内任意对象。
+     */
+    @org.springframework.beans.factory.annotation.Value("${rag.s3.allowed-buckets:ragstudio}")
+    private String allowedBuckets;
+
     public HttpModelFactory(S3Client s3Client, ReasoningRouter reasoningRouter,
                             ProtocolRegistry protocolRegistry) {
         this.s3Client = s3Client;
@@ -137,9 +145,20 @@ public class HttpModelFactory {
         }
     }
 
-    /** 仅允许读取应用所属 bucket，防止经用户可控 URL 访问存储桶内任意对象 */
+    /** 仅允许读取白名单内的 bucket，防止经用户可控 URL 访问存储桶内任意对象 */
     private boolean allowedS3Bucket(String bucket) {
-        return "ragstudio".equals(bucket);
+        if (bucket == null || bucket.isBlank()) {
+            return false;
+        }
+        if (allowedBuckets == null || allowedBuckets.isBlank()) {
+            return false;
+        }
+        for (String b : allowedBuckets.split(",")) {
+            if (bucket.equals(b.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String detectMimeType(String key) {

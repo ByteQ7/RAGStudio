@@ -8,7 +8,6 @@ import com.byteq.ai.ragstudio.infra.embedding.EmbeddingService;
 import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
-import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillDefinition;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
 import jakarta.annotation.PostConstruct;

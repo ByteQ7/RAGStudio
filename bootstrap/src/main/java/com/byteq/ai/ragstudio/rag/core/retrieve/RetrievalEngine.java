@@ -22,8 +22,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.MULTI_CHANNEL_KEY;
 
@@ -42,9 +40,7 @@ public class RetrievalEngine {
     private final KnowledgeChunkMapper knowledgeChunkMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final MultiChannelRetrievalEngine multiChannelRetrievalEngine;
-    private final ContextCropper contextCropper;
     private final ImageChunkResolver imageChunkResolver;
-    private final Executor ragRetrievalExecutor;
 
     /**
      * 根据知识库 ID 列表执行检索
@@ -141,16 +137,12 @@ public class RetrievalEngine {
             return chunks;
         }
 
-        // 语义裁剪与元数据富化并行：裁剪只依赖 chunk 的 id/text（替换 text 字段），
-        // 富化只依赖 chunk id（写 kbName/docName 字段），互不冲突。
-        // CPU 语义高亮服务耗时远大于富化查询，并行后可隐藏富化时延。
+        // 语义裁剪已通过后置处理器链在 Rerank 前执行（ContextCropper，order=5）
+        // 此处仅做元数据富化（kbName/docName），并行执行以隐藏数据库查询时延。
         java.util.List<String> chunkIds = chunks.stream()
                 .map(RetrievedChunk::getId)
                 .filter(Objects::nonNull)
                 .toList();
-        CompletableFuture<Void> cropFuture = CompletableFuture.runAsync(
-                () -> contextCropper.crop(rewriteResult.rewrittenQuestion(), chunks),
-                ragRetrievalExecutor);
 
         // 批量查询 Chunk 的 kbId 和 docId，设置所属知识库和文档名称
         try {
@@ -226,8 +218,7 @@ public class RetrievalEngine {
                 }
             }
         } finally {
-            // 裁剪在并行线程执行，必须在返回前 join，保证裁剪结果已应用
-            cropFuture.join();
+            // 无异步裁剪任务，直接返回
         }
 
         return chunks;

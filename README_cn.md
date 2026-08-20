@@ -25,7 +25,7 @@
 | 能力 | 说明 |
 |------|------|
 | **AgentScope ReActAgent** | 基于 AgentScope 编排框架的原生工具调用 ReACT 循环，事件流实时透传 SSE |
-| **AgentScope 模型调用层** | 自研 OkHttp 模型客户端已替换为 AgentScope（OpenAI 兼容 / DashScope / Anthropic），支持同步/流式/深度思考参数 |
+| **官方 SDK 模型调用层** | 厂商官方 SDK 优先（DashScope SDK / 智谱 zai-sdk / 火山 ark / OpenAI / Anthropic），无 SDK 厂商走 OpenAI/Anthropic 兼容策略，支持同步/流式/深度思考参数 |
 | **Native Function Calling 就绪** | 工具定义自动转为 OpenAI `tools` 格式，API 响应 `tool_calls` 结构已完整解析 |
 | **统一工具发现** | `tool_reader` 遍历 MCP + SKILL 注册表，LLM 运行态自主发现和调用任意工具 |
 | **多模型路由** | 数据库驱动动态配置，百炼/DeepSeek/SiliconFlow 故障秒级切换 |
@@ -62,7 +62,7 @@ StreamChatPipeline
 | 层级 | 技术 |
 |------|------|
 | 后端 | Java 17, Spring Boot 3.5, MyBatis-Plus, RocketMQ, Sa-Token |
-| AI 引擎 | JSON 结构化 ReACT Agent + 纯 OkHttp OpenAI 兼容调用 |
+| AI 引擎 | AgentScope ReActAgent 编排 + 厂商官方 SDK 调用层（DashScope SDK / zai-sdk / ark-runtime / openai-java / anthropic-java，OpenAI/Anthropic 兼容策略兜底，同步/流式/深度思考） |
 | 向量存储 | PostgreSQL + pgvector (HNSW) + tsvector (GIN) |
 | 前端 | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand |
 | 基础设施 | Redis, Docker 沙箱, S3 对象存储 |
@@ -220,7 +220,7 @@ description: "查询内部 API。当用户询问 xxx 时使用。"
 | `rag.trace.enabled` | `true` | 启用链路追踪 |
 | `rag.rate-limit.global.max-concurrent` | `1` | 全局并发对话数限制 |
 | `rag.rate-limit.global.max-wait-seconds` | `15` | 排队最大等待秒数 |
-| `rag.semantic-highlight.enabled` | `false` | 语义裁剪开关 |
+| `rag.search.crop.enabled` | `false` | 语义裁剪开关（进程内 bge-small-zh-v1.5，在 `.env` 中设 `RAG_CROP_ENABLED=true` 开启） |
 | `rag.query-rewrite.enabled` | `true` | 多轮查询改写开关 |
 | `app.default-avatar-url` | `https://avatars.githubusercontent.com/u/583231?v=4` | 用户默认头像 |
 

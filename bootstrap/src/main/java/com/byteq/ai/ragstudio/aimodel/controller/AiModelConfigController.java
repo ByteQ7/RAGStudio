@@ -114,15 +114,18 @@ public class AiModelConfigController {
     // ==================== 模型接口 ====================
 
     /**
-     * 查询模型列表，可按能力类型（capability）过滤
+     * 查询模型列表，可按能力类型过滤
      *
-     * @param capability 能力类型过滤条件（可选）
+     * @param capability      能力类型过滤条件（可选）
+     * @param includeDisabled 是否返回全部模型（含禁用/供应商未配置 Key 的），
+     *                        模型管理页传 true；默认 false 仅返回可用模型
      * @return 模型列表
      */
     @GetMapping("/models")
     public Result<List<AiModelVO>> listModels(
-            @RequestParam(value = "capability", required = false) String capability) {
-        return Results.success(aiModelConfigService.listModels(capability));
+            @RequestParam(value = "capability", required = false) String capability,
+            @RequestParam(value = "includeDisabled", defaultValue = "false") boolean includeDisabled) {
+        return Results.success(aiModelConfigService.listModels(capability, includeDisabled));
     }
 
     /**

@@ -139,14 +139,17 @@ public class KbEmbeddingSelector {
             try {
                 List<List<Float>> imageVectors = multimodalEmbeddingService.embedImages(imageDataUris, selectionModel);
                 if (CollUtil.isNotEmpty(imageVectors)) {
-                    for (ScoredKb sk : scored) {
+                    for (int i = 0; i < scored.size(); i++) {
+                        // 图片向量与「该知识库自身的文本向量」比对（vectors.get(i+1) 对应 kbTexts.get(i)）；
+                        // 此前误用 queryVec 比对图片向量——该值对所有知识库相同，选库退化为原始顺序，图片内容无法区分库
+                        float[] kbVector = toFloatArray(vectors.get(i + 1));
                         double bestImageSim = -1;
                         for (List<Float> iv : imageVectors) {
-                            double s = cosineSimilarity(queryVec, toFloatArray(iv));
+                            double s = cosineSimilarity(kbVector, toFloatArray(iv));
                             if (s > bestImageSim) bestImageSim = s;
                         }
-                        if (bestImageSim > sk.score) {
-                            sk.score = bestImageSim;
+                        if (bestImageSim > scored.get(i).score) {
+                            scored.get(i).score = bestImageSim;
                         }
                     }
                     log.info("知识库语义选择完成多模态增强: images={}", imageVectors.size());

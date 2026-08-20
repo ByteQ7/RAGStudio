@@ -96,6 +96,8 @@ export function AiModelConfigPage() {
   const [loadingProviders, setLoadingProviders] = useState(true);
   const [loadingModels, setLoadingModels] = useState(true);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  // 模型列表当前 Tab（对话/向量化/重排序），提升到页面级：编辑保存后不跳回"对话"
+  const [activeCapability, setActiveCapability] = useState<string | null>(null);
 
   // ---------- Provider dialog state ----------
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
@@ -137,7 +139,8 @@ export function AiModelConfigPage() {
   const loadModels = useCallback(async () => {
     try {
       setLoadingModels(true);
-      const data = await listModels();
+      // 模型管理页返回全部模型（含禁用的），供管理员启用/配置
+      const data = await listModels(undefined, true);
       setModels(data);
     } catch (error) {
       toast.error(getErrorMessage(error, "加载模型列表失败"));
@@ -489,6 +492,8 @@ export function AiModelConfigPage() {
             onModelDelete={setDeleteModelTarget}
             onModelPriorityChange={handlePriorityChange}
             togglingModelEnabledId={togglingModelEnabledId}
+            activeCapability={activeCapability}
+            onActiveCapabilityChange={setActiveCapability}
             // Fetch models
             onFetchModels={handleFetchModels}
             // Add model manually

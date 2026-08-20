@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   Bot,
   Loader2,
@@ -60,6 +60,8 @@ interface ModelGroupListProps {
   models: AiModel[];
   providerEnabled: boolean;
   togglingEnabledId: string | null;
+  activeCapability: string | null;
+  onActiveCapabilityChange: (cap: string) => void;
   onToggle: (model: AiModel) => void;
   onEdit: (model: AiModel) => void;
   onDelete: (model: AiModel) => void;
@@ -72,6 +74,8 @@ export function ModelGroupList({
   models,
   providerEnabled,
   togglingEnabledId,
+  activeCapability,
+  onActiveCapabilityChange,
   onToggle,
   onEdit,
   onDelete,
@@ -116,19 +120,19 @@ export function ModelGroupList({
     return ["CHAT", "EMBEDDING", "RERANK"].filter((c) => caps.has(c));
   }, [models]);
 
-  // 默认选中第一个有模型的分类
-  const [activeCap, setActiveCap] = useState<string | null>(null);
-
-  // 当 models 变化时自动选择第一个有模型的分类
-  useMemo(() => {
-    if (availableCaps.length > 0) {
-      if (!activeCap || !availableCaps.includes(activeCap)) {
-        setActiveCap(availableCaps[0]);
-      }
-    } else {
-      setActiveCap(null);
+  // 当前 Tab 由父组件控制（跨模型刷新/重挂载保留，避免编辑保存后从"向量化"跳到"对话"）
+  // 仅在当前分类失效或首次加载时自动选择第一个有模型的分类
+  useEffect(() => {
+    if (availableCaps.length === 0) {
+      return;
     }
+    if (!activeCapability || !availableCaps.includes(activeCapability)) {
+      onActiveCapabilityChange(availableCaps[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableCaps.join(",")]);
+
+  const activeCap = activeCapability && availableCaps.includes(activeCapability) ? activeCapability : availableCaps[0] ?? null;
 
   const currentModels = useMemo(
     () => models.filter((m) => m.capability === activeCap),
@@ -155,7 +159,7 @@ export function ModelGroupList({
       {/* Tab 导航 */}
       <Tabs
         value={activeCap ?? undefined}
-        onValueChange={(val) => setActiveCap(val)}
+        onValueChange={(val) => onActiveCapabilityChange(val)}
         className="w-full"
       >
         <TabsList className="w-full justify-start gap-1 rounded-xl bg-gray-50/80 p-1">

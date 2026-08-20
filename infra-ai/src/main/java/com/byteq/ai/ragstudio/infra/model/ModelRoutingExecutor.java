@@ -154,8 +154,10 @@ public class ModelRoutingExecutor {
                 failures++;
                 log.error("{} model failed, fallback to next. modelId={}, provider={}, error={}",
                         label, target.id(), target.candidate().getProvider(), e.getMessage());
-                // 达到失败次数上限：立即终止，不继续尝试剩余候选（防长尾时延）
-                if (maxFallback > 0 && failures >= maxFallback) {
+                // 达到失败次数上限：立即终止，不继续尝试剩余候选（防长尾时延）。
+                // 语义为「首次失败后再多试 maxFallback 个候选」：maxFallback=1 时首个失败后可再试 1 个（共 2 次调用），
+                // 此前用 failures >= maxFallback 在首次失败即退出，导致备用模型永远不被尝试
+                if (maxFallback > 0 && failures > maxFallback) {
                     log.warn("{} 达到失败次数上限({})，终止剩余候选尝试", label, maxFallback);
                     break;
                 }

@@ -2,7 +2,8 @@
 
 ## 项目架构
 
-RAGStudio 采用**双管线设计**：**Agent 模式为默认（mode=agent）**，RAG 模式作为 `mode=rag` 备选。
+RAGStudio 当前采用**单一管线**：所有请求统一走 **AgentScope ReActAgent 循环**（Agent 模式）。
+> 注：早期规划的 `mode=rag` 独立模式尚未实现，`ChatRequest` 无 `mode` 字段，后续版本再行支持。
 
 ### Agent 模式流程
 
@@ -17,28 +18,13 @@ StreamChatPipeline.doExecuteAgent()
   │
   ├─ 1. 记忆加载 ─── 并行加载对话历史 + 摘要
   │
-  ├─ 2. 工具注册 ─── MCP 工具 + rag_search 工具注册到 ToolRegistry
+  ├─ 2. 工具注册 ─── MCP 工具 + rag_search + SKILL 工具注册（AgentScope Toolkit）
   │
-  ├─ 3. KB 相关性判断 ─── 轻量 LLM 判断问题是否与所选知识库相关
+  ├─ 3. KB 语义选择 ─── 嵌入模型按问题筛选相关知识库（多模态选库）
   │
-  └─ 4. Agent Loop ─── 迭代至 FINISH
+  └─ 4. Agent Loop ─── 迭代至 AgentEnd / 最大迭代次数
         ├─ Thought → Action(TOOL_CALL) → Observation → 继续
-        └─ Thought → Action(FINISH) → Final Answer（逐字流式推送）
-```
-
-### RAG 模式流程（mode=rag）
-
-```
-用户提问
-  │
-  ▼
-StreamChatPipeline.doExecuteRag()
-  │
-  ├─ 1. 记忆加载
-  ├─ 2. 查询改写 + MCP 决策
-  ├─ 3. 多通道检索 + Rerank
-  ├─ 4. MCP 工具执行（条件）
-  └─ 5. 流式回答
+        └─ Thought → Final Answer（逐字流式推送）
 ```
 
 ## 核心文件
@@ -47,17 +33,16 @@ StreamChatPipeline.doExecuteRag()
 
 ```
 bootstrap/src/main/java/com/byteq/ai/ragstudio/rag/core/agent/
-├── AgentLoop.java                  # ReACT 循环引擎
-├── AgentContext.java               # 循环上下文
-├── AgentStep.java                  # 单步记录（thought/action/observation）
-├── ReActResponseParser.java        # 三级降级解析器
-├── ReActPromptBuilder.java         # System Prompt 构建器
-├── Tool.java                       # 统一工具接口
-├── ToolRegistry.java               # 工具注册中心（30 秒超时）
-├── ToolResult.java                 # 工具执行结果
-├── McpToolAdapter.java             # MCP 协议 → 通用 Tool 适配器
-├── RagSearchTool.java              # 知识库检索工具
-└── KbEmbeddingSelector.java        # 知识库语义选择（多模态 Embedding）
+├── AgentScopeReActExecutor.java     # AgentScope ReActAgent 执行器（事件流透传 SSE）
+├── AgentContext.java                # 循环上下文（迭代次数/总超时/子问题）
+├── AgentStep.java                   # 单步记录（thought/action/observation）
+├── ProjectToolAdapter.java          # 项目 Tool → AgentScope Toolkit 适配器
+├── Tool.java                        # 统一工具接口
+├── ToolResult.java                  # 工具执行结果
+├── McpToolAdapter.java              # MCP 协议 → 通用 Tool 适配器
+├── RagSearchTool.java               # 知识库检索工具
+├── KbEmbeddingSelector.java         # 知识库语义选择（多模态 Embedding）
+└── SkillTool.java                   # SKILL 技能工具（http/script/command）
 ```
 
 ### 检索系统
@@ -99,7 +84,9 @@ curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
   }'
 ```
 
-### 3. RAG 模式
+### 3. 仅 Agent 模式
+
+> 当前仅支持 Agent 模式；`mode` 字段不存在，按此格式请求即可（与 Agent 模式一致）。
 
 ```bash
 curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
@@ -107,8 +94,7 @@ curl -X POST http://localhost:9090/api/ragstudio/rag/v3/chat \
   -H "Authorization: <token>" \
   -d '{
     "question": "公司年假怎么申请？",
-    "knowledgeBaseIds": ["kb-001"],
-    "mode": "rag"
+    "knowledgeBaseIds": ["kb-001"]
   }'
 ```
 
@@ -121,16 +107,20 @@ rag:
   # Agent 模式配置
   agent:
     max-iterations: 10        # Agent 循环最大迭代次数
-    tool-timeout-ms: 30000    # 单工具调用超时
+    timeout-ms: 120000        # Agent 总执行超时（毫秒），超时强制中断
 
   # 检索配置
   search:
     default-top-k: 5
     channels:
       vector-global:
+        enabled: false        # 向量全局检索当前已禁用
         top-k-multiplier: 3
       knowledge-base-selection:
         top-k-multiplier: 3
+      hybrid-rrf:
+        enabled: true
+        top-k: 5              # 跨知识库 RRF 融合后最终返回数
 
   # 记忆管理
   memory:

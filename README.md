@@ -218,7 +218,7 @@ Key application config (`bootstrap/src/main/resources/application.yaml`):
 | `rag.trace.enabled` | `true` | Enable distributed tracing |
 | `rag.rate-limit.global.max-concurrent` | `1` | Max concurrent chat sessions |
 | `rag.rate-limit.global.max-wait-seconds` | `15` | Queue wait timeout (seconds) |
-| `rag.semantic-highlight.enabled` | `false` | Semantic chunk cropping |
+| `rag.search.crop.enabled` | `false` | Semantic chunk cropping (in-process bge-small-zh-v1.5, enable with `RAG_CROP_ENABLED=true` in `.env`) |
 | `rag.query-rewrite.enabled` | `true` | Multi-turn query rewriting |
 | `app.default-avatar-url` | `https://avatars.githubusercontent.com/u/583231?v=4` | Default user avatar |
 

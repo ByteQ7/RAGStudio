@@ -79,6 +79,18 @@ public class StreamChatPipeline {
     @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.cpus:0.5}")
     private String sandboxCpus;
 
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.enabled:true}")
+    private boolean sandboxEnabled;
+
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.allowed-commands:}")
+    private String allowedCommands;
+
+    @org.springframework.beans.factory.annotation.Value("${rag.agent.max-iterations:10}")
+    private int agentMaxIterations;
+
+    @org.springframework.beans.factory.annotation.Value("${rag.agent.timeout-ms:120000}")
+    private long agentTimeoutMs;
+
     @jakarta.annotation.PostConstruct
     public void initSandbox() {
         this.sandboxExecutor = SandboxExecutor.builder()
@@ -259,15 +271,15 @@ public class StreamChatPipeline {
             kbSummaryText = "";
         }
 
-        // 4. 构建 AgentContext
+        // 4. 构建 AgentContext（迭代次数与总超时来自 rag.agent.* 配置，见 application.yaml）
         AgentContext agentCtx = new AgentContext(
                 userOriginalQuestion,
                 ctx.getHistory(),
                 "",
                 kbRelevant,
                 List.of(),
-                10,
-                120_000L,
+                agentMaxIterations,
+                agentTimeoutMs,
                 ctx.getImageUrls(),
                 ctx.getDeepThinkingLevel(),
                 ctx.getConversationId(),
@@ -283,11 +295,23 @@ public class StreamChatPipeline {
         // join 等待 Agent 事件流完全结束：trace 节点记录完整 Agent 时长，
         // 同时让限流 permit / 会话并发锁自然持有到流式回答真正结束
         traceNode("Agent循环", "AGENT_LOOP", () -> {
-            agentscopeExecutor.run(agentCtx, ctx.getTaskId(), sandboxExecutor, ctx.getCallback()).join();
+            agentscopeExecutor.run(agentCtx, ctx.getTaskId(), sandboxExecutor,
+                    sandboxEnabled, parseAllowedCommandPrefixes(), ctx.getCallback()).join();
             return null;
         });
 
         logPipelineComplete(ctx);
+    }
+
+    /** 解析 allowed-commands 白名单：逗号分隔的命令前缀列表 */
+    private List<String> parseAllowedCommandPrefixes() {
+        if (StrUtil.isBlank(allowedCommands)) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(allowedCommands.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 
     // 加载对话历史记忆并将当前用户问题（含图片 URL）追加到上下文中

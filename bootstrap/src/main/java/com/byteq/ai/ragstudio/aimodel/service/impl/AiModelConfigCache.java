@@ -17,6 +17,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -116,10 +118,25 @@ public class AiModelConfigCache implements ModelConfigProvider {
     /**
      * 写操作后调用：刷新本地缓存，并通过 Redis 通知其他实例同步刷新。
      * <p>
+     * 若调用方处于事务中，通知推迟到事务提交后（afterCommit）再执行——
+     * 否则远端实例收到通知后读库可能读到未提交数据，刷新出旧配置。
      * Redis 不可用时仅影响跨实例同步，本地刷新不受影响。
      * </p>
      */
     public void reloadAndNotify() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    reloadAndNotifyNow();
+                }
+            });
+        } else {
+            reloadAndNotifyNow();
+        }
+    }
+
+    private void reloadAndNotifyNow() {
         reload();
         try {
             redisson.getTopic(CONFIG_CHANGED_TOPIC).publish("changed");
@@ -177,7 +194,10 @@ public class AiModelConfigCache implements ModelConfigProvider {
                     return DynamicModelConfig.ModelEntry.builder()
                             .id(m.getModelId())
                             .provider(providerName)
-                            .model(m.getModelId())
+                            // 供应商请求体使用「供应商侧实际模型名」，modelId 仅是逻辑标识
+                            // （如 modelId=qwen-plus → modelName=qwen-plus-latest），
+                            // 否则调用方会把逻辑 ID 直接发给供应商导致模型不存在
+                            .model(StrUtil.isNotBlank(m.getModelName()) ? m.getModelName() : m.getModelId())
                             .url(StrUtil.isNotBlank(m.getCustomUrl()) ? m.getCustomUrl() : null)
                             .dimension(effectiveDim)
                             .dimensions(allDims)

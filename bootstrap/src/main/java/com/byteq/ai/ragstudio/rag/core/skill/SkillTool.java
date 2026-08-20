@@ -33,15 +33,26 @@ public class SkillTool implements Tool {
     private final SkillDefinition definition;
     private final SandboxExecutor sandboxExecutor;
     private final OkHttpClient httpClient;
+    /** 沙箱总开关（rag.skills.sandbox.enabled）：false 时 script/command 类型全部拒绝执行 */
+    private final boolean sandboxEnabled;
+    /** command 类型命令前缀白名单（rag.skills.allowed-commands，逗号分隔）：空表示 command 类型禁用 */
+    private final List<String> allowedCommandPrefixes;
 
     public SkillTool(SkillDefinition definition, OkHttpClient httpClient) {
-        this(definition, httpClient, SandboxExecutor.builder().build());
+        this(definition, httpClient, SandboxExecutor.builder().build(), true, List.of());
     }
 
     public SkillTool(SkillDefinition definition, OkHttpClient httpClient, SandboxExecutor sandboxExecutor) {
+        this(definition, httpClient, sandboxExecutor, true, List.of());
+    }
+
+    public SkillTool(SkillDefinition definition, OkHttpClient httpClient, SandboxExecutor sandboxExecutor,
+                     boolean sandboxEnabled, List<String> allowedCommandPrefixes) {
         this.definition = definition;
         this.sandboxExecutor = sandboxExecutor;
         this.httpClient = httpClient;
+        this.sandboxEnabled = sandboxEnabled;
+        this.allowedCommandPrefixes = allowedCommandPrefixes != null ? allowedCommandPrefixes : List.of();
     }
 
     @Override
@@ -144,6 +155,10 @@ public class SkillTool implements Tool {
     // ==================== Script 类型 ====================
 
     private ToolResult executeScript(Map<String, Object> params) {
+        if (!sandboxEnabled) {
+            log.warn("SKILL 沙箱已禁用，拒绝执行脚本: name={}", name());
+            return ToolResult.failure(name(), "沙箱已禁用（rag.skills.sandbox.enabled=false），script 类型 SKILL 不可用");
+        }
         Map<String, Object> config = definition.getConfig();
         if (config == null) {
             return ToolResult.failure(name(), "Script 类型的 SKILL 缺少 config 配置");
@@ -200,6 +215,14 @@ public class SkillTool implements Tool {
     // ==================== Command 类型 ====================
 
     private ToolResult executeCommand(Map<String, Object> params) {
+        if (!sandboxEnabled) {
+            log.warn("SKILL 沙箱已禁用，拒绝执行命令: name={}", name());
+            return ToolResult.failure(name(), "沙箱已禁用（rag.skills.sandbox.enabled=false），command 类型 SKILL 不可用");
+        }
+        if (allowedCommandPrefixes.isEmpty()) {
+            log.warn("SKILL command 类型被白名单禁用: name={}", name());
+            return ToolResult.failure(name(), "command 类型 SKILL 已禁用（rag.skills.allowed-commands 为空）");
+        }
         Map<String, Object> config = definition.getConfig();
         if (config == null) {
             return ToolResult.failure(name(), "Command 类型的 SKILL 缺少 config 配置");
@@ -208,6 +231,13 @@ public class SkillTool implements Tool {
         String command = resolveTemplate((String) config.get("command"), params);
         if (StrUtil.isBlank(command)) {
             return ToolResult.failure(name(), "Command 类型的 SKILL 缺少 command 配置");
+        }
+
+        // 命令前缀白名单校验：命令必须以白名单中的某个前缀开头
+        boolean allowed = allowedCommandPrefixes.stream().anyMatch(command::startsWith);
+        if (!allowed) {
+            log.warn("SKILL 命令不在白名单内: name={}, command={}", name(), command);
+            return ToolResult.failure(name(), "命令不在允许执行的白名单内: " + command);
         }
 
         return executeInSandbox(command, false);

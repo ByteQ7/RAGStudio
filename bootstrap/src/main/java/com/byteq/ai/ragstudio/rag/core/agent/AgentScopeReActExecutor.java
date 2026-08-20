@@ -13,6 +13,7 @@ import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.infra.agentscope.AgentScopeModelFactory;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
 import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
+import com.byteq.ai.ragstudio.infra.model.ModelHealthStore;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.infra.reasoning.ReasoningRouter;
@@ -71,6 +72,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -141,6 +143,7 @@ public class AgentScopeReActExecutor {
     private final StreamTaskManager taskManager;
     private final RagTraceRecordService traceRecordService;
     private final RagTraceProperties traceProperties;
+    private final ModelHealthStore healthStore;
 
     public AgentScopeReActExecutor(
             AgentScopeModelFactory modelFactory,
@@ -155,7 +158,8 @@ public class AgentScopeReActExecutor {
             PromptTemplateLoader templateLoader,
             StreamTaskManager taskManager,
             RagTraceRecordService traceRecordService,
-            RagTraceProperties traceProperties) {
+            RagTraceProperties traceProperties,
+            ModelHealthStore healthStore) {
         this.modelFactory = modelFactory;
         this.selector = selector;
         this.defaultModelService = defaultModelService;
@@ -169,6 +173,7 @@ public class AgentScopeReActExecutor {
         this.taskManager = taskManager;
         this.traceRecordService = traceRecordService;
         this.traceProperties = traceProperties;
+        this.healthStore = healthStore;
     }
 
     /**
@@ -185,9 +190,13 @@ public class AgentScopeReActExecutor {
      * @param ctx            Agent 上下文
      * @param taskId         任务 ID（用于取消）
      * @param sandboxExecutor SKILL 沙箱执行器（script/command 类型）
+     * @param sandboxEnabled 沙箱总开关（false 时 script/command 类型 SKILL 拒绝执行）
+     * @param allowedCommandPrefixes command 类型命令前缀白名单（空表示禁用 command 类型）
      * @param callback       SSE 流式回调
      */
-    public CompletableFuture<Void> run(AgentContext ctx, String taskId, SandboxExecutor sandboxExecutor, StreamCallback callback) {
+    public CompletableFuture<Void> run(AgentContext ctx, String taskId, SandboxExecutor sandboxExecutor,
+                                       boolean sandboxEnabled, List<String> allowedCommandPrefixes,
+                                       StreamCallback callback) {
         CompletableFuture<Void> done = new CompletableFuture<>();
         if (taskManager.isCancelled(taskId)) {
             log.info("任务已被取消，跳过 Agent 执行，任务ID：{}", taskId);
@@ -196,6 +205,8 @@ public class AgentScopeReActExecutor {
         }
 
         RunState state = new RunState(taskId, ctx);
+        // 标记 Agent 循环开始时间（供总超时 watchdog 与后续统计使用）
+        ctx.markStart();
         // 捕获当前链路的 traceId 与父节点（Agent循环）ID：
         // AgentScope 事件回调在独立线程执行，ThreadLocal 不传递，需在启动线程快照
         state.traceId = RagTraceContext.getTraceId();
@@ -209,7 +220,7 @@ public class AgentScopeReActExecutor {
             Model fallbackModel = fallback != null ? modelFactory.buildChatModel(fallback) : null;
 
             // 2. 构建工具集
-            Toolkit toolkit = buildToolkit(ctx, state, sandboxExecutor);
+            Toolkit toolkit = buildToolkit(ctx, state, sandboxExecutor, sandboxEnabled, allowedCommandPrefixes);
 
             // 3. 构建 System Prompt（含目标摘要、历史摘要、前置指令——AgentScope 输入不允许 SYSTEM 消息）
             String sysPrompt = buildSystemPrompt(ctx, state.toolNames);
@@ -244,6 +255,10 @@ public class AgentScopeReActExecutor {
                             event -> onEvent(event, state, callback, maxItersExceeded),
                             error -> {
                                 try {
+                                    // 模型调用/传输失败：标记熔断失败（用户主动取消不算模型故障）
+                                    if (!taskManager.isCancelled(taskId)) {
+                                        healthStore.markFailure(primary.id());
+                                    }
                                     onError(error, state, callback, terminal);
                                 } finally {
                                     // 无论回调是否异常都必须完成句柄，否则调用方 join 永久阻塞、
@@ -255,6 +270,10 @@ public class AgentScopeReActExecutor {
                                 try {
                                     onTerminal(state, callback, terminal, maxItersExceeded);
                                 } finally {
+                                    // 正常收尾：关闭熔断探测（清除 HALF_OPEN in-flight），避免恢复后的模型被误限流
+                                    if (!taskManager.isCancelled(taskId)) {
+                                        healthStore.markSuccess(primary.id());
+                                    }
                                     done.complete(null);
                                 }
                             });
@@ -262,6 +281,19 @@ public class AgentScopeReActExecutor {
             // 6. 绑定取消句柄：取消时中断进行中的推理
             taskManager.bindHandle(taskId, (StreamCancellationHandle) () ->
                     agent.interrupt(ctx.getUserId(), taskId));
+
+            // 7. 总执行超时 watchdog：AgentScope 的 ExecutionConfig.timeout 仅约束单次模型调用，
+            // 多轮工具调用累计可能远超预期，这里对整段循环施加总超时，到期强制取消 Agent
+            long agentTimeoutMs = ctx.getTimeoutMs();
+            if (agentTimeoutMs > 0) {
+                CompletableFuture.delayedExecutor(agentTimeoutMs, TimeUnit.MILLISECONDS)
+                        .execute(() -> {
+                            if (!done.isDone()) {
+                                log.warn("Agent 总执行超时（{}ms），强制取消任务: taskId={}", agentTimeoutMs, taskId);
+                                taskManager.cancel(taskId);
+                            }
+                        });
+            }
         } catch (RemoteException e) {
             log.warn("Agent 执行前置校验失败: {}", e.getMessage());
             pushModelUnavailable(callback);
@@ -615,7 +647,8 @@ public class AgentScopeReActExecutor {
 
     // ==================== 工具集构建 ====================
 
-    private Toolkit buildToolkit(AgentContext ctx, RunState state, SandboxExecutor sandboxExecutor) {
+    private Toolkit buildToolkit(AgentContext ctx, RunState state, SandboxExecutor sandboxExecutor,
+                                 boolean sandboxEnabled, List<String> allowedCommandPrefixes) {
         Toolkit toolkit = new Toolkit();
         List<String> toolNames = new ArrayList<>();
 
@@ -648,7 +681,8 @@ public class AgentScopeReActExecutor {
                 continue;
             }
             executableSkills++;
-            register(toolkit, toolNames, new SkillTool(def, syncHttpClient, sandboxExecutor), state);
+            register(toolkit, toolNames, new SkillTool(def, syncHttpClient, sandboxExecutor,
+                    sandboxEnabled, allowedCommandPrefixes), state);
         }
 
         state.toolNames.addAll(toolNames);
@@ -860,12 +894,14 @@ public class AgentScopeReActExecutor {
             candidates = selectMultimodalCandidates(multimodalModelId, deepThinking);
         }
 
-        // 过滤无 API Key 的候选，并校验非空
+        // 过滤无 API Key 的候选，并按健康状态跳过熔断中的模型（与 RoutingLLMService 同语义，
+        // 让主 Agent 链路也受跨实例熔断保护：故障模型连续失败后不再被每个请求重复尝试）
         List<ModelTarget> usable = candidates.stream()
                 .filter(t -> t.provider() != null && StringUtils.hasText(t.provider().getApiKey()))
+                .filter(t -> healthStore.allowCall(t.id()))
                 .toList();
         if (usable.isEmpty()) {
-            throw new RemoteException("未设置模型或API KEY，请检查");
+            throw new RemoteException("未设置模型/API KEY，或候选模型当前全部不可用（可能正在熔断冷却）");
         }
         return usable.size() > 2 ? usable.subList(0, 2) : usable;
     }

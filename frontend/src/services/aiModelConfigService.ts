@@ -115,9 +115,12 @@ export async function deleteProvider(id: string): Promise<void> {
 
 // ==================== 模型 API ====================
 
-export async function listModels(capability?: string): Promise<AiModel[]> {
-  const params = capability ? `?capability=${capability}` : "";
-  return api.get<AiModel[], AiModel[]>(`/ai-model-config/models${params}`);
+export async function listModels(capability?: string, includeDisabled?: boolean): Promise<AiModel[]> {
+  const params = new URLSearchParams();
+  if (capability) params.set("capability", capability);
+  if (includeDisabled) params.set("includeDisabled", "true");
+  const qs = params.toString();
+  return api.get<AiModel[], AiModel[]>(`/ai-model-config/models${qs ? `?${qs}` : ""}`);
 }
 
 export async function getModel(id: string): Promise<AiModel> {

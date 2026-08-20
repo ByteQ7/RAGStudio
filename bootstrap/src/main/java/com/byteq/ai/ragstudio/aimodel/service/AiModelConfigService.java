@@ -97,10 +97,12 @@ public interface AiModelConfigService {
     /**
      * 查询模型列表，可按能力类型过滤
      *
-     * @param capability 能力类型（可选）
+     * @param capability      能力类型（可选）
+     * @param includeDisabled 是否返回全部模型（含禁用的、供应商未配置 Key 的），
+     *                        用于模型管理页；false 时仅返回可用的模型
      * @return 模型列表
      */
-    List<AiModelVO> listModels(String capability);
+    List<AiModelVO> listModels(String capability, boolean includeDisabled);
 
     // ==================== 默认模型 & 优先级 ====================
 

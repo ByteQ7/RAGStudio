@@ -85,11 +85,16 @@ AILog/
 # Design docs
 深度思考路由功能设计.md
 
+# Python 生成物
+__pycache__/
+*.pyc
+
 # Quick test DB init
 resources/database/quick-test.sql
-/resources/docker/semantic-highlight/ragstudio-highlight.tar
+# 语义裁剪模型（本地下载，不提交仓库）
+/resources/models/bge-small-zh-v1.5/
+# 复杂排版文档示例
 /复杂排版文档示例.pdf
-/SEMANTIC_HIGHLIGHT_TROUBLESHOOTING.md
 /简历.json
 /tika-cp.txt
 /bootstrap/test.pdf

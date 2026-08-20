@@ -15,6 +15,7 @@ import com.byteq.ai.ragstudio.rag.dto.MessageDelta;
 import com.byteq.ai.ragstudio.rag.dto.MetaPayload;
 import com.byteq.ai.ragstudio.rag.enums.SSEEventType;
 import com.byteq.ai.ragstudio.rag.service.ConversationGroupService;
+import com.byteq.ai.ragstudio.rag.service.handler.StreamTaskManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.logging.log4j.util.Strings;
@@ -42,6 +43,7 @@ public class ChatQueueLimiter {
     private final ConversationMemoryService memoryService;
     private final ConversationGroupService conversationGroupService;
     private final MemoryProperties memoryProperties;
+    private final StreamTaskManager taskManager;
 
     /**
      * 将对话请求入队到全局并发限流器
@@ -56,12 +58,31 @@ public class ChatQueueLimiter {
      * @param onAcquire      获取到并发许可后执行的业务逻辑
      */
     public void enqueue(String question, String conversationId, SseEmitter emitter, Runnable onAcquire) {
+        enqueue(question, conversationId, emitter, onAcquire, null);
+    }
+
+    /**
+     * 将对话请求入队到全局并发限流器
+     * <p>
+     * 限流关闭时直接提交到线程池；限流开启时通过公平分布式限流器排队，
+     * 获取到 permit 后执行 onAcquire 回调，超时则走 reject 流程。
+     * </p>
+     *
+     * @param question            用户问题
+     * @param conversationId      会话 ID
+     * @param emitter             SSE 发射器
+     * @param onAcquire           获取到并发许可后执行的业务逻辑
+     * @param preRegisteredTaskId 请求入口已注册的 StreamChatEventHandler 的 taskId
+     *                            （拒绝时需要先注销，避免 complete() 触发取消回调产生脏数据）
+     */
+    public void enqueue(String question, String conversationId, SseEmitter emitter, Runnable onAcquire,
+                        String preRegisteredTaskId) {
         if (!Boolean.TRUE.equals(rateLimitProperties.getGlobalEnabled())) {
             try {
                 chatEntryExecutor.execute(onAcquire);
             } catch (RejectedExecutionException ex) {
                 log.warn("直通分支线程池拒绝任务，转 reject 流程", ex);
-                handleReject(question, conversationId, emitter);
+                handleReject(question, conversationId, emitter, preRegisteredTaskId);
             }
             return;
         }
@@ -69,7 +90,7 @@ public class ChatQueueLimiter {
         chatRateLimiter.acquire(AcquireRequest.builder()
                 .maxWaitMillis(TimeUnit.SECONDS.toMillis(rateLimitProperties.getGlobalMaxWaitSeconds()))
                 .onAcquired(onAcquire)
-                .onTimeout(() -> handleReject(question, conversationId, emitter))
+                .onTimeout(() -> handleReject(question, conversationId, emitter, preRegisteredTaskId))
                 .onAcquiredExecutor(chatEntryExecutor)
                 .cancelBinder(cancel -> {
                     emitter.onCompletion(cancel);
@@ -84,16 +105,35 @@ public class ChatQueueLimiter {
     // 处理被限流拒绝的请求: 记录拒绝会话 -> 向前端发送拒绝事件
     // public: 会话并发门闸（ConversationConcurrencyGate）拒绝同会话并发请求时复用同一拒绝协议
     public void handleReject(String question, String conversationId, SseEmitter emitter) {
-        handleReject(question, conversationId, emitter, true);
+        handleReject(question, conversationId, emitter, true, null);
+    }
+
+    // 带 preRegisteredTaskId 的拒绝：拒绝前注销请求入口已注册的原始任务
+    public void handleReject(String question, String conversationId, SseEmitter emitter, String preRegisteredTaskId) {
+        handleReject(question, conversationId, emitter, true, preRegisteredTaskId);
     }
 
     // 拒绝但不写入对话历史：用于「问题实际未被处理」的拒绝场景（同会话并发、重复提交防护），
     // 避免把未回答的问题与"系统繁忙"假回答写进历史，污染后续多轮上下文
     public void handleRejectWithoutRecord(String question, String conversationId, SseEmitter emitter) {
-        handleReject(question, conversationId, emitter, false);
+        handleReject(question, conversationId, emitter, false, null);
     }
 
-    private void handleReject(String question, String conversationId, SseEmitter emitter, boolean record) {
+    // 带 preRegisteredTaskId 的拒绝（不写历史）
+    public void handleRejectWithoutRecord(String question, String conversationId, SseEmitter emitter,
+                                          String preRegisteredTaskId) {
+        handleReject(question, conversationId, emitter, false, preRegisteredTaskId);
+    }
+
+    private void handleReject(String question, String conversationId, SseEmitter emitter, boolean record,
+                              String preRegisteredTaskId) {
+        // 注销请求入口已注册的原始任务：
+        // StreamChatEventHandler 构造时已发送 META 并注册 taskId，且绑定了 emitter.onCompletion → cancelOnDisconnect。
+        // 若不注销，下方 sendRejectEvents 的 sender.complete() 会触发取消回调，向历史写入
+        // "对话被用户关闭"消息并重复发送取消事件（ghost 任务），污染会话上下文。
+        if (StrUtil.isNotBlank(preRegisteredTaskId)) {
+            taskManager.unregister(preRegisteredTaskId);
+        }
         RejectedContext context = null;
         if (record) {
             try {
@@ -103,7 +143,7 @@ public class ChatQueueLimiter {
                 log.warn("记录 reject 会话失败，仍向前端发送 DONE", ex);
             }
         }
-        sendRejectEvents(emitter, context, conversationId);
+        sendRejectEvents(emitter, context, conversationId, preRegisteredTaskId);
     }
 
     // 记录被拒绝的对话: 保存用户问题和拒绝回复到消息记录，返回拒绝上下文
@@ -153,16 +193,21 @@ public class ChatQueueLimiter {
     // rejectedContext 为 null（问题/用户为空，或 record=false 不落库）时同样发送完整序列：
     // 会话 ID 优先用 rejectedContext，其次用请求自带的 conversationId（拒绝事件挂到正确会话），
     // 都没有时兜底生成雪花 ID，避免前端只收到 DONE 而挂起等待 META
-    private void sendRejectEvents(SseEmitter emitter, RejectedContext rejectedContext, String requestedConversationId) {
+    private void sendRejectEvents(SseEmitter emitter, RejectedContext rejectedContext, String requestedConversationId,
+                                  String preRegisteredTaskId) {
         SseEmitterSender sender = new SseEmitterSender(emitter);
         String conversationId = rejectedContext != null && StrUtil.isNotBlank(rejectedContext.conversationId)
                 ? rejectedContext.conversationId
                 : (StrUtil.isNotBlank(requestedConversationId)
                         ? requestedConversationId
                         : IdUtil.getSnowflakeNextIdStr());
-        String taskId = rejectedContext != null && StrUtil.isNotBlank(rejectedContext.taskId)
-                ? rejectedContext.taskId
-                : IdUtil.getSnowflakeNextIdStr();
+        // 复用请求入口已发送过 META 的 taskId：客户端全程只看到一个 taskId，避免状态错乱；
+        // 无 preRegisteredTaskId 时回退到 rejectedContext 或新生成
+        String taskId = StrUtil.isNotBlank(preRegisteredTaskId)
+                ? preRegisteredTaskId
+                : (rejectedContext != null && StrUtil.isNotBlank(rejectedContext.taskId)
+                        ? rejectedContext.taskId
+                        : IdUtil.getSnowflakeNextIdStr());
         String messageId = rejectedContext != null ? rejectedContext.messageId : null;
         String title = rejectedContext != null ? rejectedContext.title : Strings.EMPTY;
         sender.sendEvent(SSEEventType.META.value(), new MetaPayload(conversationId, taskId));

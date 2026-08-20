@@ -63,6 +63,8 @@ public class EmbeddingCache {
     private long ttlHours = DEFAULT_CACHE_TTL_HOURS;
 
     private final Map<String, CompletableFuture<List<Float>>> inFlight = new ConcurrentHashMap<>();
+    /** 批量加载在途合并：相同 (模型, 维度, 未命中文本列表) 的并发批次只发起一次远程调用 */
+    private final Map<String, CompletableFuture<List<List<Float>>>> batchInFlight = new ConcurrentHashMap<>();
     private final RedisTemplate<String, byte[]> redisTemplate;
     private volatile boolean redisWarned = false;
 
@@ -232,12 +234,7 @@ public class EmbeddingCache {
                 missing = stillMissing;
             }
             if (!missing.isEmpty()) {
-                List<List<Float>> loaded = loader.apply(missing);
-                if (loaded == null || loaded.size() != missing.size()) {
-                    throw new IllegalStateException(
-                            "批量 embedding 返回数量(" + (loaded == null ? "null" : loaded.size())
-                                    + ")与请求数量(" + missing.size() + ")不一致");
-                }
+                List<List<Float>> loaded = loadMissingBatch(modelId, dimension, missing, loader);
                 for (int i = 0; i < missing.size(); i++) {
                     String mk = key(modelId, dimension, missing.get(i));
                     List<Float> v = loaded.get(i);
@@ -256,6 +253,60 @@ public class EmbeddingCache {
             result.add(resolved.get(t));
         }
         return result;
+    }
+
+    /**
+     * 对未命中的唯一文本列表执行一次批量远程加载。
+     * 相同 (模型, 维度, 未命中列表) 的并发批次在途合并为一次调用，其余请求等待复用结果，
+     * 避免并发检索场景下对同一批文本重复发起远程 Embedding。
+     */
+    private List<List<Float>> loadMissingBatch(String modelId, Integer dimension, List<String> missing,
+                                               Function<List<String>, List<List<Float>>> loader) {
+        String batchKey = batchKey(modelId, dimension, missing);
+        CompletableFuture<List<List<Float>>> future = batchInFlight.get(batchKey);
+        if (future == null) {
+            CompletableFuture<List<List<Float>>> nf = new CompletableFuture<>();
+            CompletableFuture<List<List<Float>>> raced = batchInFlight.putIfAbsent(batchKey, nf);
+            if (raced != null) {
+                future = raced;
+            } else {
+                // 本线程赢得加载权（必须在 try 前接管 future，否则下方 unwrap 拿到 null）
+                future = nf;
+                try {
+                    nf.complete(loader.apply(missing));
+                } catch (Throwable t) {
+                    nf.completeExceptionally(t);
+                } finally {
+                    batchInFlight.remove(batchKey);
+                }
+            }
+        }
+        List<List<Float>> loaded = unwrapBatch(future);
+        if (loaded == null || loaded.size() != missing.size()) {
+            throw new IllegalStateException(
+                    "批量 embedding 返回数量(" + (loaded == null ? "null" : loaded.size())
+                            + ")与请求数量(" + missing.size() + ")不一致");
+        }
+        return loaded;
+    }
+
+    private List<List<Float>> unwrapBatch(CompletableFuture<List<List<Float>>> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof RuntimeException re) {
+                throw re;
+            }
+            throw new RuntimeException(cause);
+        } catch (CancellationException e) {
+            throw new RuntimeException("批量 embedding 加载被取消", e);
+        }
+    }
+
+    private static String batchKey(String modelId, Integer dimension, List<String> texts) {
+        return modelId + "|" + (dimension == null ? "-" : dimension) + "|batch|"
+                + sha256(String.join("\u0001", texts));
     }
 
     // ==================== Redis L2 ====================

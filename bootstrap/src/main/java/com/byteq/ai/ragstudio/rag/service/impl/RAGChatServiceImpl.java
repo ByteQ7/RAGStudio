@@ -59,7 +59,7 @@ public class RAGChatServiceImpl implements RAGChatService {
         // 已有会话的重复请求不在此限，由会话并发门闸在入队后拦截
         if (StrUtil.isBlank(conversationId) && !duplicateChatGuard.tryAcquire(userId, question)) {
             log.info("新会话重复提交被拒绝: question={}", question);
-            chatQueueLimiter.handleRejectWithoutRecord(question, actualConversationId, emitter);
+            chatQueueLimiter.handleRejectWithoutRecord(question, actualConversationId, emitter, taskId);
             return;
         }
 
@@ -76,7 +76,7 @@ public class RAGChatServiceImpl implements RAGChatService {
                     if (!conversationGate.tryAcquire(userId, actualConversationId)) {
                         log.info("同会话并发请求被拒绝，等待前一条消息处理完成: conversationId={}", actualConversationId);
                         // 问题未被处理，拒绝时不写入对话历史，避免污染多轮上下文
-                        chatQueueLimiter.handleRejectWithoutRecord(question, actualConversationId, emitter);
+                        chatQueueLimiter.handleRejectWithoutRecord(question, actualConversationId, emitter, taskId);
                         return;
                     }
                     try {
@@ -96,7 +96,7 @@ public class RAGChatServiceImpl implements RAGChatService {
                     } finally {
                         conversationGate.release(userId, actualConversationId);
                     }
-                });
+                }, taskId);
     }
 
     // 根据任务 ID 停止正在进行的流式对话

@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 混合检索通道（向量 + 关键词 + RRF 融合）
@@ -39,6 +41,12 @@ public class RrfHybridChannel implements SearchChannel {
 
     /** 子问题参与检索的最大数量（超出丢弃，控制检索开销） */
     private static final int MAX_SUB_QUERIES = 3;
+
+    /**
+     * per-KB 内部融合超时（毫秒）：略低于外层 MultiChannelRetrievalEngine 的 30s 通道超时。
+     * 超时后取消内部 future 并返回已融合结果，避免单库挂起拖垮整轮检索。
+     */
+    private static final long PER_KB_TIMEOUT_MS = 25_000;
 
     public RrfHybridChannel(KnowledgeBaseSelectionChannel vectorChannel,
                             KeywordSearchChannel keywordChannel,
@@ -94,6 +102,8 @@ public class RrfHybridChannel implements SearchChannel {
         // 每个知识库的每个查询（主问题+子问题）的向量 + 关键词检索一次性全量并行提交
         // 向量侧跨 collection 批量嵌入：按 (模型, 维度) 分组一次调用，避免 N 个知识库 × 同一查询产生 N 次远程调用
         List<CompletableFuture<PerKbResult>> futures = new ArrayList<>();
+        // 全部内部 future：任一 per-KB 超时/中断时统一取消，释放内层线程与远程连接
+        List<CompletableFuture<?>> innerFutures = new ArrayList<>();
         Map<String, Map<String, float[]>> preEmbeddedByCollection =
                 retrieverService.embedQueriesBatchPerCollection(queries, collections);
         if (CollUtil.isNotEmpty(preEmbeddedByCollection)) {
@@ -112,6 +122,7 @@ public class RrfHybridChannel implements SearchChannel {
                 queryFutures.add(CompletableFuture.supplyAsync(
                         () -> safeSearch(keywordChannel, singleCtx), executor));
             }
+            innerFutures.addAll(queryFutures);
 
             CompletableFuture<PerKbResult> perKbFuture = CompletableFuture
                     .allOf(queryFutures.toArray(new CompletableFuture[0]))
@@ -126,7 +137,8 @@ public class RrfHybridChannel implements SearchChannel {
 
         for (CompletableFuture<PerKbResult> future : futures) {
             try {
-                PerKbResult perKb = future.join();
+                // 有界等待：join() 不可中断且无超时，改用 get() 保证单库融合不会无限阻塞检索线程
+                PerKbResult perKb = future.get(PER_KB_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
                 // results 顺序为 [向量0, 关键词0, 向量1, 关键词1, ...]
                 for (int i = 0; i < perKb.results.size(); i++) {
@@ -151,9 +163,24 @@ public class RrfHybridChannel implements SearchChannel {
                 log.debug("KB [{}] RRF: 向量{}条 + 关键词{}条 → 融合{}条, 簇感知截断后{}条",
                         perKb.collection, vectorTotal,
                         keywordTotal, merged.size(), kbChunks.size());
+            } catch (InterruptedException ie) {
+                // 外层通道超时取消了本通道任务：取消内部 future 并恢复中断标记
+                Thread.currentThread().interrupt();
+                log.warn("KB RRF 融合被中断，取消全部内部检索任务");
+                innerFutures.forEach(f -> f.cancel(true));
+                break;
+            } catch (TimeoutException te) {
+                log.warn("KB RRF 融合超时（{}ms），取消内部检索任务: {}", PER_KB_TIMEOUT_MS, te.getMessage());
+                innerFutures.forEach(f -> f.cancel(true));
             } catch (Exception e) {
                 log.warn("KB RRF 融合异常: {}", e.getMessage());
             }
+        }
+
+        // 全局 topK 截断：跨 KB 融合后的最终返回数量受 hybrid-rrf.top-k 配置约束
+        if (finalTopK > 0 && allChunks.size() > finalTopK) {
+            log.info("RRF 全局 topK 截断: {} → {}（配置 hybrid-rrf.top-k）", allChunks.size(), finalTopK);
+            allChunks = new ArrayList<>(allChunks.subList(0, finalTopK));
         }
 
         long latency = System.currentTimeMillis() - startTime;

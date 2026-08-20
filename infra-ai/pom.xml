@@ -29,6 +29,18 @@
             <artifactId>okhttp</artifactId>
         </dependency>
 
+        <!-- HanLP 1.x portable：中文分句（句子级 Chunk 裁剪） -->
+        <dependency>
+            <groupId>com.hankcs</groupId>
+            <artifactId>hanlp</artifactId>
+        </dependency>
+
+        <!-- ONNX Runtime：进程内加载 bge-small-zh-v1.5 量化模型（句子级 Chunk 裁剪） -->
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+        </dependency>
+
         <!-- Jackson: JSON 序列化 -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -63,6 +75,62 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-model-anthropic</artifactId>
+        </dependency>
+
+        <!-- 厂商官方 Java SDK -->
+        <!-- 阿里百炼 DashScope SDK（Chat / 文本嵌入 / 多模态嵌入 / Rerank） -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>dashscope-sdk-java</artifactId>
+            <!-- 注意：勿排除 okhttp-sse —— SDK 运行时依赖其实现 SSE 流式，缺失会 NoClassDefFoundError；
+                 其 okhttp/okhttp-sse 版本均为 4.12.0，与项目一致，无需排除 -->
+        </dependency>
+        <!-- 智谱 Z.AI SDK（Chat / 嵌入等） -->
+        <dependency>
+            <groupId>ai.z.openapi</groupId>
+            <artifactId>zai-sdk</artifactId>
+            <exclusions>
+                <!-- 统一 okhttp 4.12.0，排除 SDK 内 okhttp 3.x 系列 -->
+                <exclusion>
+                    <groupId>com.squareup.okhttp3</groupId>
+                    <artifactId>okhttp</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.squareup.okhttp3</groupId>
+                    <artifactId>okhttp-sse</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.squareup.okhttp3</groupId>
+                    <artifactId>logging-interceptor</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-databind</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-annotations</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- 火山方舟 Ark SDK（OpenAI 兼容接口） -->
+        <dependency>
+            <groupId>com.volcengine</groupId>
+            <artifactId>volcengine-java-sdk-ark-runtime</artifactId>
+        </dependency>
+        <!-- OpenAI 官方 Java SDK（兼作 OpenAI 兼容厂商的通用策略） -->
+        <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
+        </dependency>
+        <!-- Anthropic 官方 Java SDK（兼作 Anthropic 兼容厂商的通用策略） -->
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
         </dependency>
     </dependencies>
 </project>

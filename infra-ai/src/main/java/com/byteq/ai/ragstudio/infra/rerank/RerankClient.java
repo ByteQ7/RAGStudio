@@ -30,8 +30,9 @@ import java.util.List;
  * </p>
  *
  * @author byteq
- * @see BaiLianRerankClient
  * @see NoopRerankClient
+ * @see com.byteq.ai.ragstudio.infra.sdk.DashScopeGateway
+ * @see com.byteq.ai.ragstudio.infra.sdk.GatewayRerankClient
  * @see RerankService
  */
 public interface RerankClient {

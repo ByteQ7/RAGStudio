@@ -47,6 +47,10 @@ rocketmq:
     send-message-timeout: 2000
 
 rag:
+  # Agent 循环配置（docs/quick-start.md 中已声明，此处补齐实际绑定）
+  agent:
+    max-iterations: 10        # Agent 循环最大迭代次数
+    timeout-ms: 120000        # Agent 总执行超时（毫秒），超时强制中断 Agent
   skills:
     dir: skills              # SKILL 目录（相对于项目根目录）
     allowed-commands: ""     # 允许执行的命令前缀白名单，空表示禁用 command 类型
@@ -57,12 +61,6 @@ rag:
       memory: 256m           # 内存限制
       cpus: "0.5"            # CPU 限制
       timeout-ms: 30000      # 执行超时
-  semantic-highlight:
-    enabled: ${SEMANTIC_HIGHLIGHT_ENABLED:true}   # ContextCropper 启用语义裁剪时连接 Python 服务
-    base-url: ${SEMANTIC_HIGHLIGHT_BASE_URL:http://localhost:8001}
-    connect-timeout: 5s
-    read-timeout: ${SEMANTIC_HIGHLIGHT_READ_TIMEOUT:120s}
-
   embedding-cache:
     # embedding 结果缓存：true 时启用 Redis 二级缓存（跨服务重启/多实例共享），false 仅本地内存
     # Redis 不可用时自动降级为纯本地缓存，不影响检索
@@ -146,20 +144,23 @@ rag:
     kb-selection-tie-band-ratio: 0.10
     kb-selection-threshold: 0.32
 
-    # 语义裁剪（ContextCropper）性能优化（CPU-only 环境）
-    # - min-chars：参与裁剪文本总字符数低于该值 → 跳过裁剪保原文（短内容裁剪收益接近 0）
-    # - max-sentences-per-chunk：每条 chunk 最多裁剪句数（0=不限制；长 chunk 尾部句子贡献递减）
+    # 语义裁剪（ContextCropper）性能优化（进程内 bge-small-zh-v1.5 模型，单句约 10ms）
+    # - enabled：是否启用语义裁剪（.env 中 RAG_CROP_ENABLED，默认关闭；
+    #   开启后模型目录缺失或加载失败则应用启动报错）
+    # - model-path：bge-small-zh-v1.5 量化 ONNX 模型目录（含 config.json/vocab.txt/onnx/model_quantized.onnx）
+    # - threshold：余弦相似度阈值，>= 阈值的句子被保留（初始 0.35，按业务微调）
+    # - min-chars：参与裁剪文本总字符数低于该值 → 跳过裁剪保原文
+    # - max-sentences-per-chunk：每条 chunk 最多裁剪句数（0=不限制）
     # - cache-enabled：裁剪结果 Redis 缓存（(问题, chunk) 幂等，追问/重复提问直接命中）
-    # - timeout-ms：硬超时，超时保留原文不阻塞回答；后台完成后仍写缓存供后续命中。
-    #   CPU 语义模型实测约 1.9s/20句/1 chunk，默认值偏保守（让位于延迟），需保留裁剪效果可调大或置 0
     crop:
+      enabled: ${RAG_CROP_ENABLED:false}
+      model-path: ${RAG_CROP_MODEL_PATH:./resources/models/bge-small-zh-v1.5}
+      threshold: ${RAG_CROP_THRESHOLD:0.35}
       min-chars: 800
-      # 每条 chunk 最多裁剪句数：长 chunk 尾部句子贡献递减，限制后裁剪时延线性下降
-      # （CPU 实测 5 chunks×20句≈9.5s，限制句数后按比例缩短）
       max-sentences-per-chunk: 20
       cache-enabled: true
       cache-ttl-hours: 6
-      timeout-ms: 2000
+      timeout-ms: 0
 
     # 远程 Rerank 全局候选数量上限：多知识库粗召候选先截断再送 Rerank，避免输入量线性膨胀
     max-rerank-candidates: 40

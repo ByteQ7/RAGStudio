@@ -59,6 +59,8 @@ interface ProviderDetailPanelProps {
   onModelDelete: (model: AiModel) => void;
   onModelPriorityChange: (model: AiModel, priority: number) => void;
   togglingModelEnabledId: string | null;
+  activeCapability: string | null;
+  onActiveCapabilityChange: (cap: string) => void;
   // Fetch models
   onFetchModels: () => void;
   // Add model manually
@@ -82,6 +84,8 @@ export function ProviderDetailPanel({
   onModelDelete,
   onModelPriorityChange,
   togglingModelEnabledId,
+  activeCapability,
+  onActiveCapabilityChange,
   onFetchModels,
   onAddModel
 }: ProviderDetailPanelProps) {
@@ -608,6 +612,8 @@ export function ProviderDetailPanel({
                 models={models}
                 providerEnabled={isProviderEnabled}
                 togglingEnabledId={togglingModelEnabledId}
+                activeCapability={activeCapability}
+                onActiveCapabilityChange={onActiveCapabilityChange}
                 onToggle={onModelToggle}
 
                 onEdit={onModelEdit}
