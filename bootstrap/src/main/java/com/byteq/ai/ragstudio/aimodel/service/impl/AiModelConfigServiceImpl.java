@@ -27,10 +27,9 @@ import com.byteq.ai.ragstudio.aimodel.service.AiModelConfigService;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.framework.security.UrlSafetyValidator;
-import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
+import com.byteq.ai.ragstudio.infra.embedding.EmbeddingService;
 import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.http.ModelHttpClient;
-import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.infra.protocol.ModelProtocol;
 import com.byteq.ai.ragstudio.infra.protocol.ProtocolRegistry;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -69,6 +68,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     private final ProviderAdapterRegistry adapterRegistry;
     private final FileStorageService fileStorageService;
     private final ProtocolRegistry protocolRegistry;
+    private final EmbeddingService embeddingService;
 
     // ==================== 供应商管理 ====================
 
@@ -657,7 +657,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
         return switch (capability.toUpperCase()) {
             case "CHAT" -> checkChatModelConnectivity(baseUrl, apiKey, effectiveModelName(model), endpoints);
-            case "EMBEDDING" -> checkEmbeddingModelConnectivity(model, provider, baseUrl, apiKey, endpoints);
+            case "EMBEDDING" -> checkEmbeddingModelConnectivity(model);
             case "RERANK" -> checkRerankModelConnectivity(model, provider, baseUrl, apiKey, endpoints);
             default -> {
                 log.warn("未知的模型能力类型: {}，使用 CHAT 方式兜底", model.getCapability());
@@ -707,52 +707,25 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     /**
-     * 检查 EMBEDDING 模型的连通性
+     * 检查 EMBEDDING 模型的连通性：复用运行时路由（ProviderGateway / 官方 SDK），
+     * 与生产调用完全同路径（含多模态 embedding 的 SDK 分发、DashScope 原生接口模型名小写归一化）。
+     * <p>
+     * 不再使用旧的手写 ModelProtocol 协议层——那套路径未对齐 SDK 化改造，
+     * 会把大小写混写的模型名（如 Qwen3-VL-Embedding）直接发给严格区分大小写的
+     * DashScope 原生接口，导致 "400 Model not exist"。
+     * </p>
      */
-    private ConnectivityResultVO checkEmbeddingModelConnectivity(AiModelDO model, AiProviderDO provider,
-                                                                  String baseUrl, String apiKey,
-                                                                  Map<String, String> endpoints) {
+    private ConnectivityResultVO checkEmbeddingModelConnectivity(AiModelDO model) {
         Instant start = Instant.now();
         try {
-            String protocol = StrUtil.isNotBlank(model.getApiProtocol())
-                    ? model.getApiProtocol()
-                    : StrUtil.isNotBlank(provider.getApiProtocol())
-                            ? provider.getApiProtocol()
-                            : "openai";
-
-            DynamicModelConfig.ModelEntry entry = DynamicModelConfig.ModelEntry.builder()
-                    .id(model.getModelId()).provider(provider.getName()).model(effectiveModelName(model))
-                    .protocol(protocol).build();
-            DynamicModelConfig.ProviderEntry providerEntry = DynamicModelConfig.ProviderEntry.builder()
-                    .name(provider.getName()).url(baseUrl).apiKey(apiKey)
-                    .endpoints(endpoints != null ? endpoints : new HashMap<>())
-                    .protocol(protocol).build();
-            ModelTarget target = new ModelTarget(model.getModelId(), entry, providerEntry);
-
-            ModelProtocol proto = protocolRegistry.get(target.protocolName());
-            String url = chatModelFactory.resolveEmbeddingUrl(target);
-
-            Object requestBody = proto.buildEmbeddingRequest(effectiveModelName(model), List.of("test"), null);
-            String body = objectMapper.writeValueAsString(requestBody);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header(proto.authHeaderName(), proto.authHeaderValue(apiKey))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .timeout(Duration.ofSeconds(30))
-                    .build();
-
-            HttpResponse<String> response = modelCheckHttpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            long latencyMs = Duration.between(start, Instant.now()).toMillis();
-
-            if (response.statusCode() == 200) {
-                return new ConnectivityResultVO(true, latencyMs, null);
-            } else {
-                String errorMsg = extractError(response.body());
-                return new ConnectivityResultVO(false, latencyMs, "HTTP " + response.statusCode() + ": " + errorMsg);
+            List<Float> vector = embeddingService.embedDirect("test", model.getModelId());
+            if (vector == null || vector.isEmpty()) {
+                return new ConnectivityResultVO(false, null, "模型返回空向量");
             }
+            long latencyMs = Duration.between(start, Instant.now()).toMillis();
+            return new ConnectivityResultVO(true, latencyMs, null);
         } catch (Exception e) {
+            log.warn("检查 EMBEDDING 模型连通性失败: modelId={}, error={}", model.getModelId(), e.getMessage());
             long latencyMs = Duration.between(start, Instant.now()).toMillis();
             return new ConnectivityResultVO(false, latencyMs, e.getMessage());
         }

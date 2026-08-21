@@ -38,7 +38,8 @@ import {
   type AiProviderPayload,
   type AiModel,
   type ConnectivityResult,
-  checkConnectivity
+  checkConnectivity,
+  resolveCallingStrategy
 } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
 import { ModelGroupList } from "./ModelGroupList";
@@ -268,6 +269,19 @@ export function ProviderDetailPanel({
                 />
                 {isProviderEnabled ? "已启用" : "已禁用"}
               </Badge>
+              {(() => {
+                const strategy = resolveCallingStrategy(provider.name, provider.apiProtocol);
+                return (
+                  <Badge
+                    className={cn(
+                      "rounded-full px-3 py-0.5 text-[12px] font-medium border",
+                      strategy.className
+                    )}
+                  >
+                    {strategy.label}
+                  </Badge>
+                );
+              })()}
             </div>
             <p className="mt-1 text-sm text-gray-400">{provider.name}</p>
           </div>
@@ -610,6 +624,8 @@ export function ProviderDetailPanel({
             ) : (
               <ModelGroupList
                 models={models}
+                providerName={provider.name}
+                providerProtocol={provider.apiProtocol}
                 providerEnabled={isProviderEnabled}
                 togglingEnabledId={togglingModelEnabledId}
                 activeCapability={activeCapability}

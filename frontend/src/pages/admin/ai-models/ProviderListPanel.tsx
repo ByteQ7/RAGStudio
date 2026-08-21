@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Cpu, Loader2, PlugZap } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import type { AiProvider } from "@/services/aiModelConfigService";
+import { resolveCallingStrategy, type AiProvider } from "@/services/aiModelConfigService";
 
 interface ProviderListPanelProps {
   providers: AiProvider[];
@@ -104,6 +104,15 @@ export function ProviderListPanel({
           >
             {provider.name}
           </span>
+          {(() => {
+            const strategy = resolveCallingStrategy(provider.name, provider.apiProtocol);
+            return (
+              <span className="flex items-center gap-1 text-[10px] leading-none mt-0.5">
+                <span className={cn("h-1.5 w-1.5 rounded-full", strategy.dotColor)} />
+                <span className={cn(strategy.className.split(" ").pop())}>{strategy.label}</span>
+              </span>
+            );
+          })()}
         </div>
 
         {/* 模型计数 */}

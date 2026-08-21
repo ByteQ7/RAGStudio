@@ -49,6 +49,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -78,6 +79,12 @@ public class DashScopeGateway implements ProviderGateway {
 
     private static final String DASHSCOPE_PROTOCOL = "dashscope";
     private static final long STARTUP_TIMEOUT_MS = 45_000;
+
+    /**
+     * 百炼 embedding 接口单次请求批量上限（text-embedding-v3/v4 及多模态接口均为 10）。
+     * 超过上限会报 "batch size is invalid, it should not be larger than 10"，必须拆批调用。
+     */
+    private static final int DASHSCOPE_MAX_EMBEDDING_BATCH = 10;
 
     private static final Gson GSON = new Gson();
 
@@ -228,8 +235,46 @@ public class DashScopeGateway implements ProviderGateway {
         if (texts == null || texts.isEmpty()) {
             return List.of();
         }
+        // 百炼单次请求批量上限为 10，超限会报 400，需拆批调用后按序合并
+        List<List<Float>> all = new ArrayList<>(texts.size());
+        for (int i = 0; i < texts.size(); i += DASHSCOPE_MAX_EMBEDDING_BATCH) {
+            int end = Math.min(texts.size(), i + DASHSCOPE_MAX_EMBEDDING_BATCH);
+            all.addAll(embedBatchOnce(new ArrayList<>(texts.subList(i, end)), target));
+        }
+        return all;
+    }
+
+    private List<List<Float>> embedBatchOnce(List<String> texts, ModelTarget target) {
+        if (texts == null || texts.isEmpty()) {
+            return List.of();
+        }
+        // 多模态嵌入模型（qwen3-vl-embedding 等）必须走 multimodal-embedding 接口；
+        // 误发到 text-embedding 接口会报 "Model not exist"。该接口同样支持纯文本输入。
+        if (isMultimodalEmbedding(target)) {
+            List<MultiModalEmbeddingItemBase> contents = new ArrayList<>(texts.size());
+            for (String text : texts) {
+                contents.add(new MultiModalEmbeddingItemText(text));
+            }
+            MultiModalEmbeddingParam.MultiModalEmbeddingParamBuilder<?, ?> builder = MultiModalEmbeddingParam.builder()
+                    .model(dashScopeModelName(target))
+                    .contents(contents)
+                    .apiKey(SdkGatewaySupport.resolveApiKey(target));
+            Integer dimension = resolveDimension(target);
+            if (dimension != null && dimension > 0) {
+                builder.parameter("dimension", dimension);
+            }
+            try {
+                MultiModalEmbeddingResult result = new MultiModalEmbedding(
+                        SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)))
+                        .call(builder.build());
+                return extractMultimodalEmbeddings(result, texts.size());
+            } catch (Exception e) {
+                throw SdkGatewaySupport.translateError(provider(), e);
+            }
+        }
+
         TextEmbeddingParam param = TextEmbeddingParam.builder()
-                .model(SdkGatewaySupport.requireModelName(target))
+                .model(dashScopeModelName(target))
                 .texts(texts)
                 .textType(TextEmbeddingParam.TextType.DOCUMENT)
                 .dimension(resolveDimension(target))
@@ -271,12 +316,25 @@ public class DashScopeGateway implements ProviderGateway {
         if (imageBase64List == null || imageBase64List.isEmpty()) {
             return List.of();
         }
+        // 多模态接口同样受批量上限 10 约束，拆批调用后按序合并
+        List<List<Float>> all = new ArrayList<>(imageBase64List.size());
+        for (int i = 0; i < imageBase64List.size(); i += DASHSCOPE_MAX_EMBEDDING_BATCH) {
+            int end = Math.min(imageBase64List.size(), i + DASHSCOPE_MAX_EMBEDDING_BATCH);
+            all.addAll(embedImagesOnce(new ArrayList<>(imageBase64List.subList(i, end)), target));
+        }
+        return all;
+    }
+
+    private List<List<Float>> embedImagesOnce(List<String> imageBase64List, ModelTarget target) {
+        if (imageBase64List == null || imageBase64List.isEmpty()) {
+            return List.of();
+        }
         List<MultiModalEmbeddingItemBase> contents = new ArrayList<>(imageBase64List.size());
         for (String imageBase64 : imageBase64List) {
             contents.add(new MultiModalEmbeddingItemImage(imageBase64));
         }
         MultiModalEmbeddingParam param = MultiModalEmbeddingParam.builder()
-                .model(SdkGatewaySupport.requireModelName(target))
+                .model(dashScopeModelName(target))
                 .contents(contents)
                 .apiKey(SdkGatewaySupport.resolveApiKey(target))
                 .build();
@@ -338,7 +396,7 @@ public class DashScopeGateway implements ProviderGateway {
         }
 
         TextReRankParam param = TextReRankParam.builder()
-                .model(SdkGatewaySupport.requireModelName(target))
+                .model(dashScopeModelName(target))
                 .query(query)
                 .documents(documents)
                 .topN(topN)
@@ -407,7 +465,7 @@ public class DashScopeGateway implements ProviderGateway {
 
     private GenerationParam buildGenerationParam(ChatRequest request, ModelTarget target, boolean stream) {
         GenerationParam.GenerationParamBuilder builder = GenerationParam.builder()
-                .model(SdkGatewaySupport.requireModelName(target))
+                .model(dashScopeModelName(target))
                 .messages(convertMessages(request))
                 .apiKey(SdkGatewaySupport.resolveApiKey(target))
                 .incrementalOutput(stream);
@@ -556,6 +614,21 @@ public class DashScopeGateway implements ProviderGateway {
             return dimension;
         }
         return null;
+    }
+
+    private boolean isMultimodalEmbedding(ModelTarget target) {
+        return target.candidate() != null
+                && Boolean.TRUE.equals(target.candidate().getSupportsMultimodal());
+    }
+
+    /**
+     * DashScope 原生接口的模型名一律为小写（如 qwen3-vl-embedding / text-embedding-v4）。
+     * 配置中常误录大写/驼峰（如 "Qwen3-VL-Embedding"）：OpenAI 兼容接口不敏感可正常调用，
+     * 但原生接口严格区分大小写，不归一化会报 "Model not exist"。
+     */
+    private String dashScopeModelName(ModelTarget target) {
+        String name = SdkGatewaySupport.requireModelName(target);
+        return name.toLowerCase(Locale.ROOT);
     }
 
     private List<Float> toFloats(List<Double> doubles) {

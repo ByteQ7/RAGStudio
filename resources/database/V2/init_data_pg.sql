@@ -45,7 +45,8 @@ INSERT INTO t_ai_provider (id, name, display_name, base_url, api_key, endpoints,
 ('1821609200900374528', 'together', 'Together AI', 'https://api.together.xyz', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/together.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('1821609200904568832', 'tencent', '腾讯混元', 'https://api.hunyuan.cloud.tencent.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/tencent.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('1821609200908763136', 'zeroone', '零一万物 (Yi)', 'https://api.lingyiwanwu.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/zeroone.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-('1821609200912957440', 'deepseek', 'DeepSeek', 'https://api.deepseek.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/deepseek.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+('1821609200912957440', 'deepseek', 'DeepSeek', 'https://api.deepseek.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/deepseek.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200917151744', 'anthropic', 'Anthropic (Claude)', 'https://api.anthropic.com', NULL, '{"chat": "/v1/messages", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/anthropic.svg', 0, 'anthropic', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================
@@ -100,7 +101,9 @@ INSERT INTO t_ai_model (id, provider_id, model_id, model_name, capability, is_de
 ('2081933747104677888', '1821609200896180224', 'qwen3-vl-embedding', 'Qwen3-VL-Embedding', 'EMBEDDING', 0, 99, 0, 0, 1, '[2048,1536,1024,768,512,256,128,64]', NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('2080340695344721920', '1821609200896180224', 'text-embedding-v4', 'Text-Embedding-V4', 'EMBEDDING', 0, 100, 0, 0, 0, '[2048,1536,1024,768,512,256,128,64]', 'https://llm-nei1m03l1jpqle1c.cn-beijing.maas.aliyuncs.com', 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('2083045145763516416', '1821609200891985920', 'Qwen/Qwen3-VL-Reranker-8B', 'Qwen/Qwen3-VL-Reranker-8B', 'RERANK', 0, 2, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-('2083210690620817408', '1821609200896180224', 'qwen3-vl-rerank', 'Qwen3-VL-Rerank', 'RERANK', 0, 100, 0, 0, 1, NULL, NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+('2083210690620817408', '1821609200896180224', 'qwen3-vl-rerank', 'Qwen3-VL-Rerank', 'RERANK', 0, 100, 0, 0, 1, NULL, NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392640', '1821609200917151744', 'claude-sonnet-4-5', 'claude-sonnet-4-5', 'CHAT', 0, 1, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392641', '1821609200917151744', 'claude-opus-4-1', 'claude-opus-4-1', 'CHAT', 0, 2, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================

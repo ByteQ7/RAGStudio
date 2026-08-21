@@ -586,7 +586,7 @@ export function AiModelConfigPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="openai">OpenAI 兼容</SelectItem>
-                  <SelectItem value="dashscope">DashScope（百炼原生）</SelectItem>
+                  <SelectItem value="dashscope">官方 SDK</SelectItem>
                   <SelectItem value="anthropic">Anthropic 兼容</SelectItem>
                 </SelectContent>
               </Select>
@@ -827,7 +827,7 @@ export function AiModelConfigPage() {
                 <SelectContent>
                   <SelectItem value="__inherit__">继承供应商</SelectItem>
                   <SelectItem value="openai">OpenAI 兼容</SelectItem>
-                  <SelectItem value="dashscope">DashScope（百炼原生）</SelectItem>
+                  <SelectItem value="dashscope">官方 SDK</SelectItem>
                   <SelectItem value="anthropic">Anthropic 兼容</SelectItem>
                 </SelectContent>
               </Select>

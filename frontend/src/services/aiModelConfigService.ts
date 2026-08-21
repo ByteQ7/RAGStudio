@@ -67,6 +67,59 @@ export interface ModelPriorityItem {
   priority: number;
 }
 
+// ==================== 调用策略 ====================
+
+export interface CallingStrategyInfo {
+  key: "sdk" | "openai" | "anthropic";
+  label: string;
+  className: string;
+  dotColor: string;
+}
+
+/**
+ * 根据供应商名 + 生效协议推导「调用策略」（与后端 ProviderGatewayRegistry 一致）：
+ * - dashscope 协议 → 官方 SDK（DashScope）
+ * - anthropic 协议 → Anthropic 兼容（anthropic-java）
+ * - openai 协议：智谱 / 火山由官方 SDK 承载（zai-sdk / ark-runtime），其余为 OpenAI 兼容（openai-java）
+ */
+export function resolveCallingStrategy(
+  providerName: string | null | undefined,
+  protocol?: string | null
+): CallingStrategyInfo {
+  const p = (protocol || "openai").toLowerCase();
+  const n = (providerName || "").toLowerCase();
+  if (p === "dashscope") {
+    return {
+      key: "sdk",
+      label: "官方 SDK",
+      className: "border-indigo-200 bg-indigo-50 text-indigo-600",
+      dotColor: "bg-indigo-500"
+    };
+  }
+  if (p === "anthropic") {
+    return {
+      key: "anthropic",
+      label: "Anthropic 兼容",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+      dotColor: "bg-amber-500"
+    };
+  }
+  if (n === "zhipu" || n === "volcengine") {
+    return {
+      key: "sdk",
+      label: "官方 SDK",
+      className: "border-indigo-200 bg-indigo-50 text-indigo-600",
+      dotColor: "bg-indigo-500"
+    };
+  }
+  return {
+    key: "openai",
+    label: "OpenAI 兼容",
+    className: "border-sky-200 bg-sky-50 text-sky-700",
+    dotColor: "bg-sky-500"
+  };
+}
+
 // ==================== 扩展功能类型 ====================
 
 /** 连通性检查结果 */

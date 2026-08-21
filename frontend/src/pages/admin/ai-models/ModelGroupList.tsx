@@ -28,7 +28,7 @@ import type {
   AiModel,
   ConnectivityResult
 } from "@/services/aiModelConfigService";
-import { checkModelConnectivity } from "@/services/aiModelConfigService";
+import { checkModelConnectivity, resolveCallingStrategy } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
 
 // ==================== Constants ====================
@@ -58,6 +58,8 @@ const CAPABILITY_META: Record<string, { label: string; icon: any; color: string;
 
 interface ModelGroupListProps {
   models: AiModel[];
+  providerName?: string | null;
+  providerProtocol?: string | null;
   providerEnabled: boolean;
   togglingEnabledId: string | null;
   activeCapability: string | null;
@@ -72,6 +74,8 @@ interface ModelGroupListProps {
 
 export function ModelGroupList({
   models,
+  providerName,
+  providerProtocol,
   providerEnabled,
   togglingEnabledId,
   activeCapability,
@@ -226,6 +230,22 @@ export function ModelGroupList({
                           多模态
                         </Badge>
                       )}
+                      {(() => {
+                        const strategy = resolveCallingStrategy(
+                          providerName || model.providerName,
+                          model.apiProtocol || providerProtocol
+                        );
+                        return (
+                          <Badge
+                            className={cn(
+                              "rounded-full border px-2 py-0 text-[11px] font-medium",
+                              strategy.className
+                            )}
+                          >
+                            {strategy.label}
+                          </Badge>
+                        );
+                      })()}
                     </div>
                     <span className="mt-0.5 block truncate text-xs text-gray-400">
                       {model.modelId}
