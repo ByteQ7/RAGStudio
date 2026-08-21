@@ -304,21 +304,22 @@ public class ProviderGatewayRegistry {
 | 文件 | 说明 |
 |------|------|
 | `ProviderGateway.java` | 网关 SPI（chat / streamChat / embedBatch / embedImages / rerank） |
-| `ProviderGatewayRegistry.java` | 按「专属 SDK → 通用 SDK → 手写兜底」协议感知解析网关 |
+| `ProviderGatewayRegistry.java` | 按「官方 SDK → Anthropic 兼容 → OpenAI 兼容」三种策略解析网关 |
 | `SdkGatewaySupport.java` | 别名匹配、DashScope baseUrl 归一化、SDK 异常转译、SDK baseUrl 推导 |
 | `DashScopeGateway.java` | **百炼全能力 SDK 网关**（Generation / TextEmbedding / MultiModalEmbedding / TextReRank） |
 | `ZhipuGateway.java` | 智谱 zai-sdk 网关（chat / embed） |
 | `VolcEngineGateway.java` | 火山 ark-runtime 网关（chat / embed） |
 | `OpenAiGateway.java` | openai-java 网关（承载 DeepSeek/SiliconFlow 等 OpenAI 兼容厂商，baseUrl 可配） |
 | `AnthropicGateway.java` | anthropic-java 网关（承载 DeepSeek 的 Anthropic 兼容接口） |
-| `OpenAiCompatibleGateway.java` | 现有协议层手写兜底（保留旧行为，不主动命中） |
 | `GatewayChatClient.java` / `GatewayEmbeddingClient.java` / `GatewayRerankClient.java` | 薄适配器（路由层消费的三类能力接口） |
 | `SdkGatewayConfig.java` | 为各供应商注册能力 Bean |
 | `rerank/DashScopeMultimodalRerankHelper.java` | 多模态 rerank HTTP 实现（SDK 不支持的图文混合场景降级） |
 
+> **策略收敛（三策略）**：模型调用统一为三种 —— ①官方 SDK（DashScope / zai-sdk / ark-runtime）②Anthropic 兼容（anthropic-java）③OpenAI 兼容（openai-java，最终兜底）。已删除手写 HTTP 兜底 `OpenAiCompatibleGateway`。
+
 ### 12.2 修改 / 删除
 
-- 删除：`AgentScopeChatClient`、`AgentScopeChatClientConfig`、`EmbeddingClientConfig`、`OpenAiEmbeddingClient`、`BaiLianRerankClient`
+- 删除：`AgentScopeChatClient`、`AgentScopeChatClientConfig`、`EmbeddingClientConfig`、`OpenAiEmbeddingClient`、`BaiLianRerankClient`、`OpenAiCompatibleGateway`（手写 HTTP 兜底，模型调用收敛为三策略）
 - 修改：`MultimodalEmbeddingService`（多模态 embedding 改走 Gateway → DashScope SDK）
 - 依赖：新增 dashscope-sdk-java / zai-sdk / volcengine-java-sdk-ark-runtime / openai-java / anthropic-java（okhttp / jackson 已对齐统一版本）
 

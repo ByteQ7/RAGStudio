@@ -29,9 +29,9 @@ public class SdkGatewayConfig {
     private static final List<String> EMBEDDING_PROVIDERS =
             List.of("bailian", "siliconflow", "zhipu", "volcengine", "openai");
 
-    /** 需要注册 RerankClient 的供应商列表 */
+    /** 需要注册 RerankClient 的供应商列表（含 OpenAI 兼容 rerank 的厂商） */
     private static final List<String> RERANK_PROVIDERS =
-            List.of("bailian");
+            List.of("bailian", "siliconflow", "deepseek", "volcengine", "zhipu", "openai");
 
     @Bean
     public ChatClient bailianChatClient(ProviderGatewayRegistry registry) {
@@ -96,5 +96,30 @@ public class SdkGatewayConfig {
     @Bean
     public RerankClient bailianRerankClient(ProviderGatewayRegistry registry) {
         return new GatewayRerankClient("bailian", registry);
+    }
+
+    @Bean
+    public RerankClient siliconflowRerankClient(ProviderGatewayRegistry registry) {
+        return new GatewayRerankClient("siliconflow", registry);
+    }
+
+    @Bean
+    public RerankClient deepseekRerankClient(ProviderGatewayRegistry registry) {
+        return new GatewayRerankClient("deepseek", registry);
+    }
+
+    @Bean
+    public RerankClient volcengineRerankClient(ProviderGatewayRegistry registry) {
+        return new GatewayRerankClient("volcengine", registry);
+    }
+
+    @Bean
+    public RerankClient zhipuRerankClient(ProviderGatewayRegistry registry) {
+        return new GatewayRerankClient("zhipu", registry);
+    }
+
+    @Bean
+    public RerankClient openaiRerankClient(ProviderGatewayRegistry registry) {
+        return new GatewayRerankClient("openai", registry);
     }
 }

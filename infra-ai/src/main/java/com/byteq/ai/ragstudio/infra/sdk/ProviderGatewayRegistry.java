@@ -8,40 +8,33 @@ import java.util.List;
 /**
  * 模型供应商网关注册表
  * <p>
- * 按「专属 SDK 网关优先 → 通用 SDK 网关 → 手写协议兜底」的优先级为
- * 具体厂商 + 协议解析出正确的 {@link ProviderGateway}：
+ * 大模型调用统一收敛为<b>三种策略</b>，按优先级解析：
  * <pre>
- * ① 专属 SDK 网关（supports 命中厂商名 + 协议）：
- *      bailian+dashscope → DashScopeGateway
- *      zhipu+openai      → ZhipuGateway
- *      volcengine+openai → VolcEngineGateway
- * ② 通用 SDK 网关（按协议）：
- *      openai(默认)  → OpenAiGateway（openai-java，可配 baseUrl → 承载 DeepSeek/SiliconFlow 等）
- *      anthropic     → AnthropicGateway（anthropic-java，可配 baseUrl → 承载 DeepSeek 的 Anthropic 兼容接口）
- * ③ 最终兜底：
- *      OpenAiCompatibleGateway（现有手写协议层，兼容极端厂商）
+ * ① 官方 SDK 方案（supports 命中厂商名 + 协议）：
+ *      protocol=dashscope → DashScopeGateway（dashscope-sdk-java 原生接口）
+ *      zhipu+openai      → ZhipuGateway（zai-sdk）
+ *      volcengine+openai → VolcEngineGateway（ark-runtime）
+ * ② Anthropic 兼容 → AnthropicGateway（anthropic-java，baseUrl 可配 → 承载 DeepSeek 等）
+ * ③ OpenAI 兼容（最终兜底）→ OpenAiGateway（openai-java，baseUrl 可配 → 承载 DeepSeek/SiliconFlow 等）
  * </pre>
- * </p>
- * <p>
- * 网关通过 Spring 注入时按 {@link org.springframework.core.annotation.Order} 排序，
- * 优先匹配专属 SDK 网关，再按协议落到通用网关。
+ * 已移除手写 HTTP 协议兜底（OpenAiCompatibleGateway），模型调用不再直接拼接裸 HTTP。
  * </p>
  */
 @Slf4j
 @Component
 public class ProviderGatewayRegistry {
 
-    /** 有序网关列表（OpenAiCompatibleGateway 作为兜底排最后，supports 恒为 false 不会主动命中） */
+    /** 专属网关列表（OpenAiGateway 作为最终兜底，不参与主动匹配） */
     private final List<ProviderGateway> gateways;
 
-    /** 手写协议层兜底网关 */
-    private final OpenAiCompatibleGateway fallback;
+    /** OpenAI 兼容兜底网关（openai-java） */
+    private final OpenAiGateway openAiGateway;
 
-    public ProviderGatewayRegistry(List<ProviderGateway> gateways, OpenAiCompatibleGateway fallback) {
+    public ProviderGatewayRegistry(List<ProviderGateway> gateways, OpenAiGateway openAiGateway) {
         this.gateways = gateways.stream()
-                .filter(g -> g != fallback)
+                .filter(g -> g != openAiGateway)
                 .toList();
-        this.fallback = fallback;
+        this.openAiGateway = openAiGateway;
     }
 
     /**
@@ -49,7 +42,7 @@ public class ProviderGatewayRegistry {
      *
      * @param providerName 厂商名
      * @param protocolName 协议名（可空，空视为 openai）
-     * @return 匹配到的网关，永不返回 null（最终回落到 {@link OpenAiCompatibleGateway}）
+     * @return 匹配到的网关，永不返回 null（最终回落到 {@link OpenAiGateway}）
      */
     public ProviderGateway resolve(String providerName, String protocolName) {
         String protocol = normalizeProtocol(protocolName);
@@ -58,8 +51,8 @@ public class ProviderGatewayRegistry {
                 return gateway;
             }
         }
-        log.debug("无专属/通用网关命中，回落到 OpenAiCompatibleGateway: provider={}, protocol={}", providerName, protocol);
-        return fallback;
+        log.debug("无专属网关命中，回落到 OpenAiGateway(openai-java): provider={}, protocol={}", providerName, protocol);
+        return openAiGateway;
     }
 
     private String normalizeProtocol(String protocolName) {

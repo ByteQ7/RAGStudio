@@ -18,6 +18,9 @@ import com.volcengine.ark.runtime.model.completion.chat.ChatMessage;
 import com.volcengine.ark.runtime.model.completion.chat.ChatMessageRole;
 import com.volcengine.ark.runtime.model.embeddings.EmbeddingRequest;
 import com.volcengine.ark.runtime.model.embeddings.EmbeddingResult;
+import com.volcengine.ark.runtime.model.multimodalembeddings.MultimodalEmbeddingInput;
+import com.volcengine.ark.runtime.model.multimodalembeddings.MultimodalEmbeddingRequest;
+import com.volcengine.ark.runtime.model.multimodalembeddings.MultimodalEmbeddingResult;
 import com.volcengine.ark.runtime.service.ArkApi;
 import com.volcengine.ark.runtime.service.ArkService;
 import io.reactivex.Flowable;
@@ -168,6 +171,32 @@ public class VolcEngineGateway implements ProviderGateway {
     }
 
     @Override
+    public List<List<Float>> embedImages(List<String> imageBase64List, ModelTarget target) {
+        if (imageBase64List == null || imageBase64List.isEmpty()) {
+            return List.of();
+        }
+        ArkService service = buildService(target);
+        try {
+            // ark 多模态 Embedding 每次请求返回单个向量，逐图调用保证输出与输入顺序对齐
+            List<List<Float>> all = new ArrayList<>(imageBase64List.size());
+            for (String imageBase64 : imageBase64List) {
+                MultimodalEmbeddingRequest req = MultimodalEmbeddingRequest.builder()
+                        .model(SdkGatewaySupport.requireModelName(target))
+                        .input(List.of(MultimodalEmbeddingInput.builder()
+                                .type("image")
+                                .imageUrl(new MultimodalEmbeddingInput.MultiModalEmbeddingContentPartImageURL(imageBase64))
+                                .build()))
+                        .build();
+                MultimodalEmbeddingResult result = service.createMultiModalEmbeddings(req);
+                all.add(extractSingleMultimodal(result));
+            }
+            return all;
+        } catch (Exception e) {
+            throw SdkGatewaySupport.translateError(provider(), e);
+        }
+    }
+
+    @Override
     public List<RetrievedChunk> rerank(String query, List<RetrievedChunk> candidates, int topN, ModelTarget target) {
         throw new UnsupportedOperationException("volcengine 网关不支持重排序: " + provider());
     }
@@ -263,6 +292,17 @@ public class VolcEngineGateway implements ProviderGateway {
         if (StringUtils.hasText(content)) {
             callback.onContent(content);
         }
+    }
+
+    private List<Float> extractSingleMultimodal(MultimodalEmbeddingResult result) {
+        List<Float> vec = new ArrayList<>();
+        if (result == null || result.getData() == null || result.getData().getEmbedding() == null) {
+            return vec;
+        }
+        for (Double d : result.getData().getEmbedding()) {
+            vec.add(d.floatValue());
+        }
+        return vec;
     }
 
     private List<List<Float>> extractEmbeddings(EmbeddingResult result, int expected) {

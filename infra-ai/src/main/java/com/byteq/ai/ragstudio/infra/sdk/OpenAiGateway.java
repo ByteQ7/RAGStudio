@@ -27,7 +27,9 @@ import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
 import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
 import com.byteq.ai.ragstudio.infra.http.ModelClientException;
+import com.byteq.ai.ragstudio.infra.http.ModelHttpClient;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -35,8 +37,11 @@ import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -47,7 +52,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>
  * 作为「OpenAI 兼容协议」的通用策略：通过自定义 {@code baseUrl} 可承载
  * DeepSeek / SiliconFlow / Moonshot / 智谱 OpenAI 兼容接口 等所有 OpenAI 兼容厂商。
- * 覆盖 chat（同步/流式）与 embedding。
+ * 覆盖 chat（同步/流式）与 embedding；rerank 走 OpenAI 兼容 {@code /v1/rerank} 端点
+ * （openai-java 未提供 rerank API，用同协议 HTTP 调用补齐）。
  * </p>
  */
 @Slf4j
@@ -56,11 +62,14 @@ import java.util.concurrent.atomic.AtomicReference;
 public class OpenAiGateway implements ProviderGateway {
 
     private static final long STARTUP_TIMEOUT_MS = 45_000;
+    private static final String DEFAULT_RERANK_PATH = "/v1/rerank";
 
     private final HttpModelFactory httpModelFactory;
+    private final ModelHttpClient httpClient;
 
-    public OpenAiGateway(HttpModelFactory httpModelFactory) {
+    public OpenAiGateway(HttpModelFactory httpModelFactory, ModelHttpClient httpClient) {
         this.httpModelFactory = httpModelFactory;
+        this.httpClient = httpClient;
     }
 
     @Override
@@ -193,7 +202,84 @@ public class OpenAiGateway implements ProviderGateway {
 
     @Override
     public List<RetrievedChunk> rerank(String query, List<RetrievedChunk> candidates, int topN, ModelTarget target) {
-        throw new UnsupportedOperationException("OpenAI 网关不支持重排序: " + provider());
+        if (candidates == null || candidates.isEmpty()) {
+            return List.of();
+        }
+        List<RetrievedChunk> dedup = dedupById(candidates);
+        List<String> documents = new ArrayList<>();
+        List<RetrievedChunk> docCandidates = new ArrayList<>();
+        for (RetrievedChunk chunk : dedup) {
+            if (chunk.isImage()) {
+                continue;
+            }
+            String text = chunk.getText() == null ? "" : chunk.getText();
+            if (text.isBlank()) {
+                continue;
+            }
+            documents.add(text);
+            docCandidates.add(chunk);
+        }
+        if (docCandidates.isEmpty()) {
+            return candidates;
+        }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", SdkGatewaySupport.requireModelName(target));
+        body.put("query", query);
+        body.put("documents", documents);
+        body.put("top_n", topN);
+        body.put("return_documents", true);
+
+        String url = httpModelFactory.resolveFullUrl(target, "rerank", DEFAULT_RERANK_PATH);
+        JsonNode resp = httpClient.syncPost(url, target, body, root -> root);
+
+        List<RetrievedChunk> reranked = new ArrayList<>();
+        Set<String> addedIds = new HashSet<>();
+        JsonNode results = resp.path("results");
+        if (results.isArray()) {
+            for (JsonNode item : results) {
+                if (!item.has("index")) {
+                    continue;
+                }
+                int idx = item.get("index").asInt();
+                if (idx < 0 || idx >= docCandidates.size()) {
+                    continue;
+                }
+                RetrievedChunk src = docCandidates.get(idx);
+                Float score = item.has("relevance_score") && !item.get("relevance_score").isNull()
+                        ? (float) item.get("relevance_score").asDouble() : src.getScore();
+                reranked.add(RetrievedChunk.builder()
+                        .id(src.getId()).text(src.getText()).score(score)
+                        .contentType(src.getContentType()).metadata(src.getMetadata())
+                        .kbName(src.getKbName()).docName(src.getDocName())
+                        .build());
+                addedIds.add(src.getId());
+                if (reranked.size() >= topN) {
+                    break;
+                }
+            }
+        }
+        // 补齐不足 topN 的缺口
+        for (RetrievedChunk c : dedup) {
+            if (addedIds.add(c.getId())) {
+                reranked.add(c);
+            }
+            if (reranked.size() >= topN) {
+                break;
+            }
+        }
+        return reranked;
+    }
+
+    private List<RetrievedChunk> dedupById(List<RetrievedChunk> candidates) {
+        List<RetrievedChunk> dedup = new ArrayList<>(candidates.size());
+        Set<String> seen = new HashSet<>();
+        for (RetrievedChunk c : candidates) {
+            if (seen.add(c.getId())) {
+                dedup.add(c);
+            }
+        }
+        return dedup;
     }
 
     // ==================== 内部工具 ====================
