@@ -327,6 +327,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         int maxRetries = 3;
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+                // 同时清理配置维度与实际维度表：历史数据可能因维度漂移落在其他维度表，
+                // 仅删目标表会残留旧向量（KB 切回旧维度时污染检索结果）
+                if (effectiveDim != dimension) {
+                    vectorStoreService.deleteDocumentVectors(collectionName, docId, dimension);
+                }
                 vectorStoreService.deleteDocumentVectors(collectionName, docId, effectiveDim);
                 vectorStoreService.indexDocumentChunks(collectionName, docId, effectiveDim, chunkResults);
                 vectorPersisted = true;
@@ -452,7 +457,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             long chunkDuration = System.currentTimeMillis() - chunkStart;
 
             long embedStart = System.currentTimeMillis();
-            chunkEmbeddingService.embed(chunks, embeddingModel);
+            // 必须携带 KB 配置维度：否则网关会按模型有效维度（t_ai_model.dimension 取 ≤2000 最大值）
+            // 嵌入，导致入库维度与 KB 配置维度不一致，检索按 KB 维度查表永远为空
+            chunkEmbeddingService.embed(chunks, embeddingModel, kbDO.getDimension());
             long embedDuration = System.currentTimeMillis() - embedStart;
 
             return new ChunkProcessResult(chunks, extractDuration, chunkDuration, embedDuration);

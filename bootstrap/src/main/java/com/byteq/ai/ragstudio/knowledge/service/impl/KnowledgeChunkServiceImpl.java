@@ -170,7 +170,8 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 .setSql("chunk_count = chunk_count + 1"));
 
         // 同步写入向量库
-        syncChunkToVector(collectionName, docId, chunkDO, embeddingModel);
+        Integer dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : null;
+        syncChunkToVector(collectionName, docId, chunkDO, embeddingModel, dimension);
 
         return BeanUtil.toBean(chunkDO, KnowledgeChunkVO.class);
     }
@@ -269,7 +270,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                             .build())
                     .toList();
             if (CollUtil.isNotEmpty(vectorChunks)) {
-                attachEmbeddings(vectorChunks, embeddingModel);
+                attachEmbeddings(vectorChunks, embeddingModel, dimension);
                 vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, vectorChunks);
             }
         }
@@ -313,6 +314,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         log.info("更新 Chunk 成功, kbId={}, docId={}, chunkId={}", documentDO.getKbId(), docId, chunkId);
 
         // 同步向量数据库
+        Integer dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : null;
         vectorStoreService.updateChunk(
                 collectionName,
                 docId,
@@ -320,7 +322,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                         .chunkId(chunkId)
                         .content(newContent)
                         .index(chunkDO.getChunkIndex())
-                        .embedding(toArray(embedContent(newContent, embeddingModel)))
+                        .embedding(toArray(embedContent(newContent, embeddingModel, dimension)))
                         .build()
         );
     }
@@ -393,7 +395,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
         if (enabled) {
             String embeddingModel = kbDO.getEmbeddingModel();
-            syncChunkToVector(collectionName, docId, chunkDO, embeddingModel);
+            syncChunkToVector(collectionName, docId, chunkDO, embeddingModel, dimension);
         } else {
             deleteChunkFromVector(collectionName, dimension, chunkId);
         }
@@ -463,7 +465,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                             .index(c.getChunkIndex())
                             .build())
                     .collect(Collectors.toList());
-            attachEmbeddings(vectorChunks, kbDO.getEmbeddingModel());
+            attachEmbeddings(vectorChunks, kbDO.getEmbeddingModel(), dimension);
 
             transactionOperations.executeWithoutResult(status -> {
                 chunkMapper.update(
@@ -548,10 +550,11 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     /**
      * 将单个 chunk 同步到向量库
      */
-    private void syncChunkToVector(String collectionName, String docId, KnowledgeChunkDO chunkDO, String embeddingModel) {
-        List<Float> embedding = embedContent(chunkDO.getContent(), embeddingModel);
+    private void syncChunkToVector(String collectionName, String docId, KnowledgeChunkDO chunkDO,
+                                   String embeddingModel, Integer dimension) {
+        List<Float> embedding = embedContent(chunkDO.getContent(), embeddingModel, dimension);
         float[] vector = toArray(embedding);
-        int dimension = vector.length;
+        int vectorDim = vector.length;
 
         VectorChunk chunk = VectorChunk.builder()
                 .index(chunkDO.getChunkIndex())
@@ -559,7 +562,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 .chunkId(String.valueOf(chunkDO.getId()))
                 .embedding(vector)
                 .build();
-        vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, List.of(chunk));
+        // 以 KB 配置维度作为目标表；实际维度不同时存储服务内部会落到实际维度表
+        vectorStoreService.indexDocumentChunks(collectionName, docId,
+                dimension != null && dimension > 0 ? dimension : vectorDim, List.of(chunk));
 
         log.debug("同步 Chunk 到向量库成功, collectionName={}, docId={}, chunkId={}", collectionName, docId, chunkDO.getId());
     }
@@ -584,12 +589,13 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     }
 
     // 批量为分片生成向量嵌入并设置到 VectorChunk 对象中
-    private void attachEmbeddings(List<VectorChunk> chunks, String embeddingModel) {
+    // dimension：KB 配置维度。必须以 KB 维度嵌入，否则入库维度与检索维度不一致导致查不到
+    private void attachEmbeddings(List<VectorChunk> chunks, String embeddingModel, Integer dimension) {
         if (CollUtil.isEmpty(chunks)) {
             return;
         }
         List<String> texts = chunks.stream().map(VectorChunk::getContent).toList();
-        List<List<Float>> vectors = embedBatch(texts, embeddingModel);
+        List<List<Float>> vectors = embedBatch(texts, embeddingModel, dimension);
         if (vectors == null || vectors.size() != chunks.size()) {
             throw new ServiceException("向量结果数量不匹配");
         }
@@ -599,16 +605,22 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     }
 
     // 对单条文本进行向量嵌入，支持指定嵌入模型或使用默认模型
-    private List<Float> embedContent(String content, String embeddingModel) {
-        return StrUtil.isBlank(embeddingModel)
-                ? embeddingService.embed(content)
+    private List<Float> embedContent(String content, String embeddingModel, Integer dimension) {
+        if (StrUtil.isBlank(embeddingModel)) {
+            return embeddingService.embed(content);
+        }
+        return dimension != null && dimension > 0
+                ? embeddingService.embed(content, embeddingModel, dimension)
                 : embeddingService.embed(content, embeddingModel);
     }
 
     // 批量对文本列表进行向量嵌入
-    private List<List<Float>> embedBatch(List<String> texts, String embeddingModel) {
-        return StrUtil.isBlank(embeddingModel)
-                ? embeddingService.embedBatch(texts)
+    private List<List<Float>> embedBatch(List<String> texts, String embeddingModel, Integer dimension) {
+        if (StrUtil.isBlank(embeddingModel)) {
+            return embeddingService.embedBatch(texts);
+        }
+        return dimension != null && dimension > 0
+                ? embeddingService.embedBatch(texts, embeddingModel, dimension)
                 : embeddingService.embedBatch(texts, embeddingModel);
     }
 

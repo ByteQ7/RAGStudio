@@ -49,6 +49,9 @@ public class PgRetrieverService implements RetrieverService {
     /** collection → embedding 模型缓存：同上，避免每次检索重复查库 */
     private final Map<String, CacheEntry<String>> modelCache = new ConcurrentHashMap<>();
 
+    /** collection → 实际数据所在维度缓存：配置维度表为空时的探测兜底结果（60s TTL） */
+    private final Map<String, CacheEntry<Integer>> actualDimCache = new ConcurrentHashMap<>();
+
     /**
      * collection 元数据缓存 TTL：维度/模型变更需重建向量表（t_knowledge_vector_{dim}）。
      * 缓存过长会拉大"重建向量表 → 检索切到新表"的生效时间窗（期间仍查旧表，
@@ -199,6 +202,33 @@ public class PgRetrieverService implements RetrieverService {
         }
 
         String tableName = "t_knowledge_vector_" + dimension;
+        List<RetrievedChunk> result = queryVectorTable(tableName, vector, request);
+        if (!result.isEmpty()) {
+            return result;
+        }
+
+        // 探测兜底：配置维度表对该 collection 无任何数据时（历史维度漂移等，
+        // 向量实际落在其他维度表），探测并切换到实际数据所在维度表重查，
+        // 避免「配置维度表为空 → 检索永远 0 结果」。
+        Integer actualDim = probeDimensionWithData(request.getCollectionName(), dimension);
+        if (actualDim == null) {
+            return result;
+        }
+        float[] reEmbedded = reembedQuery(request, actualDim);
+        if (reEmbedded == null) {
+            return result;
+        }
+        List<RetrievedChunk> fallback = queryVectorTable("t_knowledge_vector_" + actualDim, reEmbedded, request);
+        if (fallback.isEmpty()) {
+            log.warn("维度探测兜底检索无命中: collection={}, dim={}", request.getCollectionName(), actualDim);
+        }
+        return fallback;
+    }
+
+    /**
+     * 执行单表向量检索（事务内 SET LOCAL hnsw.ef_search + 余弦距离排序）
+     */
+    private List<RetrievedChunk> queryVectorTable(String tableName, float[] vector, RetrieveRequest request) {
         try {
             // SET LOCAL 必须在事务块内才生效；与查询放在同一事务中执行，
             // 事务结束后 hnsw.ef_search 自动还原，不污染连接池中的其他连接使用方
@@ -217,9 +247,73 @@ public class PgRetrieverService implements RetrieverService {
                 );
             });
         } catch (Exception e) {
-            log.warn("向量检索SQL失败: collection={}, dim={}, error={}",
-                    request.getCollectionName(), dimension, e.getMessage());
+            log.warn("向量检索SQL失败: collection={}, table={}, error={}",
+                    request.getCollectionName(), tableName, e.getMessage());
             return List.of();
+        }
+    }
+
+    /**
+     * 探测 collection 数据实际所在的维度表。
+     * 仅当配置维度表对该 collection 完全无数据时才探测（避免无命中场景重复探测开销），
+     * 命中后结果缓存 60s，防止反复探测。
+     */
+    private Integer probeDimensionWithData(String collectionName, Integer configuredDim) {
+        if (collectionName == null || collectionName.isBlank()) {
+            return null;
+        }
+        CacheEntry<Integer> cached = actualDimCache.get(collectionName);
+        if (cached != null && !cached.expired()) {
+            return cached.value();
+        }
+        Integer found = null;
+        for (Integer dim : new int[]{1536, 1024, 4096, 3072, 2048, 768, 512, 256, 128, 64}) {
+            if (dim == configuredDim) {
+                continue;
+            }
+            if (countRowsInTable("t_knowledge_vector_" + dim, collectionName) > 0) {
+                found = dim;
+                break;
+            }
+        }
+        if (found != null) {
+            log.warn("collection={} 配置维度 {} 表为空，实际数据在维度 {} 表，检索降级切换", collectionName, configuredDim, found);
+            actualDimCache.put(collectionName, new CacheEntry<>(found, System.currentTimeMillis()));
+        }
+        return found;
+    }
+
+    private int countRowsInTable(String tableName, String collectionName) {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + tableName + " WHERE metadata->>'collection_name' = ?",
+                    Integer.class, collectionName);
+            return count != null ? count : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /**
+     * 以指定维度重新嵌入查询（探测兜底路径，需要与数据所在表维度一致）
+     */
+    private float[] reembedQuery(RetrieveRequest request, int dimension) {
+        try {
+            String model = resolveEmbeddingModelFromCollection(request.getCollectionName());
+            List<Float> embedding;
+            if (model != null) {
+                embedding = embeddingService.embed(request.getQuery(), model, dimension);
+            } else {
+                embedding = embeddingService.embed(request.getQuery());
+            }
+            if (embedding == null || embedding.isEmpty()) {
+                return null;
+            }
+            return normalize(toArray(embedding));
+        } catch (Exception e) {
+            log.warn("维度探测兜底重新嵌入失败: collection={}, dim={}, error={}",
+                    request.getCollectionName(), dimension, e.getMessage());
+            return null;
         }
     }
 
