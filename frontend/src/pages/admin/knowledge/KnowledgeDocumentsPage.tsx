@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Eye, FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X } from "lucide-react";
+import { Eye, FileUp, FolderOpen, PlayCircle, RefreshCw, Trash2, Pencil, FileBarChart, X, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -440,6 +440,10 @@ export function KnowledgeDocumentsPage() {
         <div className="admin-page-actions">
           <Button variant="outline" onClick={() => navigate("/admin/knowledge")}>
             返回知识库
+          </Button>
+          <Button variant="outline" onClick={() => navigate(`/admin/knowledge/${kbId}/graph`)}>
+            <Share2 className="mr-2 h-4 w-4" />
+            知识图谱
           </Button>
           <Button className="admin-primary-gradient" onClick={() => setUploadOpen(true)}>
             <FileUp className="mr-2 h-4 w-4" />

@@ -26,6 +26,7 @@ import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
 import com.byteq.ai.ragstudio.infra.embedding.EmbeddingService;
 import com.byteq.ai.ragstudio.infra.token.TokenCounterService;
+import com.byteq.ai.ragstudio.graph.service.GraphExtractionService;
 import com.byteq.ai.ragstudio.knowledge.enums.DocumentStatus;
 import com.byteq.ai.ragstudio.knowledge.enums.KnowledgeErrorCode;
 import com.byteq.ai.ragstudio.rag.core.vector.VectorStoreService;
@@ -57,6 +58,7 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     private final TokenCounterService tokenCounterService;
     private final VectorStoreService vectorStoreService;
     private final TransactionOperations transactionOperations;
+    private final GraphExtractionService graphExtractionService;
 
     // 按文档 ID 分页查询分片列表，按分片序号升序排列
     @Override
@@ -325,6 +327,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                         .embedding(toArray(embedContent(newContent, embeddingModel, dimension)))
                         .build()
         );
+
+        // 图谱增量重抽：仅重抽该 chunk，文档其余 chunk 复用抽取缓存（零额外 LLM 成本）
+        graphExtractionService.extractForChunk(documentDO.getKbId(), docId, chunkId, newContent);
     }
 
     /**
@@ -358,6 +363,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         log.info("删除 Chunk 成功, kbId={}, docId={}, chunkId={}", documentDO.getKbId(), docId, chunkId);
 
         deleteChunkFromVector(collectionName, dimension, chunkId);
+
+        // 清理该 chunk 派生的图谱关系与孤立实体（抽取缓存保留，重新创建 chunk 时可复用）
+        graphExtractionService.deleteChunkGraph(documentDO.getKbId(), docId, chunkId);
     }
 
     /**
@@ -398,6 +406,13 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
             syncChunkToVector(collectionName, docId, chunkDO, embeddingModel, dimension);
         } else {
             deleteChunkFromVector(collectionName, dimension, chunkId);
+        }
+
+        // 图谱联动：禁用 → 清理该 chunk 派生关系；启用 → 增量重建（复用抽取缓存）
+        if (enabled) {
+            graphExtractionService.extractForChunk(documentDO.getKbId(), docId, chunkId, chunkDO.getContent());
+        } else {
+            graphExtractionService.deleteChunkGraph(documentDO.getKbId(), docId, chunkId);
         }
     }
 
@@ -486,6 +501,29 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 );
                 vectorStoreService.deleteChunksByIds(dimension, needUpdateIds);
             });
+        }
+
+        // 图谱联动：禁用 → 清理各 chunk 派生关系；启用 → 文档级增量重建（复用抽取缓存）
+        if (enabled) {
+            List<KnowledgeChunkDO> docChunks = chunkMapper.selectList(
+                    Wrappers.lambdaQuery(KnowledgeChunkDO.class)
+                            .eq(KnowledgeChunkDO::getDocId, docId)
+                            .eq(KnowledgeChunkDO::getEnabled, 1));
+            if (CollUtil.isNotEmpty(docChunks)) {
+                List<VectorChunk> graphChunks = docChunks.stream()
+                        .map(c -> VectorChunk.builder()
+                                .chunkId(c.getId())
+                                .content(c.getContent())
+                                .index(c.getChunkIndex())
+                                .contentType(c.getContentType() != null ? c.getContentType() : "TEXT")
+                                .build())
+                        .collect(Collectors.toList());
+                graphExtractionService.extractForDocumentAsync(documentDO.getKbId(), docId, graphChunks);
+            }
+        } else {
+            for (String chunkId : needUpdateIds) {
+                graphExtractionService.deleteChunkGraph(documentDO.getKbId(), docId, chunkId);
+            }
         }
 
         log.info("批量{}Chunk 成功, kbId={}, docId={}, count={}", enabled ? "启用" : "禁用",

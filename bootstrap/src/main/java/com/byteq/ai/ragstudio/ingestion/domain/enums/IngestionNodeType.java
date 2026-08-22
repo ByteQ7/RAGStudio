@@ -62,7 +62,15 @@ public enum IngestionNodeType {
      * 将文本块及其向量嵌入写入向量数据库，用于后续的相似度检索
      * 对应实现：{@link IndexerNode}
      */
-    INDEXER("indexer");
+    INDEXER("indexer"),
+
+    /**
+     * 图谱抽取节点
+     * 对每个文本块调用 LLM 抽取实体与关系，写入知识图谱
+     * （需排在 IndexerNode 之后：chunkId 需已分配）
+     * 对应实现：{@link GraphExtractorNode}
+     */
+    GRAPH_EXTRACTOR("graph_extractor");
 
     /**
      * 节点类型的字符串值（小写 snake_case）

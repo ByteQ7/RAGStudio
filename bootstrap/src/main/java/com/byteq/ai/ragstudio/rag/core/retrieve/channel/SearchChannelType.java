@@ -25,5 +25,10 @@ public enum SearchChannelType {
     /**
      * 混合检索
      */
-    HYBRID
+    HYBRID,
+
+    /**
+     * 图谱局部检索（实体锚定 + K 跳子图展开）
+     */
+    GRAPH
 }

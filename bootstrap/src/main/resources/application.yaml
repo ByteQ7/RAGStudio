@@ -112,6 +112,39 @@ rag:
       batch-size: 20
       min-interval-seconds: 60
 
+  # Graph RAG（实体关系图谱）：docs/graph-rag-design.md
+  # - 默认关闭：开启后文档入库/变更时增量抽取实体关系（chunk 哈希缓存，未变更零 LLM 成本）
+  # - 检索侧：图谱通道接入 RrfHybridChannel，与向量/关键词 RRF 融合
+  graph:
+    enabled: ${RAG_GRAPH_ENABLED:false}
+    extract:
+      model-key: graph_extract   # t_default_model_config 场景键，缺省回退 chat 默认模型
+      max-entities-per-chunk: 30
+      max-relations-per-chunk: 50
+      temperature: 0.1
+      timeout-ms: 30000
+      parallel-limit: 4
+      max-chunk-chars: 6000
+      max-evidence-chars: 200
+      max-chunks-per-build: 500
+    retrieval:
+      enabled: true
+      max-depth: 2
+      max-neighbors-per-hop: 30
+      max-nodes: 200
+      max-context-triples: 40
+      query-entity-limit: 5
+      entity-match-threshold: 0.3
+      query-extract-timeout-ms: 10000
+    entity:
+      embedding-enabled: false   # 实体向量兜底通道（Phase 2）
+      merge-cosine-threshold: 0.92
+      max-entities-per-kb: 50000
+      max-relations-per-kb: 200000
+    community:
+      enabled: false             # 全局检索（Phase 2）
+      max-communities: 3
+
   search:
     default-top-k: ${DEFAULT_TOP_K:10}
 
@@ -207,6 +240,24 @@ rag:
       # 同步 Chat（ReACT 迭代/改写/标题等）失败后最多继续尝试的候选数：
       # 主模型失败后再试 1 个候选即终止，防止全量候选串联重试造成分钟级长尾
       max-fallback: 1
+
+mineru:
+  # MinerU 文档解析服务全局开关：false 表示未部署 MinerU，一律走 Tika/多模态兜底
+  enabled: ${MINERU_ENABLED:false}
+  local:
+    base-url: ${MINERU_LOCAL_BASE_URL:}
+    backend: ${MINERU_LOCAL_BACKEND:pipeline}
+    lang: ${MINERU_LOCAL_LANG:ch}
+  remote:
+    # mineru.net 官方 Agent 轻量 API：免费免 Token（≤10MB、≤20 页、IP 限频）
+    base-url: ${MINERU_REMOTE_BASE_URL:https://mineru.net/api/v1/agent}
+    api-key: ${MINERU_REMOTE_API_KEY:}
+    backend: ${MINERU_REMOTE_BACKEND:pipeline}
+    lang: ${MINERU_REMOTE_LANG:ch}
+  # 单次解析超时（秒）：首次加载模型可能需 60–120s，故放宽到 300s
+  timeout-seconds: ${MINERU_TIMEOUT_SECONDS:300}
+  # 文本结果最小有效长度阈值，低于该值判定 MinerU 解析不达标并回退多模态 LLM
+  min-text-length: ${MINERU_MIN_TEXT_LENGTH:50}
 
 rustfs:
   url: ${RUSTFS_URL:http://localhost:9000}

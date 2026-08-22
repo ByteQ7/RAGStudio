@@ -19,8 +19,9 @@ import com.byteq.ai.ragstudio.core.chunk.ChunkingStrategy;
 import com.byteq.ai.ragstudio.core.chunk.ChunkingStrategyFactory;
 import com.byteq.ai.ragstudio.core.chunk.ImageChunkGenerator;
 import com.byteq.ai.ragstudio.core.chunk.VectorChunk;
-import com.byteq.ai.ragstudio.core.parser.DocumentParserSelector;
-import com.byteq.ai.ragstudio.core.parser.ParserType;
+import com.byteq.ai.ragstudio.core.parser.DocumentParser;
+import com.byteq.ai.ragstudio.core.parser.ParseEngine;
+import com.byteq.ai.ragstudio.core.parser.ParseEngineResolver;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
@@ -34,6 +35,7 @@ import com.byteq.ai.ragstudio.ingestion.domain.enums.IngestionStatus;
 import com.byteq.ai.ragstudio.ingestion.domain.pipeline.PipelineDefinition;
 import com.byteq.ai.ragstudio.ingestion.engine.IngestionEngine;
 import com.byteq.ai.ragstudio.ingestion.service.IngestionPipelineService;
+import com.byteq.ai.ragstudio.graph.service.GraphExtractionService;
 import com.byteq.ai.ragstudio.knowledge.config.KnowledgeScheduleProperties;
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeChunkCreateRequest;
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeDocumentPageRequest;
@@ -102,7 +104,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KnowledgeDocumentMapper documentMapper;
-    private final DocumentParserSelector parserSelector;
+    private final ParseEngineResolver parseEngineResolver;
     private final ChunkingStrategyFactory chunkingStrategyFactory;
     private final FileStorageService fileStorageService;
     private final VectorStoreService vectorStoreService;
@@ -121,6 +123,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final RemoteFileFetcher remoteFileFetcher;
     private final DocumentVisionExtractor documentVisionExtractor;
     private final ImageChunkGenerator imageChunkGenerator;
+    private final GraphExtractionService graphExtractionService;
 
     @Value("knowledge-document-chunk_topic${unique-name:}")
     private String chunkTopic;
@@ -163,6 +166,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .chunkStrategy(modeConfig.chunkingMode() != null ? modeConfig.chunkingMode().getValue() : null)
                 .chunkConfig(modeConfig.chunkConfig())
                 .pipelineId(modeConfig.pipelineId())
+                .parseEngine(StrUtil.isNotBlank(requestParam.getParseEngine())
+                        ? ParseEngine.normalize(requestParam.getParseEngine()).getValue() : null)
                 .createdBy(UserContext.getUsername())
                 .updatedBy(UserContext.getUsername())
                 .build();
@@ -363,6 +368,20 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     .build();
             documentMapper.updateById(failedDocumentDO);
             log.error("向量存储写入失败，文档状态已置为 FAILED: docId={}", docId);
+            return chunks.size();
+        }
+
+        // 图谱增量抽取（异步，不阻塞分块链路）：未变更 chunk 复用抽取缓存，零 LLM 成本
+        try {
+            KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectOne(
+                    new LambdaQueryWrapper<KnowledgeBaseDO>()
+                            .eq(KnowledgeBaseDO::getCollectionName, collectionName)
+                            .last("LIMIT 1"));
+            if (kbDO != null) {
+                graphExtractionService.extractForDocumentAsync(kbDO.getId(), docId, chunkResults);
+            }
+        } catch (Exception e) {
+            log.warn("触发图谱抽取失败（不影响分块结果）: docId={}, error={}", docId, e.getMessage());
         }
 
         return chunks.size();
@@ -385,6 +404,23 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .endTime(new Date())
                 .build();
         chunkLogMapper.updateById(update);
+    }
+
+    /**
+     * 按解析引擎配置决策实际使用的文档解析器
+     * <p>
+     * 合并知识库级（{@code t_knowledge_base.parse_engine}）与文档级
+     * （{@code t_knowledge_document.parse_engine}）配置，交由
+     * {@link ParseEngineResolver} 决策出实际解析器（MinerU / Tika / 多模态兜底）。
+     * </p>
+     */
+    private DocumentParser resolveParser(KnowledgeBaseDO kbDO, KnowledgeDocumentDO documentDO) {
+        ParseEngine kbEngine = kbDO.getParseEngine() == null
+                ? ParseEngine.AUTO : ParseEngine.normalize(kbDO.getParseEngine());
+        ParseEngine docEngine = documentDO.getParseEngine() == null
+                ? null : ParseEngine.normalize(documentDO.getParseEngine());
+        String mimeType = documentDO.getFileType();
+        return parseEngineResolver.resolveParser(kbEngine, docEngine, mimeType);
     }
 
     /**
@@ -413,10 +449,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         long extractStart = System.currentTimeMillis();
         try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
             // 三层递进 PDF 表格解析：
-            //   ① Tika → XHTML → Markdown（保留表格/标题/列表，但对 PDF 表格检测不可靠）
-            //   ② Tabula → 补充 Tika 遗漏的表格（在 TikaDocumentParser.extractAsMarkdown 内部完成）
-            //   ③ LLM 视觉 → 当前面的步骤都不足 50 字符时，判定为扫描件，触发多模态提取
-            String text = parserSelector.select(ParserType.TIKA.getType()).extractAsMarkdown(is, documentDO.getDocName());
+            //   ① 按解析引擎决策（MinerU / Tika，Tika 内部对含图表 PDF 走多模态）
+            //   ② Tika → XHTML → Markdown（保留表格/标题/列表，但对 PDF 表格检测不可靠）
+            //   ③ Tabula → 补充 Tika 遗漏的表格（在 TikaDocumentParser.extractAsMarkdown 内部完成）
+            //   ④ LLM 视觉 → 当前面的步骤都不足 50 字符时，判定为扫描件，触发多模态提取
+            String text = resolveParser(kbDO, documentDO).extractAsMarkdown(is, documentDO.getDocName());
             long extractDuration = System.currentTimeMillis() - extractStart;
 
             // 如果文档含嵌入图片（PDF/ODT/DOCX/PPTX），独立提取图片中的文字并追加
@@ -605,9 +642,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         String docId = documentDO.getId();
         long extractStart = System.currentTimeMillis();
 
-        // 先用 Tika 提取全文
+        // 先用解析引擎决策的解析器提取全文
         try (InputStream is = fileStorageService.openStream(documentDO.getFileUrl())) {
-            String text = parserSelector.select(ParserType.TIKA.getType()).extractAsMarkdown(is, documentDO.getDocName());
+            String text = resolveParser(kbDO, documentDO).extractAsMarkdown(is, documentDO.getDocName());
             long extractDuration = System.currentTimeMillis() - extractStart;
 
             // 简单文本分块（Office 文档通常结构清晰，用结构感知策略）
@@ -859,6 +896,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         int dimension = resolveDimension(documentDO.getKbId());
         vectorStoreService.deleteDocumentVectors(collectionName, docId, dimension);
         deleteStoredFileQuietly(documentDO);
+
+        // 清理图谱数据（关系 + 抽取缓存 + 孤立实体），图谱总开关关闭时静默跳过
+        graphExtractionService.deleteDocumentGraph(documentDO.getKbId(), docId);
     }
 
     @Override
@@ -926,6 +966,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 updateWrapper.set(KnowledgeDocumentDO::getChunkStrategy, null);
                 updateWrapper.set(KnowledgeDocumentDO::getChunkConfig, null);
             }
+        }
+
+        // 文档级解析引擎覆盖（可空：传值则覆盖，否则沿用知识库级）
+        if (requestParam.getParseEngine() != null) {
+            String normalized = StrUtil.isBlank(requestParam.getParseEngine())
+                    ? null : ParseEngine.normalize(requestParam.getParseEngine()).getValue();
+            updateWrapper.set(KnowledgeDocumentDO::getParseEngine, normalized);
         }
 
         // 处理定时调度相关字段（仅 URL 类型文档支持）
@@ -1128,6 +1175,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 vectorStoreService.indexDocumentChunks(collectionName, docId, kbDO.getDimension(), finalVectorChunks);
             }
         });
+
+        // 图谱联动：禁用 → 清理文档图数据；启用 → 增量重建（复用抽取缓存，零额外 LLM 成本）
+        if (enabled) {
+            graphExtractionService.extractForDocumentAsync(kbDO.getId(), docId, finalVectorChunks);
+        } else {
+            graphExtractionService.deleteDocumentGraph(kbDO.getId(), docId);
+        }
     }
 
     /**

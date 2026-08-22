@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
+import com.byteq.ai.ragstudio.rag.core.retrieve.EntityIdQueryDetector;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RetrieverService;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RrfMerger;
 import com.byteq.ai.ragstudio.rag.core.retrieve.ScoreClusterTopK;
@@ -32,6 +33,7 @@ public class RrfHybridChannel implements SearchChannel {
 
     private final KnowledgeBaseSelectionChannel vectorChannel;
     private final KeywordSearchChannel keywordChannel;
+    private final GraphRetrievalChannel graphChannel;
     private final SearchChannelProperties properties;
     private final RetrieverService retrieverService;
     private final Executor executor;
@@ -50,11 +52,13 @@ public class RrfHybridChannel implements SearchChannel {
 
     public RrfHybridChannel(KnowledgeBaseSelectionChannel vectorChannel,
                             KeywordSearchChannel keywordChannel,
+                            GraphRetrievalChannel graphChannel,
                             SearchChannelProperties properties,
                             RetrieverService retrieverService,
                             Executor innerRetrievalExecutor) {
         this.vectorChannel = vectorChannel;
         this.keywordChannel = keywordChannel;
+        this.graphChannel = graphChannel;
         this.properties = properties;
         this.retrieverService = retrieverService;
         this.executor = innerRetrievalExecutor;
@@ -94,6 +98,23 @@ public class RrfHybridChannel implements SearchChannel {
         List<String> queries = buildQueries(context);
         log.info("混合检索查询列表（主问题+子问题）: {}", queries);
 
+        // 含强实体 ID 的查询（税号/单号/编码等）：随机串向量检索既慢又无区分度，
+        // 该查询跳过向量侧、只走关键词（BM25）精确匹配。
+        // 按 token 提取判定（containsStrongEntityId），兼容 LLM 扩展出的
+        // "ID + 中文描述"混合查询与用户输入的标点后缀形态。
+        Map<String, Boolean> entityIdByQuery = new java.util.LinkedHashMap<>();
+        for (String query : queries) {
+            boolean entityId = EntityIdQueryDetector.containsStrongEntityId(query);
+            entityIdByQuery.put(query, entityId);
+            if (entityId) {
+                log.info("实体ID查询跳过向量侧: query='{}', tokens={}",
+                        query, EntityIdQueryDetector.extractStrongIdTokens(query));
+            }
+        }
+        List<String> semanticQueries = queries.stream()
+                .filter(q -> !Boolean.TRUE.equals(entityIdByQuery.get(q)))
+                .toList();
+
         int perKbLimit = properties.getPerKbChunkLimit();
         if (perKbLimit <= 0) perKbLimit = 5;
         int perKbOverflowCap = properties.getPerKbOverflowCap();
@@ -104,23 +125,35 @@ public class RrfHybridChannel implements SearchChannel {
         List<CompletableFuture<PerKbResult>> futures = new ArrayList<>();
         // 全部内部 future：任一 per-KB 超时/中断时统一取消，释放内层线程与远程连接
         List<CompletableFuture<?>> innerFutures = new ArrayList<>();
+        // 纯实体 ID 查询不参与批量嵌入（节省一次远程 Embedding 调用）
         Map<String, Map<String, float[]>> preEmbeddedByCollection =
-                retrieverService.embedQueriesBatchPerCollection(queries, collections);
+                semanticQueries.isEmpty()
+                        ? Map.of()
+                        : retrieverService.embedQueriesBatchPerCollection(semanticQueries, collections);
         if (CollUtil.isNotEmpty(preEmbeddedByCollection)) {
-            log.info("混合检索跨库批量嵌入: collections={}, queries={}", collections.size(), queries.size());
+            log.info("混合检索跨库批量嵌入: collections={}, queries={}", collections.size(), semanticQueries.size());
         }
         for (String collection : collections) {
             List<CompletableFuture<SearchChannelResult>> queryFutures = new ArrayList<>();
             Map<String, float[]> preEmbedded = preEmbeddedByCollection.get(collection);
             for (String query : queries) {
                 SearchContext singleCtx = buildSingleCollectionContext(context, collection, query);
-                if (preEmbedded != null) {
+                boolean entityId = Boolean.TRUE.equals(entityIdByQuery.get(query));
+                if (!entityId && preEmbedded != null) {
                     singleCtx.setPreEmbeddedVector(preEmbedded.get(query));
                 }
-                queryFutures.add(CompletableFuture.supplyAsync(
-                        () -> safeSearch(vectorChannel, singleCtx), executor));
+                // 纯实体 ID：向量侧跳过（占位空结果，保持 [向量, 关键词] 结果顺序），仅关键词检索
+                queryFutures.add(entityId
+                        ? CompletableFuture.completedFuture(emptyChannelResult(vectorChannel))
+                        : CompletableFuture.supplyAsync(
+                                () -> safeSearch(vectorChannel, singleCtx), executor));
                 queryFutures.add(CompletableFuture.supplyAsync(
                         () -> safeSearch(keywordChannel, singleCtx), executor));
+                // 图谱通道（实体锚定 + K 跳子图）：独立判断启用，未启用不产生额外开销
+                if (graphChannel.isEnabled(singleCtx)) {
+                    queryFutures.add(CompletableFuture.supplyAsync(
+                            () -> safeSearch(graphChannel, singleCtx), executor));
+                }
             }
             innerFutures.addAll(queryFutures);
 
@@ -140,12 +173,12 @@ public class RrfHybridChannel implements SearchChannel {
                 // 有界等待：join() 不可中断且无超时，改用 get() 保证单库融合不会无限阻塞检索线程
                 PerKbResult perKb = future.get(PER_KB_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
-                // results 顺序为 [向量0, 关键词0, 向量1, 关键词1, ...]
-                for (int i = 0; i < perKb.results.size(); i++) {
-                    if (i % 2 == 0) {
-                        vectorTotal += perKb.results.get(i).getChunks().size();
-                    } else {
-                        keywordTotal += perKb.results.get(i).getChunks().size();
+                // 按通道类型统计各通道召回量（顺序不固定：图谱通道按需加入）
+                for (SearchChannelResult channelResult : perKb.results) {
+                    if (channelResult.getChannelType() == SearchChannelType.KNOWLEDGE_BASE_SELECTION) {
+                        vectorTotal += channelResult.getChunks().size();
+                    } else if (channelResult.getChannelType() == SearchChannelType.KEYWORD_ES) {
+                        keywordTotal += channelResult.getChunks().size();
                     }
                 }
 
@@ -264,6 +297,16 @@ public class RrfHybridChannel implements SearchChannel {
                     .latencyMs(0)
                     .build();
         }
+    }
+
+    /** 通道占位空结果（纯实体 ID 查询跳过向量检索时，保持 [向量, 关键词] 结果顺序） */
+    private static SearchChannelResult emptyChannelResult(SearchChannel channel) {
+        return SearchChannelResult.builder()
+                .channelType(channel.getType())
+                .channelName(channel.getName())
+                .chunks(List.of())
+                .latencyMs(0)
+                .build();
     }
 
     @Override

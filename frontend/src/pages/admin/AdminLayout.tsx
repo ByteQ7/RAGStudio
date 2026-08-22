@@ -130,6 +130,7 @@ export function AdminLayout() {
     const section = segments[1];
     if (section) items.push({ label: labels[section] || section, to: `/admin/${section}` });
     if (section === "knowledge" && segments.length > 2) items.push({ label: "文档管理" });
+    if (section === "knowledge" && segments.includes("graph")) items.push({ label: "知识图谱" });
     if (section === "knowledge" && segments.includes("docs")) items.push({ label: "切片管理" });
     if (section === "traces" && segments.length > 2) items.push({ label: "链路详情" });
     return items;

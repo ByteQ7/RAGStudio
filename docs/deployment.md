@@ -118,6 +118,9 @@ psql -U postgres -d ragstudio -f resources/database/V2/schema_pg.sql
 
 # 导入初始数据
 psql -U postgres -d ragstudio -f resources/database/V2/init_data_pg.sql
+
+# （可选）Graph RAG 实体关系图谱建表：不执行则图谱功能整体不可用，不影响既有检索链路
+psql -U postgres -d ragstudio -f resources/database/V3/graph_pg.sql
 ```
 
 ### 3. 上传 AI 供应商图标（S3）

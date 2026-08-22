@@ -2,14 +2,19 @@ package com.byteq.ai.ragstudio.rag.core.prompt;
 
 import cn.hutool.core.collection.CollUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
+import com.byteq.ai.ragstudio.graph.config.GraphProperties;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.CONTEXT_FORMAT_PATH;
@@ -20,12 +25,17 @@ import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.CONTEXT_FORMAT_PAT
  * 使用 {@link PromptTemplateLoader} 渲染模板 section，将知识库检索结果和 MCP 工具调用结果
  * 格式化为可嵌入 Prompt 的结构化文本，成功结果与错误信息分开处理。
  * </p>
+ * <p>
+ * 图谱证据小节：命中图谱通道的 chunk 携带 graph_evidence 元数据，在正文后追加
+ * 【图谱关系证据】小节，让 LLM 直接看到跨 chunk 拼接出的关系链（编号与正文 [^chunk_N] 一致）。
+ * </p>
  */
 @Service
 @RequiredArgsConstructor
 public class DefaultContextFormatter implements ContextFormatter {
 
     private final PromptTemplateLoader templateLoader;
+    private final GraphProperties graphProperties;
 
     /**
      * 按 topK 限制收集检索文档块，拼接文本后使用 kb-section 模板渲染
@@ -61,17 +71,87 @@ public class DefaultContextFormatter implements ContextFormatter {
         // 编号从 citationStartIndex 起（Agent 多次检索时由调用方传入已累计的 chunk 数），
         // 保证跨多次检索编号全局唯一，引用溯源按位置映射才精确
         final int[] idx = {citationStartIndex};
+        Map<String, Integer> chunkIndexById = new HashMap<>();
         String body = chunks.stream()
                 .map(chunk -> {
                     String sourceMetadata = formatSourceMetadata(chunk);
                     if (chunk.isImage()) {
                         return sourceMetadata + "[^chunk_" + (++idx[0]) + "] [相关图片已随消息附上]";
                     }
+                    chunkIndexById.put(chunk.getId(), idx[0] + 1);
                     return sourceMetadata + "[^chunk_" + (++idx[0]) + "] "
                             + (chunk.getText() != null ? chunk.getText() : "");
                 })
                 .collect(Collectors.joining("\n"));
+        String graphSection = formatGraphEvidence(chunks, chunkIndexById);
+        if (!graphSection.isEmpty()) {
+            body = body + "\n" + graphSection;
+        }
         return renderKbSection("", body);
+    }
+
+    /**
+     * 渲染图谱关系证据小节：聚合所有命中图谱的 chunk 三元组（跨 chunk 去重），
+     * 编号与正文 [^chunk_N] 一致，上限受 rag.graph.retrieval.max-context-triples 约束。
+     */
+    private String formatGraphEvidence(List<RetrievedChunk> chunks, Map<String, Integer> chunkIndexById) {
+        if (!graphProperties.isEnabled() || !graphProperties.getRetrieval().isEnabled()) {
+            return "";
+        }
+        int maxTriples = Math.max(1, graphProperties.getRetrieval().getMaxContextTriples());
+        List<String> lines = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (RetrievedChunk chunk : chunks) {
+            Integer chunkIndex = chunkIndexById.get(chunk.getId());
+            if (chunkIndex == null || chunk.getMetadata() == null) {
+                continue;
+            }
+            Object evidenceNode = chunk.getMetadata().get("graph_evidence");
+            if (!(evidenceNode instanceof List<?> evidenceList) || evidenceList.isEmpty()) {
+                continue;
+            }
+            for (Object item : evidenceList) {
+                if (!(item instanceof Map<?, ?>)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> evidence = (Map<String, Object>) item;
+                String source = String.valueOf(evidence.getOrDefault("source", ""));
+                String predicate = String.valueOf(evidence.getOrDefault("predicate", ""));
+                String target = String.valueOf(evidence.getOrDefault("target", ""));
+                String evidenceText = evidence.get("evidence") == null
+                        ? "" : String.valueOf(evidence.get("evidence"));
+                if (source.isEmpty() || predicate.isEmpty() || target.isEmpty()) {
+                    continue;
+                }
+                String dedupKey = source + "|" + predicate + "|" + target;
+                if (!seen.add(dedupKey)) {
+                    continue;
+                }
+                StringBuilder line = new StringBuilder("- [^chunk_")
+                        .append(chunkIndex).append("] ")
+                        .append(oneLine(source)).append(" →").append(oneLine(predicate)).append("→ ")
+                        .append(oneLine(target));
+                if (!evidenceText.isEmpty()) {
+                    line.append("（").append(oneLine(evidenceText)).append("）");
+                }
+                lines.add(line.toString());
+                if (lines.size() >= maxTriples) {
+                    break;
+                }
+            }
+            if (lines.size() >= maxTriples) {
+                break;
+            }
+        }
+        if (lines.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("【图谱关系证据】\n");
+        for (String line : lines) {
+            sb.append(line).append('\n');
+        }
+        return sb.substring(0, sb.length() - 1);
     }
 
     /**

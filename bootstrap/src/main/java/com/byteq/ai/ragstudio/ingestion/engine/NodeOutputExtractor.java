@@ -44,7 +44,16 @@ public class NodeOutputExtractor {
             case CHUNKER -> chunkerOutput(context);
             case ENRICHER -> enricherOutput(context);
             case INDEXER -> indexerOutput(context, config);
+            case GRAPH_EXTRACTOR -> graphExtractorOutput(context);
         };
+    }
+
+    // 提取 GraphExtractor 节点的输出：分块数量与抽取统计（由节点结果消息承载，这里只展示分块上下文）
+    private Map<String, Object> graphExtractorOutput(IngestionContext context) {
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("chunkCount", context.getChunks() == null ? 0 : context.getChunks().size());
+        output.put("chunks", context.getChunks());
+        return output;
     }
 
     // 提取 Fetcher 节点的输出：文档来源信息、MIME 类型和原始字节的 Base64 编码
