@@ -1,9 +1,11 @@
 package com.byteq.ai.ragstudio.infra.embedding;
 
 import com.byteq.ai.ragstudio.infra.enums.ModelCapability;
+import com.byteq.ai.ragstudio.framework.errorcode.BaseErrorCode;
 import com.byteq.ai.ragstudio.framework.exception.RemoteException;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
+import com.byteq.ai.ragstudio.infra.model.ModelHealthStore;
 import com.byteq.ai.ragstudio.infra.model.ModelRoutingExecutor;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
@@ -46,16 +48,19 @@ public class RoutingEmbeddingService implements EmbeddingService {
 
     private final ModelSelector selector;
     private final ModelRoutingExecutor executor;
+    private final ModelHealthStore healthStore;
     private final EmbeddingCache embeddingCache;
     private final Map<String, EmbeddingClient> clientsByProvider;
 
     public RoutingEmbeddingService(
             ModelSelector selector,
             ModelRoutingExecutor executor,
+            ModelHealthStore healthStore,
             EmbeddingCache embeddingCache,
             List<EmbeddingClient> clients) {
         this.selector = selector;
         this.executor = executor;
+        this.healthStore = healthStore;
         this.embeddingCache = embeddingCache;
         // 将客户端列表转换为 provider -> client 的映射，便于路由时快速查找
         this.clientsByProvider = clients.stream()
@@ -124,16 +129,29 @@ public class RoutingEmbeddingService implements EmbeddingService {
     }
 
     /**
-     * 绕过缓存的直接调用（仅用于模型可用性探测，避免命中缓存导致探测失真）
+     * 绕过缓存与熔断器的直接调用（仅用于模型可用性探测）
+     * <p>
+     * 管理员手动检测 / 知识库创建探测必须真实触达供应商：
+     * 不读取缓存（避免探测失真），且不受熔断器拦截（否则冷却期内检测
+     * 只会得到 "unknown"，无法暴露真实错误）。检测成功后主动恢复
+     * 熔断状态，使生产调用立即可用。
+     * </p>
      */
     @Override
     public List<Float> embedDirect(String text, String modelId) {
-        return executor.executeWithFallback(
-                ModelCapability.EMBEDDING,
-                List.of(resolveTarget(modelId)),
-                this::resolveClient,
-                (client, target) -> client.embed(text, target)
-        );
+        ModelTarget target = resolveTarget(modelId);
+        EmbeddingClient client = resolveClient(target);
+        if (client == null) {
+            throw new RemoteException("Embedding provider client missing: " + target.candidate().getProvider());
+        }
+        try {
+            List<Float> vector = client.embed(text, target);
+            healthStore.markSuccess(target.id());
+            return vector;
+        } catch (Exception e) {
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            throw new RemoteException("Embedding 模型调用失败: " + msg, e, BaseErrorCode.REMOTE_ERROR);
+        }
     }
 
     /**

@@ -6,6 +6,7 @@ import { CitationList } from "@/components/chat/CitationList";
 import { FeedbackButtons } from "@/components/chat/FeedbackButtons";
 import { LocationRequest } from "@/components/chat/LocationRequest";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
+import { ThinkingPanel } from "@/components/chat/ThinkingPanel";
 import { UserChoices } from "@/components/chat/UserChoices";
 import { Avatar } from "@/components/common/Avatar";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
@@ -148,6 +149,11 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
           <RAGStudioLogo className="h-6 w-6 text-indigo-500" />
         </div>
         <div className="min-w-0 max-w-[92%] space-y-3">
+          <ThinkingPanel
+            thinking={message.thinking}
+            durationSeconds={message.thinkingDurationSeconds}
+            streaming={message.status === "streaming"}
+          />
           {message.agentSteps && message.agentSteps.length > 0 ? (
             <AgentSteps steps={message.agentSteps} thinkingLevel={message.thinkingLevel} />
           ) : null}

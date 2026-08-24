@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import mermaid from "mermaid";
 import { AlertTriangle, ArrowLeft, Check, Database, Link2, RefreshCw, Share2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,68 +35,30 @@ import {
   type GraphSubgraph
 } from "@/services/graphService";
 import { getErrorMessage } from "@/utils/error";
+import { EntityDetailPanel } from "./graph/EntityDetailPanel";
+import { GraphCanvas, type GraphCanvasHandle } from "./graph/GraphCanvas";
+import { GraphLegend } from "./graph/GraphLegend";
+import { GraphSearchBox } from "./graph/GraphSearchBox";
+import { GraphToolbar } from "./graph/GraphToolbar";
+import { ENTITY_TYPES } from "./graph/graphVisual";
 
 const PAGE_SIZE = 20;
-const ENTITY_TYPES = ["PERSON", "ORG", "DEPT", "ROLE", "PRODUCT", "PROCESS", "SYSTEM", "DOC", "OTHER"];
-
-let mermaidReady = false;
-function ensureMermaid() {
-  if (!mermaidReady) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: document.documentElement.classList.contains("dark") ? "dark" : "default",
-      securityLevel: "sandbox",
-      fontFamily: "inherit"
-    });
-    mermaidReady = true;
-  }
-}
-
-const typeColor = (type: string): string => {
-  switch (type) {
-    case "PERSON": return "#f59e0b";
-    case "ORG": return "#8b5cf6";
-    case "DEPT": return "#3b82f6";
-    case "ROLE": return "#10b981";
-    case "PRODUCT": return "#ec4899";
-    case "PROCESS": return "#06b6d4";
-    case "SYSTEM": return "#6366f1";
-    case "DOC": return "#84cc16";
-    default: return "#94a3b8";
-  }
-};
-
-const escapeLabel = (text: string): string => text.replace(/["\\]/g, "\\$&").replace(/\n/g, " ");
-
-function buildMermaidCode(subgraph: GraphSubgraph): string {
-  const nodeById = new Map(subgraph.nodes.map((n) => [n.id, n]));
-  const lines = ["flowchart LR"];
-  for (const node of subgraph.nodes) {
-    lines.push(`  ${node.id}["${escapeLabel(node.name)}"]:::${node.type || "OTHER"}`);
-  }
-  for (const link of subgraph.links) {
-    if (!nodeById.has(link.source) || !nodeById.has(link.target)) continue;
-    lines.push(`  ${link.source} -->|${escapeLabel(link.predicate)}| ${link.target}`);
-  }
-  const colorMap: Record<string, string> = {};
-  for (const node of subgraph.nodes) {
-    colorMap[node.type || "OTHER"] = typeColor(node.type || "OTHER");
-  }
-  for (const [type, color] of Object.entries(colorMap)) {
-    lines.push(`  classDef ${type} fill:${color},color:#fff,stroke:${color}`);
-  }
-  return lines.join("\n");
-}
 
 export function KnowledgeGraphPage() {
   const { kbId } = useParams<{ kbId: string }>();
   const navigate = useNavigate();
   const [overview, setOverview] = useState<GraphOverview | null>(null);
   const [subgraph, setSubgraph] = useState<GraphSubgraph | null>(null);
-  const [mermaidSvg, setMermaidSvg] = useState("");
-  const [mermaidError, setMermaidError] = useState("");
   const [loadingGraph, setLoadingGraph] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [focusTarget, setFocusTarget] = useState<{ id: string; ts: number } | null>(null);
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+  const [showEdgeLabels, setShowEdgeLabels] = useState(true);
+  const [layoutLocked, setLayoutLocked] = useState(true);
+  const [activeTab, setActiveTab] = useState("graph");
+  const graphRef = useRef<GraphCanvasHandle | null>(null);
 
   const [entities, setEntities] = useState<GraphEntity[]>([]);
   const [entityTotal, setEntityTotal] = useState(0);
@@ -123,32 +84,50 @@ export function KnowledgeGraphPage() {
     }
   }, [kbId]);
 
-  const loadSubgraph = useCallback(async () => {
+  /** 加载子图；传入 focusEntityId 表示聚焦展开（保留既有节点位置，增量更新） */
+  const loadSubgraph = useCallback(async (focusEntityId?: string) => {
     if (!kbId) return;
     setLoadingGraph(true);
-    setMermaidSvg("");
     try {
-      const data = await getGraphSubgraph(kbId);
+      const data = await getGraphSubgraph(kbId, focusEntityId ? { focusEntityId } : undefined);
       setSubgraph(data);
-      if (data.nodes.length === 0) {
-        setMermaidError("");
-      } else {
-        const code = buildMermaidCode(data);
-        ensureMermaid();
-        try {
-          const { svg } = await mermaid.render(`graph-${Date.now()}`, code);
-          setMermaidSvg(svg);
-          setMermaidError("");
-        } catch (err) {
-          setMermaidError(err instanceof Error ? err.message : "Mermaid 渲染失败");
-        }
-      }
     } catch (err) {
       toast.error(getErrorMessage(err, "加载图谱视图失败"));
     } finally {
       setLoadingGraph(false);
     }
   }, [kbId]);
+
+  const handleNodeClick = (id: string) => {
+    setSelectedEntityId(id);
+  };
+
+  const handleNodeFocus = (id: string) => {
+    setSelectedEntityId(id);
+    void loadSubgraph(id);
+  };
+
+  const locateEntity = (id: string) => {
+    setSelectedEntityId(id);
+    setFocusTarget({ id, ts: Date.now() });
+  };
+
+  const toggleTypeHidden = (type: string) => {
+    setHiddenTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  };
+
+  const navigateToEntitiesTab = (keyword: string) => {
+    setEntityKeyword(keyword);
+    setActiveTab("entities");
+  };
 
   const loadEntities = useCallback(async () => {
     if (!kbId) return;
@@ -186,6 +165,10 @@ export function KnowledgeGraphPage() {
   useEffect(() => {
     loadOverview();
   }, [loadOverview]);
+
+  useEffect(() => {
+    loadSubgraph();
+  }, [loadSubgraph]);
 
   useEffect(() => {
     loadEntities();
@@ -254,12 +237,12 @@ export function KnowledgeGraphPage() {
             variant="outline"
             onClick={handleRebuild}
             disabled={rebuilding || !overview?.graphEnabled}
-            title={overview?.graphEnabled ? undefined : "图谱总开关未开启（rag.graph.enabled=false）"}
+            title={overview?.graphEnabled ? undefined : "图谱总开关未开启，可在「知识图谱」菜单页开启"}
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${rebuilding ? "animate-spin" : ""}`} />
             {rebuilding ? "重建中..." : "重建图谱"}
           </Button>
-          <Button variant="outline" onClick={loadSubgraph}>
+          <Button variant="outline" onClick={() => void loadSubgraph()}>
             <Share2 className="mr-2 h-4 w-4" />
             刷新视图
           </Button>
@@ -310,7 +293,7 @@ export function KnowledgeGraphPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="graph" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="rounded-xl bg-gray-50/80 p-1">
           <TabsTrigger value="graph"><Database className="mr-1 h-4 w-4" />图谱视图</TabsTrigger>
           <TabsTrigger value="entities"><Link2 className="mr-1 h-4 w-4" />实体管理</TabsTrigger>
@@ -324,7 +307,7 @@ export function KnowledgeGraphPage() {
                 <div>
                   <CardTitle>图谱可视化</CardTitle>
                   <CardDescription>
-                    最多渲染 200 节点，按实体类型着色；展示实体间关系链（mermaid flowchart）
+                    滚轮缩放 / 拖拽平移 / 双击节点聚焦展开 / 点击节点查看详情（按实体类型着色）
                   </CardDescription>
                 </div>
                 {subgraph?.truncated && <Badge variant="outline">已截断（超渲染上限）</Badge>}
@@ -334,22 +317,58 @@ export function KnowledgeGraphPage() {
               {loadingGraph ? (
                 <div className="py-10 text-center text-muted-foreground">加载中...</div>
               ) : subgraph && subgraph.nodes.length > 0 ? (
-                mermaidSvg ? (
-                  <div
-                    className="flex justify-center overflow-auto rounded-lg border bg-white p-4 dark:bg-[#161b22] [&_svg]:max-w-full"
-                    dangerouslySetInnerHTML={{ __html: mermaidSvg }}
-                  />
-                ) : mermaidError ? (
-                  <div className="py-6 text-center text-sm text-red-500">Mermaid 渲染失败：{mermaidError}</div>
-                ) : (
-                  <div className="py-10 text-center text-muted-foreground">渲染中...</div>
-                )
+                <div className="flex gap-4">
+                  <div className="relative min-w-0 flex-1">
+                    <GraphCanvas
+                      ref={graphRef}
+                      data={subgraph}
+                      hiddenTypes={hiddenTypes}
+                      showEdgeLabels={showEdgeLabels}
+                      layoutLocked={layoutLocked}
+                      selectedId={selectedEntityId}
+                      focusTarget={focusTarget}
+                      onNodeClick={handleNodeClick}
+                      onNodeFocus={handleNodeFocus}
+                    />
+                    <GraphToolbar
+                      onZoomIn={() => graphRef.current?.zoomIn()}
+                      onZoomOut={() => graphRef.current?.zoomOut()}
+                      onFitView={() => graphRef.current?.fitView()}
+                      onExportPng={() => void graphRef.current?.exportPng()}
+                      onToggleFullscreen={() => graphRef.current?.toggleFullscreen()}
+                      layoutLocked={layoutLocked}
+                      onToggleLayoutLocked={() => setLayoutLocked((v) => !v)}
+                      showEdgeLabels={showEdgeLabels}
+                      onToggleEdgeLabels={() => setShowEdgeLabels((v) => !v)}
+                    />
+                    <GraphSearchBox kbId={kbId ?? ""} onLocate={locateEntity} />
+                    <GraphLegend hiddenTypes={hiddenTypes} onToggleType={toggleTypeHidden} />
+                    {subgraph.truncated && (
+                      <div
+                        className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border bg-white/90 px-3 py-1 text-[11px] shadow-sm backdrop-blur dark:bg-[#161b22]/90"
+                        style={{ borderColor: "var(--color-border-secondary)", color: "var(--color-text-tertiary)" }}
+                      >
+                        仅展示关系最密切的 {subgraph.nodes.length} 个节点，双击节点可聚焦展开
+                      </div>
+                    )}
+                  </div>
+                  {selectedEntityId && (
+                    <EntityDetailPanel
+                      entityId={selectedEntityId}
+                      subgraph={subgraph}
+                      onClose={() => setSelectedEntityId(null)}
+                      onFocusExpand={(id) => handleNodeFocus(id)}
+                      onLocate={locateEntity}
+                      onNavigateToEntities={navigateToEntitiesTab}
+                    />
+                  )}
+                </div>
               ) : (
                 <div className="py-10 text-center">
                   <p className="text-muted-foreground">
                     {overview?.graphEnabled
                       ? "图谱暂无数据，请先对文档执行分块（入库时自动增量抽取），或点击右上角「重建图谱」"
-                      : "图谱总开关未开启（rag.graph.enabled=false），开启后文档入库将自动抽取实体关系"}
+                      : "图谱总开关未开启（后管「知识图谱」页可开启），开启后文档入库将自动抽取实体关系"}
                   </p>
                 </div>
               )}

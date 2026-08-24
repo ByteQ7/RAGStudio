@@ -92,8 +92,7 @@ docker run -d --name minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=admin -e
 
 # 2. Database initialization
 createdb -U postgres ragstudio
-psql -U postgres -d ragstudio -f resources/database/V2/schema_pg.sql
-psql -U postgres -d ragstudio -f resources/database/V2/init_data_pg.sql
+psql -U postgres -d ragstudio -f resources/database/schema_all.sql   # full schema + seed data (fresh install only)
 
 # 3. Environment config
 cp .env-example .env   # edit DB / Redis / RocketMQ / S3 settings

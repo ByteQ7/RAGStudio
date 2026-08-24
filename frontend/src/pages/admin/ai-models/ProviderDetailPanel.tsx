@@ -39,7 +39,8 @@ import {
   type AiModel,
   type ConnectivityResult,
   checkConnectivity,
-  resolveCallingStrategy
+  resolveCallingStrategy,
+  isOfficialSdkProvider
 } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
 import { ModelGroupList } from "./ModelGroupList";
@@ -133,7 +134,8 @@ export function ProviderDetailPanel({
 
   const handleSave = async () => {
     if (!provider) return;
-    if (!baseUrl.trim()) {
+    // 官方 SDK 内置默认地址，无需配置；OpenAI / Anthropic 兼容协议必须填写
+    if (!isOfficialSdkProvider(provider.name, provider.apiProtocol) && !baseUrl.trim()) {
       toast.error("API 地址不能为空");
       return;
     }
@@ -154,7 +156,7 @@ export function ProviderDetailPanel({
 
     const payload: AiProviderPayload = {
       displayName: displayName.trim() || undefined,
-      baseUrl: baseUrl.trim(),
+      baseUrl: baseUrl.trim() || undefined,
       apiKey: apiKey.trim() || undefined,
       endpoints: parsedEndpoints || undefined
     };
@@ -380,7 +382,11 @@ export function ProviderDetailPanel({
                       "h-10 pl-10 text-sm rounded-xl",
                       !editing && "bg-gray-50 text-gray-500 border-gray-100"
                     )}
-                    placeholder="https://api.openai.com/v1"
+                    placeholder={
+                      isOfficialSdkProvider(provider.name, provider.apiProtocol)
+                        ? "官方 SDK 内置默认地址，可留空"
+                        : "https://api.openai.com/v1"
+                    }
                   />
                 </div>
               </div>

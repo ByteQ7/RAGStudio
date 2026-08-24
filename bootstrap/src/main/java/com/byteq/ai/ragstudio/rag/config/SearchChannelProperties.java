@@ -89,7 +89,7 @@ public class SearchChannelProperties {
      * 避免实时信息（天气/新闻）等明显无关问题被误判为相关。
      * </p>
      */
-    private double kbSelectionThreshold = 0.32;
+    private double kbSelectionThreshold = 0.4;
 
     /**
      * 知识库语义选择最大数量
@@ -268,13 +268,13 @@ public class SearchChannelProperties {
         private boolean enabled = true;
 
         /**
-         * RRF 平滑常数（推荐 60）
+         * RRF 平滑常数（推荐 60）。
+         * <p>
+         * RRF 融合仅在每个知识库内进行（per-KB 融合），不做跨 KB 全局截断：
+         * 各 KB 的 RRF 分数不可比，按 KB 顺序 subList 会让靠前 KB 独占名额。
+         * 全部 per-KB 结果进入 Rerank 统一排序，最终数量由动态 TopK 控制。
+         * </p>
          */
         private int k = 60;
-
-        /**
-         * 融合后最终返回的 topK
-         */
-        private int topK = 5;
     }
 }

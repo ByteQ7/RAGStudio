@@ -18,8 +18,7 @@ public class AiProviderCreateRequest {
     /** 显示名称 */
     private String displayName;
 
-    /** API 基础地址 */
-    @NotBlank(message = "API基础地址不能为空")
+    /** API 基础地址（官方 SDK 可空，SDK 内置默认地址） */
     private String baseUrl;
 
     /** API 密钥 */

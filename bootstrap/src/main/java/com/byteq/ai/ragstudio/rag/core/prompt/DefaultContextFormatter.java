@@ -2,6 +2,7 @@ package com.byteq.ai.ragstudio.rag.core.prompt;
 
 import cn.hutool.core.collection.CollUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
+import com.byteq.ai.ragstudio.graph.config.GraphConfigService;
 import com.byteq.ai.ragstudio.graph.config.GraphProperties;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
@@ -36,6 +37,7 @@ public class DefaultContextFormatter implements ContextFormatter {
 
     private final PromptTemplateLoader templateLoader;
     private final GraphProperties graphProperties;
+    private final GraphConfigService graphConfigService;
 
     /**
      * 按 topK 限制收集检索文档块，拼接文本后使用 kb-section 模板渲染
@@ -95,7 +97,7 @@ public class DefaultContextFormatter implements ContextFormatter {
      * 编号与正文 [^chunk_N] 一致，上限受 rag.graph.retrieval.max-context-triples 约束。
      */
     private String formatGraphEvidence(List<RetrievedChunk> chunks, Map<String, Integer> chunkIndexById) {
-        if (!graphProperties.isEnabled() || !graphProperties.getRetrieval().isEnabled()) {
+        if (!graphConfigService.isEnabled() || !graphConfigService.isRetrievalEnabled()) {
             return "";
         }
         int maxTriples = Math.max(1, graphProperties.getRetrieval().getMaxContextTriples());

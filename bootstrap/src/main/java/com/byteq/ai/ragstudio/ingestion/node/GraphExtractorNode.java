@@ -55,7 +55,7 @@ public class GraphExtractorNode implements IngestionNode {
     @Override
     public NodeResult execute(IngestionContext context, NodeConfig config) {
         if (!graphExtractionService.isEnabled()) {
-            return NodeResult.skip("图谱总开关未开启（rag.graph.enabled=false）");
+            return NodeResult.skip("图谱总开关未开启（后管「知识图谱」页可开启）");
         }
         List<VectorChunk> chunks = context.getChunks();
         if (chunks == null || chunks.isEmpty()) {

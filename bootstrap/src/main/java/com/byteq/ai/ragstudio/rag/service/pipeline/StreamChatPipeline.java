@@ -12,6 +12,7 @@ import com.byteq.ai.ragstudio.rag.core.agent.AgentScopeReActExecutor;
 import com.byteq.ai.ragstudio.rag.core.agent.KbEmbeddingSelector;
 import com.byteq.ai.ragstudio.rag.core.rewrite.QueryRewriteService;
 import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
+import com.byteq.ai.ragstudio.rag.core.retrieve.EntityIdQueryDetector;
 import com.byteq.ai.ragstudio.rag.core.skill.SandboxExecutor;
 import com.byteq.ai.ragstudio.rag.core.memory.ConversationMemoryService;
 import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeBaseDO;
@@ -164,9 +165,17 @@ public class StreamChatPipeline {
         });
         checkCancellation(ctx);
 
+        // 含强实体 ID 的查询（税号/单号/编码等，含"91330108MA1K2L3M4N？"、"帮我查下xxx"等形态）：
+        // ① 跳过查询改写——改写模型可能篡改 ID（曾出现 91330108 → 913330108 幻觉）；
+        // ② 跳过知识库语义选择——随机串与 KB 描述向量相似度趋近 0，必然误杀相关库。
+        // 检索阶段对 ID 查询只走关键词精确匹配（见 RrfHybridChannel）。
+        boolean entityIdQuery = EntityIdQueryDetector.containsStrongEntityId(userOriginalQuestion);
+
         // 1. 查询改写（用于检索阶段，不影响原始问题保留给重排序）
-        RewriteResult rewriteResult = traceNode("查询改写", "REWRITE", () ->
-                queryRewriteService.rewriteWithSplit(userOriginalQuestion, ctx.getHistory(), ctx.getKnowledgeBaseIds()));
+        RewriteResult rewriteResult = entityIdQuery
+                ? new RewriteResult(userOriginalQuestion, List.of(userOriginalQuestion))
+                : traceNode("查询改写", "REWRITE", () ->
+                        queryRewriteService.rewriteWithSplit(userOriginalQuestion, ctx.getHistory(), ctx.getKnowledgeBaseIds()));
         checkCancellation(ctx);
         String rewrittenQuestion = rewriteResult.rewrittenQuestion();
         if (StrUtil.isBlank(rewrittenQuestion)) rewrittenQuestion = userOriginalQuestion;
@@ -210,7 +219,14 @@ public class StreamChatPipeline {
                             .filter(kb -> kb.id().equals(ctx.getKnowledgeBaseIds().get(0)))
                             .findFirst().orElse(null));
             KbEmbeddingSelector.SelectionResult selection;
-            if (singleKbFastPath) {
+            if (entityIdQuery) {
+                // 纯实体 ID：随机串无语义可比性，直接检索全部已选知识库
+                selection = KbEmbeddingSelector.SelectionResult.relevant("纯实体ID查询，跳过语义选库，直接检索全部已选知识库",
+                        kbInfos.stream()
+                                .map(kb -> new KbEmbeddingSelector.SelectedKb(kb.id(), kb.name(), 1.0))
+                                .toList());
+                log.info("纯实体ID查询，跳过语义选库: question={}, kbCount={}", userOriginalQuestion, kbInfos.size());
+            } else if (singleKbFastPath) {
                 String kbId = ctx.getKnowledgeBaseIds().get(0);
                 KbEmbeddingSelector.KbInfo sole = kbInfos.stream()
                         .filter(kb -> kb.id().equals(kbId))

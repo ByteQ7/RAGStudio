@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -15,6 +16,9 @@ import {
 import type { SystemSettings } from "@/services/settingsService";
 import { getSystemSettings } from "@/services/settingsService";
 import { getErrorMessage } from "@/utils/error";
+import { Loader2 } from "lucide-react";
+import type { MineruConfigVO } from "@/services/mineruService";
+import { getMineruConfig, updateMineruConfig, pingMineru } from "@/services/mineruService";
 
 const BoolBadge = ({ value }: { value: boolean }) => (
   <Badge variant={value ? "default" : "outline"}>{value ? "启用" : "禁用"}</Badge>
@@ -38,6 +42,10 @@ function InfoItem({ label, value }: { label: string; value: ReactNode }) {
 export function SystemSettingsPage() {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mineru, setMineru] = useState<MineruConfigVO | null>(null);
+  const [mineruLoading, setMineruLoading] = useState(false);
+  const [mineruSaving, setMineruSaving] = useState(false);
+  const [mineruProbing, setMineruProbing] = useState(false);
 
   const loadSettings = async () => {
     try {
@@ -55,6 +63,50 @@ export function SystemSettingsPage() {
   useEffect(() => {
     loadSettings();
   }, []);
+
+  const loadMineru = async () => {
+    setMineruLoading(true);
+    try {
+      const data = await getMineruConfig();
+      setMineru(data);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "加载 MinerU 配置失败"));
+      console.error(error);
+    } finally {
+      setMineruLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMineru();
+  }, []);
+
+  const handleMineruSave = async () => {
+    if (!mineru) return;
+    setMineruSaving(true);
+    try {
+      await updateMineruConfig(mineru);
+      toast.success("MinerU 配置已保存");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "保存 MinerU 配置失败"));
+      console.error(error);
+    } finally {
+      setMineruSaving(false);
+    }
+  };
+
+  const handleMineruProbe = async () => {
+    setMineruProbing(true);
+    try {
+      const data = await pingMineru();
+      setMineru(data);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "探测 MinerU 连通性失败"));
+      console.error(error);
+    } finally {
+      setMineruProbing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -93,6 +145,118 @@ export function SystemSettingsPage() {
           <InfoItem label="Collection" value={rag.default.collectionName} />
           <InfoItem label="Dimension" value={rag.default.dimension} />
           <InfoItem label="Metric Type" value={rag.default.metricType} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>MinerU 解析服务</CardTitle>
+          <CardDescription>本地/远程 MinerU 文档解析端点配置</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {mineruLoading ? (
+            <div className="text-sm text-muted-foreground">加载中...</div>
+          ) : !mineru ? (
+            <div className="text-sm text-muted-foreground">暂无 MinerU 配置</div>
+          ) : (
+            <>
+              {[mineru.local, mineru.remote].map((ep, idx) => {
+                const isLocal = idx === 0;
+                const label = isLocal ? "本地 MinerU" : "远程 MinerU";
+                return (
+                  <div key={label} className="grid gap-4 rounded-lg border border-gray-200/70 bg-white p-4 md:grid-cols-2">
+                    <div className="flex items-center gap-2 md:col-span-2">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-blue-600"
+                        checked={ep?.enabled ?? false}
+                        onChange={(e) => {
+                          const next = { ...mineru };
+                          if (isLocal) next.local = { ...mineru.local, enabled: e.target.checked };
+                          else next.remote = { ...mineru.remote, enabled: e.target.checked };
+                          setMineru(next);
+                        }}
+                      />
+                      <span className="text-sm font-medium text-gray-800">{label}</span>
+                      {!isLocal && (
+                        <span className="text-xs text-gray-500">（官方 Agent API 免费免 Token，单文件 ≤10MB、≤20 页）</span>
+                      )}
+                      <span className="text-xs text-gray-500">（{mineru.timeoutSeconds ?? 300}s 解析超时）</span>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-500">Base URL</label>
+                      <input
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                        placeholder={isLocal ? "http://127.0.0.1:8000" : "https://mineru.net/api/v1/agent"}
+                        value={ep?.baseUrl || ""}
+                        onChange={(e) => {
+                          const next = { ...mineru };
+                          if (isLocal) next.local = { ...mineru.local, baseUrl: e.target.value };
+                          else next.remote = { ...mineru.remote, baseUrl: e.target.value };
+                          setMineru(next);
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-500">Backend 引擎</label>
+                      <select
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                        value={ep?.backend || "pipeline"}
+                        onChange={(e) => {
+                          const next = { ...mineru };
+                          if (isLocal) next.local = { ...mineru.local, backend: e.target.value };
+                          else next.remote = { ...mineru.remote, backend: e.target.value };
+                          setMineru(next);
+                        }}
+                      >
+                        {["pipeline", "vlm", "hybrid"].map((b) => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {!isLocal && (
+                      <div className="space-y-1 md:col-span-2">
+                        <label className="text-xs text-gray-500">API Key（可选）</label>
+                        <input
+                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                          type="password"
+                          placeholder="远程鉴权密钥"
+                          value={ep?.apiKey || ""}
+                          onChange={(e) => {
+                            const next = { ...mineru };
+                            next.remote = { ...mineru.remote, apiKey: e.target.value };
+                            setMineru(next);
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div className="md:col-span-2">
+                      {ep?.reachable === true ? (
+                        <Badge variant="default" className="bg-emerald-600">可达</Badge>
+                      ) : ep?.reachable === false ? (
+                        <Badge variant="outline" className="border-red-200 bg-red-50 text-red-600">不可达</Badge>
+                      ) : (
+                        <span className="text-xs text-gray-400">未探测</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleMineruProbe}
+                  disabled={mineruProbing}
+                >
+                  {mineruProbing && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                  探测连通性
+                </Button>
+                <Button onClick={handleMineruSave} disabled={mineruSaving}>
+                  {mineruSaving ? "保存中..." : "保存"}
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

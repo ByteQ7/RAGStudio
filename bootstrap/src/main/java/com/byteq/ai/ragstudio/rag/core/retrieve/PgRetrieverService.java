@@ -40,8 +40,9 @@ public class PgRetrieverService implements RetrieverService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /** pg_trgm 扩展可用性缓存（null=未探测），决定关键词检索使用 similarity 还是位置降级打分 */
-    private volatile Boolean trgmAvailable;
+    /** pg_trgm 扩展可用性缓存（null=未探测），决定关键词检索使用 similarity 还是位置降级打分。
+     *  带 TTL：扩展中途安装后无需重启即可生效，与 collection 元数据缓存策略对齐 */
+    private volatile CacheEntry<Boolean> trgmAvailableEntry;
 
     /** collection → 维度缓存：检索路径每次按 collection 查库解析维度，热点 collection 高频重复 */
     private final Map<String, CacheEntry<Integer>> dimensionCache = new ConcurrentHashMap<>();
@@ -325,7 +326,8 @@ public class PgRetrieverService implements RetrieverService {
             return List.of();
         }
 
-        // 关键词提取：中文无空格句子补充 3 字符滑窗，避免整句精确子串匹配导致零命中
+        // 关键词提取：中文无空格句子补充 3 字符滑窗，避免整句精确子串匹配导致零命中；
+        // 含字母数字的长 token（ID/编号等）排序提前，防止滑窗词把 ID 挤出上限截断
         List<String> keywords = extractKeywords(query);
         if (keywords.isEmpty()) {
             keywords = List.of(query);
@@ -334,19 +336,24 @@ public class PgRetrieverService implements RetrieverService {
             keywords = keywords.subList(0, 16);
         }
 
-        // pg_trgm 可用性探测（缓存），决定使用 similarity 打分还是位置降级打分
-        if (trgmAvailable == null) {
-            trgmAvailable = checkTrgmExtension();
-            log.info("pg_trgm 扩展可用: {}", trgmAvailable);
+        // pg_trgm 可用性探测（带 TTL 缓存），决定使用 similarity 打分还是位置降级打分
+        boolean trgm;
+        CacheEntry<Boolean> cachedTrgm = trgmAvailableEntry;
+        if (cachedTrgm == null || cachedTrgm.expired()) {
+            trgm = checkTrgmExtension();
+            trgmAvailableEntry = new CacheEntry<>(trgm, System.currentTimeMillis());
+            log.info("pg_trgm 扩展可用: {}", trgm);
+        } else {
+            trgm = cachedTrgm.value();
         }
 
-        List<RetrievedChunk> result = tryKeywordQuery(tableName, request, keywords, trgmAvailable);
+        List<RetrievedChunk> result = tryKeywordQuery(tableName, request, keywords, trgm);
 
         // similarity 函数不存在（扩展未安装）时降级为不依赖扩展的位置打分
         // 仅当错误确认为「similarity 函数不存在」时才降级并持久标记；
         // 瞬时故障（超时/连接抖动等）返回空结果但不降级，避免关键词检索质量被永久拉低
-        if (result == null && Boolean.TRUE.equals(trgmAvailable)) {
-            trgmAvailable = false;
+        if (result == null && trgm) {
+            trgmAvailableEntry = new CacheEntry<>(false, System.currentTimeMillis());
             log.warn("pg_trgm 扩展不可用，关键词检索降级为关键词位置打分");
             result = tryKeywordQuery(tableName, request, keywords, false);
         }
@@ -355,7 +362,39 @@ public class PgRetrieverService implements RetrieverService {
             log.warn("关键词检索失败: collection={}, table={}", request.getCollectionName(), tableName);
             return List.of();
         }
+        markExactMatches(result, query);
         return result;
+    }
+
+    /**
+     * 精确标识符匹配打标：chunk 内容包含查询中的强 ID token（统一社会信用代码/单号等）时
+     * 置位 exactMatch。该标记是可证明的客观相关性，
+     * 下游 RerankPostProcessor 据此保证此类 chunk 不被 rerank 分数底线过滤丢弃。
+     * <p>ILIKE 命中本身不区分命中了哪个词，此处按大小写不敏感精确复核强 token。</p>
+     */
+    private void markExactMatches(List<RetrievedChunk> chunks, String query) {
+        List<String> idTokens = EntityIdQueryDetector.extractStrongIdTokens(query);
+        if (idTokens.isEmpty() || chunks.isEmpty()) {
+            return;
+        }
+        int marked = 0;
+        for (RetrievedChunk chunk : chunks) {
+            String text = chunk.getText();
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            String lowerText = text.toLowerCase();
+            for (String token : idTokens) {
+                if (lowerText.contains(token.toLowerCase())) {
+                    chunk.setExactMatch(true);
+                    marked++;
+                    break;
+                }
+            }
+        }
+        if (marked > 0) {
+            log.info("关键词检索精确标识符匹配: {}/{} 个 Chunk 含强 ID token {}", marked, chunks.size(), idTokens);
+        }
     }
 
     /**
@@ -442,13 +481,23 @@ public class PgRetrieverService implements RetrieverService {
     private List<String> extractKeywords(String query) {
         String[] words = query.split("[\\s,，。.；;：:！!？?]+");
         java.util.LinkedHashSet<String> keywords = new java.util.LinkedHashSet<>();
+        // 第一遍：含字母数字的 token（ID/编号/英文词）优先入列——
+        // 关键词上限截断时保证精确标识符不被中文滑窗词挤出
         for (String w : words) {
             if (w.isBlank() || w.length() < 2) {
                 continue;
             }
+            if (w.matches(".*[A-Za-z0-9].*")) {
+                keywords.add(w);
+            }
+        }
+        // 第二遍：长中文串（无空格、无字母数字）补充 3 字符滑窗
+        for (String w : words) {
+            if (w.isBlank() || w.length() < 2 || w.matches(".*[A-Za-z0-9].*")) {
+                continue;
+            }
             keywords.add(w);
-            // 长中文串（无空格、无字母数字）补充 3 字符滑窗
-            if (w.length() >= 5 && !w.matches(".*[A-Za-z0-9].*")) {
+            if (w.length() >= 5) {
                 for (int i = 0; i + 3 <= w.length(); i++) {
                     keywords.add(w.substring(i, i + 3));
                 }

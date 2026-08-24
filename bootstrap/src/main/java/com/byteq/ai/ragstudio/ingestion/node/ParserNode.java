@@ -12,6 +12,8 @@ import com.byteq.ai.ragstudio.ingestion.domain.settings.ParserSettings;
 import com.byteq.ai.ragstudio.ingestion.util.MimeTypeDetector;
 import com.byteq.ai.ragstudio.core.parser.DocumentParser;
 import com.byteq.ai.ragstudio.core.parser.DocumentParserSelector;
+import com.byteq.ai.ragstudio.core.parser.ParseEngine;
+import com.byteq.ai.ragstudio.core.parser.ParseEngineResolver;
 import com.byteq.ai.ragstudio.core.parser.ParserType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -50,9 +52,17 @@ public class ParserNode implements IngestionNode {
      */
     private final DocumentParserSelector parserSelector;
 
-    public ParserNode(ObjectMapper objectMapper, DocumentParserSelector parserSelector) {
+    /**
+     * 解析引擎决策器，根据 pipeline 节点配置的 parseEngine 决策 MinerU / Tika / 多模态兜底
+     */
+    private final ParseEngineResolver parseEngineResolver;
+
+    public ParserNode(ObjectMapper objectMapper,
+                      DocumentParserSelector parserSelector,
+                      ParseEngineResolver parseEngineResolver) {
         this.objectMapper = objectMapper;
         this.parserSelector = parserSelector;
+        this.parseEngineResolver = parseEngineResolver;
     }
 
     @Override
@@ -79,7 +89,15 @@ public class ParserNode implements IngestionNode {
         // 根据配置的规则验证文件类型是否允许被解析
         validateMimeType(settings, mimeType, fileName);
 
-        DocumentParser parser = parserSelector.select(ParserType.TIKA.getType());
+        // 从匹配的规则中读取可选的 parseEngine 配置（options.parseEngine），决策实际解析器
+        ParseEngine engine = resolveConfiguredEngine(settings, mimeType, fileName);
+        DocumentParser parser = null;
+        if (engine != null) {
+            parser = parseEngineResolver.resolveParser(engine, null, mimeType);
+        }
+        if (parser == null) {
+            parser = parserSelector.select(ParserType.TIKA.getType());
+        }
         if (parser == null) {
             return NodeResult.fail(new ClientException("未配置 Tika 解析器"));
         }
@@ -154,6 +172,25 @@ public class ParserNode implements IngestionNode {
             }
         }
         return false;
+    }
+
+    /**
+     * 解析配置的解析引擎（options.parseEngine）
+     * <p>
+     * 从与文档类型匹配的 {@link ParserSettings.ParserRule} 的 {@code options.parseEngine}
+     * 读取用户显式指定的解析引擎。未配置时返回 null，由上层默认走 Tika（对复杂 PDF 内部触发多模态兜底）。
+     * </p>
+     */
+    private ParseEngine resolveConfiguredEngine(ParserSettings settings, String mimeType, String fileName) {
+        ParserSettings.ParserRule rule = matchRule(settings, mimeType, fileName);
+        if (rule == null || rule.getOptions() == null) {
+            return null;
+        }
+        Object parseEngine = rule.getOptions().get("parseEngine");
+        if (parseEngine == null || !StringUtils.hasText(String.valueOf(parseEngine))) {
+            return null;
+        }
+        return ParseEngine.normalize(String.valueOf(parseEngine));
     }
 
     /**

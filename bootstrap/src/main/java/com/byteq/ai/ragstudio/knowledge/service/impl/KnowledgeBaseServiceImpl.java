@@ -10,6 +10,7 @@ import com.byteq.ai.ragstudio.aimodel.dao.entity.AiModelDO;
 import com.byteq.ai.ragstudio.aimodel.dao.entity.AiProviderDO;
 import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiModelMapper;
 import com.byteq.ai.ragstudio.aimodel.dao.mapper.AiProviderMapper;
+import com.byteq.ai.ragstudio.core.parser.ParseEngine;
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeBaseCreateRequest;
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeBasePageRequest;
 import com.byteq.ai.ragstudio.knowledge.controller.request.KnowledgeBaseUpdateRequest;
@@ -117,6 +118,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .dimension(dimension)
                 .collectionName(requestParam.getCollectionName())
                 .supportsImageEmbedding(supportsImageEmbedding)
+                .parseEngine(requestParam.getParseEngine())
                 .createdBy(UserContext.getUsername())
                 .updatedBy(UserContext.getUsername())
                 .build();
@@ -173,6 +175,11 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         // 描述始终可修改（允许清空）
         if (requestParam.getDescription() != null) {
             kb.setDescription(requestParam.getDescription());
+        }
+
+        // 解析引擎可修改（文本型知识库生效）
+        if (requestParam.getParseEngine() != null) {
+            kb.setParseEngine(ParseEngine.normalize(requestParam.getParseEngine()).getValue());
         }
 
         kb.setUpdatedBy(UserContext.getUsername());

@@ -6,12 +6,13 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphBuildLogVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphEntityVO;
+import com.byteq.ai.ragstudio.admin.controller.vo.GraphKbStatusVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphOverviewVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphRelationVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphSubgraphVO;
 import com.byteq.ai.ragstudio.admin.service.GraphAdminService;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
-import com.byteq.ai.ragstudio.graph.config.GraphProperties;
+import com.byteq.ai.ragstudio.graph.config.GraphConfigService;
 import com.byteq.ai.ragstudio.graph.dao.entity.GraphBuildLogDO;
 import com.byteq.ai.ragstudio.graph.dao.entity.GraphEntityDO;
 import com.byteq.ai.ragstudio.graph.dao.entity.GraphRelationDO;
@@ -50,7 +51,7 @@ public class GraphAdminServiceImpl implements GraphAdminService {
     private final GraphRelationMapper relationMapper;
     private final GraphBuildLogMapper buildLogMapper;
     private final GraphExtractionService graphExtractionService;
-    private final GraphProperties graphProperties;
+    private final GraphConfigService graphConfigService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -71,13 +72,48 @@ public class GraphAdminServiceImpl implements GraphAdminService {
                         """,
                 rs -> rs.next() ? rs.getString(1) : null, kbId);
         return GraphOverviewVO.builder()
-                .graphEnabled(graphProperties.isEnabled())
+                .graphEnabled(graphConfigService.isEnabled())
                 .entityCount(entityCount == null ? 0 : entityCount)
                 .relationCount(relationCount == null ? 0 : relationCount)
                 .extractionCount(extractionCount == null ? 0 : extractionCount)
                 .failedCount(failedCount == null ? 0 : failedCount)
                 .lastBuildTime(lastBuildTime)
                 .build();
+    }
+
+    @Override
+    public List<GraphKbStatusVO> kbsStatus() {
+        List<GraphKbStatusVO> result = new ArrayList<>();
+        List<Map<String, Object>> kbs;
+        try {
+            kbs = jdbcTemplate.queryForList("SELECT id, name FROM t_knowledge_base ORDER BY create_time DESC");
+        } catch (Exception e) {
+            log.debug("查询知识库列表失败（可能未执行 V3 SQL）: {}", e.getMessage());
+            return result;
+        }
+        for (Map<String, Object> kb : kbs) {
+            String kbId = String.valueOf(kb.get("id"));
+            try {
+                GraphOverviewVO overview = overview(kbId);
+                result.add(GraphKbStatusVO.builder()
+                        .kbId(kbId)
+                        .kbName(kb.get("name") == null ? kbId : String.valueOf(kb.get("name")))
+                        .entityCount(overview.getEntityCount())
+                        .relationCount(overview.getRelationCount())
+                        .extractionCount(overview.getExtractionCount())
+                        .failedCount(overview.getFailedCount())
+                        .lastBuildTime(overview.getLastBuildTime())
+                        .build());
+            } catch (Exception e) {
+                log.debug("查询知识库图谱状态失败（可能未执行 V3 SQL）: kbId={}, err={}", kbId, e.getMessage());
+                result.add(GraphKbStatusVO.builder()
+                        .kbId(kbId)
+                        .kbName(kb.get("name") == null ? kbId : String.valueOf(kb.get("name")))
+                        .entityCount(0L).relationCount(0L).extractionCount(0L).failedCount(0L)
+                        .build());
+            }
+        }
+        return result;
     }
 
     @Override

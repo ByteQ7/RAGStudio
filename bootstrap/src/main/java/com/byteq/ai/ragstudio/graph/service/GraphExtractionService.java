@@ -13,7 +13,7 @@ import java.util.List;
  *   <li>文档/单 chunk 删除时级联清理图谱数据并清理孤立实体</li>
  *   <li>知识库全量重建（复用缓存，幂等）</li>
  * </ul>
- * 所有方法内部均对 {@code rag.graph.enabled} 总开关做短路，关闭时静默跳过。</p>
+ * 所有方法内部均对总开关（后管「知识图谱」页配置的 t_graph_config.enabled）做短路，关闭时静默跳过。</p>
  */
 public interface GraphExtractionService {
 

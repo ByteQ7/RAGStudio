@@ -18,7 +18,12 @@ public enum ParserType {
     /**
      * Markdown 解析器
      */
-    MARKDOWN("Markdown");
+    MARKDOWN("Markdown"),
+
+    /**
+     * MinerU 解析器（本地/远程 MinerU 服务，处理 PDF 公式/表格/扫描件）
+     */
+    MINERU("MinerU");
 
     /**
      * 解析器类型名称

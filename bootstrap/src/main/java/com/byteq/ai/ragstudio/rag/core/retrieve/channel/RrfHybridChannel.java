@@ -9,6 +9,7 @@ import com.byteq.ai.ragstudio.rag.core.retrieve.EntityIdQueryDetector;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RetrieverService;
 import com.byteq.ai.ragstudio.rag.core.retrieve.RrfMerger;
 import com.byteq.ai.ragstudio.rag.core.retrieve.ScoreClusterTopK;
+import com.byteq.ai.ragstudio.rag.core.retrieve.audit.SearchAudit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -39,7 +40,6 @@ public class RrfHybridChannel implements SearchChannel {
     private final Executor executor;
 
     private int rrfK = 60;
-    private int finalTopK = 5;
 
     /** 子问题参与检索的最大数量（超出丢弃，控制检索开销） */
     private static final int MAX_SUB_QUERIES = 3;
@@ -64,9 +64,11 @@ public class RrfHybridChannel implements SearchChannel {
         this.executor = innerRetrievalExecutor;
     }
 
-    public void configure(int rrfK, int finalTopK) {
+    /**
+     * 配置 RRF 平滑常数（仅保留 per-KB 融合；最终数量与顺序由 Rerank + 动态 TopK 决定）
+     */
+    public void configure(int rrfK) {
         this.rrfK = rrfK > 0 ? rrfK : 60;
-        this.finalTopK = finalTopK > 0 ? finalTopK : 5;
     }
 
     @Override
@@ -190,6 +192,7 @@ public class RrfHybridChannel implements SearchChannel {
                         .toList();
 
                 List<RetrievedChunk> merged = RrfMerger.merge(perKbResults, perKbOverflowCap, rrfK);
+                recordRrfCandidates(context, merged, perKb.collection);
                 List<RetrievedChunk> kbChunks = applyPerKbClusterTruncation(merged, perKbLimit, perKbOverflowCap);
                 allChunks.addAll(kbChunks);
 
@@ -210,14 +213,13 @@ public class RrfHybridChannel implements SearchChannel {
             }
         }
 
-        // 全局 topK 截断：跨 KB 融合后的最终返回数量受 hybrid-rrf.top-k 配置约束
-        if (finalTopK > 0 && allChunks.size() > finalTopK) {
-            log.info("RRF 全局 topK 截断: {} → {}（配置 hybrid-rrf.top-k）", allChunks.size(), finalTopK);
-            allChunks = new ArrayList<>(allChunks.subList(0, finalTopK));
-        }
+        // 不做跨 KB 全局截断：各 KB 的 RRF 分数不可比（查询数/召回量不同），
+        // 直接按 KB 顺序 subList 会整库吞掉靠前 KB 的全部名额（如财务库独占 top-5、HR 库被整体砍掉）。
+        // 全部 per-KB 融合结果进入后置处理器链，由 Rerank（cross-encoder 分数全局可比）统一排序，
+        // 最终数量由动态 TopK（max-final-chunks）控制。
 
         long latency = System.currentTimeMillis() - startTime;
-        log.info("混合检索完成: {} 个KB, 向量共{}条, 关键词共{}条, 簇感知截断后共{}条, 耗时{}ms",
+        log.info("混合检索完成: {} 个KB, 向量共{}条, 关键词共{}条, 簇感知截断后共{}条（全部进入 Rerank 阶段）, 耗时{}ms",
                 collections.size(), vectorTotal, keywordTotal, allChunks.size(), latency);
 
         return SearchChannelResult.builder()
@@ -226,6 +228,29 @@ public class RrfHybridChannel implements SearchChannel {
                 .chunks(allChunks)
                 .latencyMs(latency)
                 .build();
+    }
+
+    /**
+     * 记录 RRF 融合候选到审计缓冲（开启审计日志时生效）。
+     * 在簇截断之前采集，保证被截断丢弃的候选也可追溯。
+     *
+     * @param context   检索上下文（携带可选的 SearchAudit）
+     * @param merged    RRF 融合后的完整候选（per-KB）
+     * @param collection 所属向量集合名称
+     */
+    private void recordRrfCandidates(SearchContext context, List<RetrievedChunk> merged, String collection) {
+        SearchAudit audit = context.getSearchAudit();
+        if (audit == null) {
+            return;
+        }
+        for (int i = 0; i < merged.size(); i++) {
+            RetrievedChunk chunk = merged.get(i);
+            if (chunk.getId() == null) {
+                continue;
+            }
+            float score = chunk.getScore() != null ? chunk.getScore() : 0f;
+            audit.addRrfCandidate(chunk.getId(), collection, score, i + 1);
+        }
     }
 
     /**

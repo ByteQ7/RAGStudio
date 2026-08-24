@@ -6,18 +6,13 @@ import org.springframework.stereotype.Component;
 
 /**
  * Graph RAG 配置
- * <p>前缀 {@code rag.graph}，控制图谱构建与检索的开关、限额与成本参数。
- * 默认全部关闭，灰度开启不会影响既有检索链路。</p>
+ * <p>前缀 {@code rag.graph}，控制图谱构建与检索的限额与成本参数。
+ * 总开关不在此配置：由后管「知识图谱」页动态控制（{@link GraphConfigService}，t_graph_config 表）。</p>
  */
 @Data
 @Component
 @ConfigurationProperties(prefix = "rag.graph")
 public class GraphProperties {
-
-    /**
-     * 总开关：false 时图谱构建与检索全部停用
-     */
-    private boolean enabled = false;
 
     /**
      * 抽取配置

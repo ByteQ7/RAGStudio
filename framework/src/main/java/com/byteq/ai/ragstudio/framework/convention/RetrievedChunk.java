@@ -62,6 +62,42 @@ public class RetrievedChunk {
      */
     private String contentType;
 
+    /**
+     * 引用来源类型: KB（知识库文档，默认）/ WEB（网络搜索结果）
+     */
+    private String sourceType;
+
+    /**
+     * WEB 来源链接（sourceType=WEB 时有值）
+     */
+    private String url;
+
+    /**
+     * WEB 结果标题（sourceType=WEB 时有值）
+     */
+    private String title;
+
+    /**
+     * WEB 来源搜索引擎（如 google、bing）
+     */
+    private String engine;
+
+    /**
+     * 精确标识符匹配标记：chunk 内容精确包含查询中的强 ID token
+     * （统一社会信用代码/订单号等）时置位。
+     * <p>
+     * 该标记代表可证明的客观相关性，检索链路中的 rerank 底线过滤（rerank-min-score）
+     * 不得丢弃此类 chunk——cross-encoder 对随机 ID 串普遍打分偏低，
+     * 若无保护会漏检实体 ID 查询的唯一命中。
+     * </p>
+     */
+    @Builder.Default
+    private boolean exactMatch = false;
+
+    public boolean isWebSource() {
+        return "WEB".equalsIgnoreCase(sourceType);
+    }
+
     public ChunkType getType() {
         return ChunkType.from(contentType);
     }

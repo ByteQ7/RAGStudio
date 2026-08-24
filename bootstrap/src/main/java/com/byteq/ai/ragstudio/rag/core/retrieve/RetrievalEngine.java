@@ -12,12 +12,15 @@ import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeChunkMapper;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.core.prompt.ContextFormatter;
+import com.byteq.ai.ragstudio.rag.core.retrieve.audit.SearchAudit;
+import com.byteq.ai.ragstudio.rag.core.retrieve.audit.SearchAuditRecorder;
 import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
 import com.byteq.ai.ragstudio.rag.dto.RetrievalContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +44,7 @@ public class RetrievalEngine {
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final MultiChannelRetrievalEngine multiChannelRetrievalEngine;
     private final ImageChunkResolver imageChunkResolver;
+    private final SearchAuditRecorder searchAuditRecorder;
 
     /**
      * 根据知识库 ID 列表执行检索
@@ -73,11 +77,38 @@ public class RetrievalEngine {
      */
     public RetrievalContext retrieveByKnowledgeBases(List<String> knowledgeBaseIds, RewriteResult rewriteResult,
                                                       int topK, String userOriginalQuestion, int citationStartIndex) {
+        return retrieveByKnowledgeBases(knowledgeBaseIds, rewriteResult, topK, userOriginalQuestion,
+                citationStartIndex, null);
+    }
+
+    /**
+     * 根据知识库 ID 列表执行检索（带引用编号起始偏移与跨检索去重）
+     *
+     * @param knowledgeBaseIds     知识库 ID 列表
+     * @param rewriteResult        改写结果，包含改写后的问题和子问题列表
+     * @param topK                 期望返回的结果数量
+     * @param userOriginalQuestion 用户原始提问（未经改写，用于重排序阶段）
+     * @param citationStartIndex   上下文引用编号起始偏移（Agent 多次检索时为已累计的 chunk 数，
+     *                             保证 [^chunk_N] 编号跨检索全局唯一，引用溯源按位置精确映射）
+     * @param excludeChunkIds      需排除的已收集 Chunk ID 集（Agent 多次检索去重，
+     *                             保证上下文编号与引用列表一一对应，可为 null）
+     * @return 检索上下文，包含 KB 检索结果
+     */
+    public RetrievalContext retrieveByKnowledgeBases(List<String> knowledgeBaseIds, RewriteResult rewriteResult,
+                                                      int topK, String userOriginalQuestion, int citationStartIndex,
+                                                      java.util.Set<String> excludeChunkIds) {
         if (CollUtil.isEmpty(knowledgeBaseIds)) {
             return RetrievalContext.builder().chunks(List.of()).build();
         }
 
         List<RetrievedChunk> chunks = doRetrieve(knowledgeBaseIds, rewriteResult, topK, userOriginalQuestion);
+
+        // 跨多次检索去重：剔除已收集过的 Chunk，避免重复编号导致引用错位
+        if (CollUtil.isNotEmpty(excludeChunkIds)) {
+            chunks = chunks.stream()
+                    .filter(c -> c.getId() == null || !excludeChunkIds.contains(c.getId()))
+                    .toList();
+        }
 
         String kbContext = "";
         if (CollUtil.isNotEmpty(chunks)) {
@@ -108,44 +139,47 @@ public class RetrievalEngine {
                                     int topK, String userOriginalQuestion) {
         int finalTopK = topK > 0 ? topK : searchProperties.getDefaultTopK();
 
-        List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
-                Wrappers.lambdaQuery(KnowledgeBaseDO.class)
-                        .in(KnowledgeBaseDO::getId, knowledgeBaseIds)
-        );
-        List<String> collectionNames = kbList.stream()
-                .map(KnowledgeBaseDO::getCollectionName)
-                .filter(Objects::nonNull)
-                .filter(name -> !name.isBlank())
-                .toList();
-
-        // 构建 KB ID → KB 名称映射
+        List<RetrievedChunk> chunks = List.of();
         java.util.Map<String, String> kbNameMap = new java.util.HashMap<>();
-        for (KnowledgeBaseDO kb : kbList) {
-            kbNameMap.put(kb.getId(), kb.getName());
-        }
-
-        if (CollUtil.isEmpty(collectionNames)) {
-            return List.of();
-        }
-
-        List<String> subQuestions = CollUtil.isNotEmpty(rewriteResult.subQuestions())
-                ? rewriteResult.subQuestions()
-                : List.of(rewriteResult.rewrittenQuestion());
-        List<RetrievedChunk> chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(
-                collectionNames, subQuestions, rewriteResult.rewrittenQuestion(), finalTopK, userOriginalQuestion);
-        if (CollUtil.isEmpty(chunks)) {
-            return chunks;
-        }
-
-        // 语义裁剪已通过后置处理器链在 Rerank 前执行（ContextCropper，order=5）
-        // 此处仅做元数据富化（kbName/docName），并行执行以隐藏数据库查询时延。
-        java.util.List<String> chunkIds = chunks.stream()
-                .map(RetrievedChunk::getId)
-                .filter(Objects::nonNull)
-                .toList();
-
-        // 批量查询 Chunk 的 kbId 和 docId，设置所属知识库和文档名称
+        SearchAudit audit = searchAuditRecorder.begin();
         try {
+            List<KnowledgeBaseDO> kbList = knowledgeBaseMapper.selectList(
+                    Wrappers.lambdaQuery(KnowledgeBaseDO.class)
+                            .in(KnowledgeBaseDO::getId, knowledgeBaseIds)
+            );
+            List<String> collectionNames = kbList.stream()
+                    .map(KnowledgeBaseDO::getCollectionName)
+                    .filter(Objects::nonNull)
+                    .filter(name -> !name.isBlank())
+                    .toList();
+
+            // 构建 KB ID → KB 名称映射
+            for (KnowledgeBaseDO kb : kbList) {
+                kbNameMap.put(kb.getId(), kb.getName());
+            }
+
+            if (CollUtil.isEmpty(collectionNames)) {
+                return chunks;
+            }
+
+            List<String> subQuestions = CollUtil.isNotEmpty(rewriteResult.subQuestions())
+                    ? rewriteResult.subQuestions()
+                    : List.of(rewriteResult.rewrittenQuestion());
+            chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(
+                    collectionNames, subQuestions, rewriteResult.rewrittenQuestion(), finalTopK,
+                    userOriginalQuestion, audit);
+            if (CollUtil.isEmpty(chunks)) {
+                return chunks;
+            }
+
+            // 语义裁剪已通过后置处理器链在 Rerank 前执行（ContextCropper，order=5）
+            // 此处仅做元数据富化（kbName/docName），并行执行以隐藏数据库查询时延。
+            java.util.List<String> chunkIds = chunks.stream()
+                    .map(RetrievedChunk::getId)
+                    .filter(Objects::nonNull)
+                    .toList();
+
+            // 批量查询 Chunk 的 kbId 和 docId，设置所属知识库和文档名称
             if (CollUtil.isEmpty(chunkIds)) {
                 return chunks;
             }
@@ -217,10 +251,12 @@ public class RetrievalEngine {
                     chunk.setMetadata(metadata);
                 }
             }
+            return chunks;
         } finally {
-            // 无异步裁剪任务，直接返回
+            if (audit != null) {
+                String query = rewriteResult != null ? rewriteResult.rewrittenQuestion() : null;
+                audit.finish(query, userOriginalQuestion, new ArrayList<>(kbNameMap.values()), finalTopK, chunks);
+            }
         }
-
-        return chunks;
     }
 }

@@ -50,7 +50,8 @@ import {
   updateModel,
   deleteModel,
   updatePriorities,
-  uploadProviderIcon
+  uploadProviderIcon,
+  isOfficialSdkProvider
 } from "@/services/aiModelConfigService";
 import { getErrorMessage } from "@/utils/error";
 
@@ -84,7 +85,7 @@ const emptyModelForm = () => ({
   dimension: undefined as number[] | undefined,
   dimensionText: "",
   customUrl: "",
-  apiProtocol: "__inherit__"
+  apiProtocol: "openai"
 });
 
 // ==================== Component ====================
@@ -168,8 +169,9 @@ export function AiModelConfigPage() {
       toast.error("请输入供应商名称");
       return;
     }
-    if (!providerForm.baseUrl?.trim()) {
-      toast.error("请输入 API 地址");
+    // 官方 SDK 内置默认地址，无需配置；OpenAI / Anthropic 兼容协议必须填写
+    if (!isOfficialSdkProvider(providerForm.name, providerForm.apiProtocol) && !providerForm.baseUrl?.trim()) {
+      toast.error("OpenAI / Anthropic 兼容协议需要填写 API 地址");
       return;
     }
 
@@ -190,7 +192,7 @@ export function AiModelConfigPage() {
     const payload: AiProviderPayload = {
       name: providerForm.name.trim(),
       displayName: providerForm.displayName?.trim() || undefined,
-      baseUrl: providerForm.baseUrl.trim(),
+      baseUrl: providerForm.baseUrl?.trim() || undefined,
       apiKey: providerForm.apiKey?.trim() || undefined,
       endpoints: endpoints || undefined,
       enabled: providerForm.enabled ?? 1,
@@ -273,9 +275,12 @@ export function AiModelConfigPage() {
   // ==================== Model CRUD ====================
 
   const openCreateModel = (preferredProviderId?: string) => {
+    // 新模型默认跟随供应商协议，用户可手动改为其他协议
+    const provider = providers.find((p) => p.id === preferredProviderId);
     setModelForm({
       ...emptyModelForm(),
-      providerId: preferredProviderId || ""
+      providerId: preferredProviderId || "",
+      apiProtocol: provider?.apiProtocol || "openai"
     });
     setModelDialogMode("create");
     setEditingModelId(null);
@@ -283,6 +288,8 @@ export function AiModelConfigPage() {
   };
 
   const openEditModel = (model: AiModel) => {
+    // 旧数据模型协议可能为空，回显时以供应商协议兜底
+    const provider = providers.find((p) => p.id === model.providerId);
     setModelForm({
       providerId: model.providerId,
       modelId: model.modelId,
@@ -295,7 +302,7 @@ export function AiModelConfigPage() {
       dimension: model.dimension ?? undefined,
       dimensionText: dimensionArrayToText(model.dimension ?? undefined),
       customUrl: model.customUrl || "",
-      apiProtocol: model.apiProtocol || "__inherit__"
+      apiProtocol: model.apiProtocol || provider?.apiProtocol || "openai"
     });
     setModelDialogMode("edit");
     setEditingModelId(model.id);
@@ -342,7 +349,7 @@ export function AiModelConfigPage() {
       supportsMultimodal: modelForm.supportsMultimodal ?? 0,
       dimension,
       customUrl: modelForm.customUrl?.trim() ?? "",
-      apiProtocol: modelForm.apiProtocol === "__inherit__" ? undefined : modelForm.apiProtocol?.trim() || undefined
+      apiProtocol: modelForm.apiProtocol?.trim() || "openai"
     };
 
     try {
@@ -550,15 +557,27 @@ export function AiModelConfigPage() {
 
             <div className="space-y-2">
               <Label className="text-sm font-medium text-gray-700">
-                API 地址 <span className="text-red-400">*</span>
+                API 地址
+                {!isOfficialSdkProvider(providerForm.name, providerForm.apiProtocol) && (
+                  <span className="text-red-400"> *</span>
+                )}
               </Label>
               <Input
                 value={providerForm.baseUrl}
                 onChange={(e) =>
                   setProviderForm((prev) => ({ ...prev, baseUrl: e.target.value }))
                 }
-                placeholder="https://api.siliconflow.cn/v1"
+                placeholder={
+                  isOfficialSdkProvider(providerForm.name, providerForm.apiProtocol)
+                    ? "官方 SDK 内置默认地址，可留空"
+                    : "https://api.siliconflow.cn/v1"
+                }
               />
+              {isOfficialSdkProvider(providerForm.name, providerForm.apiProtocol) && (
+                <p className="text-xs text-gray-500">
+                  官方 SDK 内置默认端点（百炼 / 智谱 / 火山），留空即可；如需自定义可填写
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -693,9 +712,15 @@ export function AiModelConfigPage() {
               </Label>
               <Select
                 value={modelForm.providerId}
-                onValueChange={(v) =>
-                  setModelForm((prev) => ({ ...prev, providerId: v }))
-                }
+                onValueChange={(v) => {
+                  const provider = providers.find((p) => p.id === v);
+                  setModelForm((prev) => ({
+                    ...prev,
+                    providerId: v,
+                    // 切换供应商时跟随新供应商的默认协议
+                    apiProtocol: provider?.apiProtocol || prev.apiProtocol
+                  }));
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="选择供应商" />
@@ -814,7 +839,9 @@ export function AiModelConfigPage() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">协议覆盖</Label>
+              <Label className="text-sm font-medium text-gray-700">
+                连接协议 <span className="text-red-400">*</span>
+              </Label>
               <Select
                 value={modelForm.apiProtocol}
                 onValueChange={(v) =>
@@ -822,15 +849,17 @@ export function AiModelConfigPage() {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="继承供应商协议" />
+                  <SelectValue placeholder="选择连接协议" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__inherit__">继承供应商</SelectItem>
                   <SelectItem value="openai">OpenAI 兼容</SelectItem>
                   <SelectItem value="dashscope">官方 SDK</SelectItem>
                   <SelectItem value="anthropic">Anthropic 兼容</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-gray-500">
+                官方 SDK 无需配置地址（内置默认端点，仅百炼 / 智谱 / 火山有专属 SDK，其他供应商将按 OpenAI 兼容调用）；OpenAI / Anthropic 兼容协议依赖供应商的 API 地址与端点。
+              </p>
             </div>
 
             <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-3">

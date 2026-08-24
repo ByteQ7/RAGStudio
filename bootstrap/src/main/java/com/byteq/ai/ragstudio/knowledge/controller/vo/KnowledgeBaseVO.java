@@ -69,4 +69,9 @@ public class KnowledgeBaseVO {
      * 是否支持图像嵌入: 1-是，0-否
      */
     private Integer supportsImageEmbedding;
+
+    /**
+     * 文档解析引擎：AUTO/LOCAL_MINERU/REMOTE_MINERU/MULTIMODAL_LLM
+     */
+    private String parseEngine;
 }

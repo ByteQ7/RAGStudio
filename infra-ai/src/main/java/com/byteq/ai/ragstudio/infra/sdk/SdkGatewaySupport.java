@@ -84,13 +84,21 @@ public final class SdkGatewaySupport {
         ModelClientErrorType type = statusCode != null
                 ? ModelClientErrorType.fromHttpStatus(statusCode)
                 : ModelClientErrorType.PROVIDER_ERROR;
-        return new ModelClientException(provider + " 调用失败: " + e.getMessage(), type, statusCode, e);
+        // 原始响应 body 附带在消息中，避免 "400: null" 这类无诊断价值的错误
+        String body = extractErrorBody(e);
+        String detail = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        String message = provider + " 调用失败: " + detail;
+        if (body != null) {
+            message += " 响应体: " + body;
+        }
+        return new ModelClientException(message, type, statusCode, e);
     }
 
     private static Integer extractHttpStatus(Throwable e) {
         // 逐层向上查找携带状态码的异常（兼容不同 SDK 的异常封装）
         for (Throwable t = e; t != null; t = t.getCause()) {
             try {
+                // httpx 风格：getStatus() 返回 Status 对象（getStatusCode()）
                 var status = t.getClass().getMethod("getStatus").invoke(t);
                 if (status != null) {
                     Object code = status.getClass().getMethod("getStatusCode").invoke(status);
@@ -99,10 +107,71 @@ public final class SdkGatewaySupport {
                     }
                 }
             } catch (Exception ignored) {
+                // 继续尝试其他风格
+            }
+            try {
+                // openai-java 风格一：Kotlin 属性 statusCode 的 getter 为 getStatusCode()（UnexpectedStatusCodeException）
+                Object code = t.getClass().getMethod("getStatusCode").invoke(t);
+                if (code instanceof Number n) {
+                    return n.intValue();
+                }
+            } catch (Exception ignored) {
+                // 继续尝试其他风格
+            }
+            try {
+                // openai-java 风格二：Kotlin 函数 statusCode()（BadRequestException 等仅声明 override fun statusCode()）
+                Object code = t.getClass().getMethod("statusCode").invoke(t);
+                if (code instanceof Number n) {
+                    return n.intValue();
+                }
+            } catch (Exception ignored) {
                 // 继续向上
             }
         }
         return null;
+    }
+
+    /**
+     * 从异常链中提取服务端原始响应体（openai-java 的 body()），用于错误诊断。
+     * 部分厂商（如硅基流动）的错误 body 无法解析为 OpenAI 标准 ErrorObject，
+     * SDK 的 message 只剩 "400: null"，真实原因（"The parameter is invalid"）藏在 body 中。
+     */
+    private static String extractErrorBody(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            try {
+                Object body = t.getClass().getMethod("body").invoke(t);
+                if (body != null && !"JsonMissing".equals(body.getClass().getSimpleName())) {
+                    String text = String.valueOf(body);
+                    if (!text.isBlank() && !"null".equals(text)) {
+                        return text;
+                    }
+                }
+            } catch (Exception ignored) {
+                // 继续向上
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 判断异常是否为「参数类」错误（请求参数不被服务端接受）。
+     * <p>
+     * 用于 OpenAI 兼容 Embedding 的 dimensions 降级判定：部分厂商（如硅基流动
+     * bge 系列）不支持 dimensions 参数，传参后返回 400/422。仅当状态码命中
+     * 参数类错误或错误消息出现 dimension/matryoshka 关键词时才允许降级重试，
+     * 避免掩盖鉴权、网络等其他失败。
+     * </p>
+     */
+    public static boolean isParamError(Throwable e) {
+        Integer status = extractHttpStatus(e);
+        if (status != null && (status == 400 || status == 422)) {
+            return true;
+        }
+        String msg = e != null ? String.valueOf(e.getMessage()) : "";
+        String lower = msg.toLowerCase(Locale.ROOT);
+        // 覆盖无法提取状态码时按错误消息兜底（如硅基流动 "The parameter is invalid. Please check again."）
+        return lower.contains("dimension") || lower.contains("matryoshka")
+                || lower.contains("invalid parameter") || lower.contains("invalid param");
     }
 
     // ==================== 请求构造辅助 ====================

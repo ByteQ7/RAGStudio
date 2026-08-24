@@ -11,9 +11,12 @@ import java.util.List;
  * 大模型调用统一收敛为<b>三种策略</b>，按优先级解析：
  * <pre>
  * ① 官方 SDK 方案（supports 命中厂商名 + 协议）：
- *      protocol=dashscope → DashScopeGateway（dashscope-sdk-java 原生接口）
- *      zhipu+openai      → ZhipuGateway（zai-sdk）
- *      volcengine+openai → VolcEngineGateway（ark-runtime）
+ *      协议=dashscope（「官方 SDK」语义）→ 按供应商别名路由：
+ *      bailian/百炼/dashscope → DashScopeGateway（dashscope-sdk-java 原生接口）
+ *      zhipu/智谱           → ZhipuGateway（zai-sdk）
+ *      volcengine/火山      → VolcEngineGateway（ark-runtime）
+ *      无专属 SDK 的供应商（如 SiliconFlow）→ 回落 ③
+ *      （智谱/火山同样接受 openai 协议声明，兼容历史配置）
  * ② Anthropic 兼容 → AnthropicGateway（anthropic-java，baseUrl 可配 → 承载 DeepSeek 等）
  * ③ OpenAI 兼容（最终兜底）→ OpenAiGateway（openai-java，baseUrl 可配 → 承载 DeepSeek/SiliconFlow 等）
  * </pre>

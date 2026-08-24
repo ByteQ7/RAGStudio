@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.rag.core.retrieve.channel;
 
+import com.byteq.ai.ragstudio.rag.core.retrieve.audit.SearchAudit;
 import lombok.Builder;
 import lombok.Data;
 
@@ -62,6 +63,16 @@ public class SearchContext {
      * </p>
      */
     private float[] preEmbeddedVector;
+
+    /**
+     * 本次检索的审计缓冲（可选，null 表示未启用审计日志）。
+     * <p>
+     * 随 context 显式传递以跨线程安全（通道运行在异步线程），
+     * 由 {@code MultiChannelRetrievalEngine} 注入，通道与后置处理器写入，
+     * 检索完成后由 {@code RetrievalEngine} 统一输出。
+     * </p>
+     */
+    private SearchAudit searchAudit;
 
     /**
      * 获取主问题（优先使用重写后的问题）

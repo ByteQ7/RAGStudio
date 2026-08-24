@@ -120,7 +120,7 @@ rag:
         top-k-multiplier: 3
       hybrid-rrf:
         enabled: true
-        top-k: 5              # 跨知识库 RRF 融合后最终返回数
+        k: 60                 # RRF 平滑常数（仅 per-KB 融合；最终数量由 Rerank + 动态 TopK 控制）
 
   # 记忆管理
   memory:

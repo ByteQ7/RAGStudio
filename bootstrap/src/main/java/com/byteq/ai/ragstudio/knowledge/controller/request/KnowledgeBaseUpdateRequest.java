@@ -33,4 +33,9 @@ public class KnowledgeBaseUpdateRequest {
      * 嵌入模型（有文档分块后禁止修改）
      */
     private String embeddingModel;
+
+    /**
+     * 文档解析引擎：AUTO/LOCAL_MINERU/REMOTE_MINERU/MULTIMODAL_LLM
+     */
+    private String parseEngine;
 }

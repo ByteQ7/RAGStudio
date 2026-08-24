@@ -60,8 +60,10 @@ public class ZhipuGateway implements ProviderGateway {
 
     @Override
     public boolean supports(String providerName, String protocolName) {
+        // 智谱官方 SDK：命中智谱别名，且协议为 openai（OpenAI 兼容声明）或 dashscope（「官方 SDK」语义）。
+        // 协议语义统一：dashscope 表示走供应商专属 SDK，按别名路由到百炼/智谱/火山各自的 SDK 网关
         return SdkGatewaySupport.matchesAlias(providerName, "zhipu", "zhipuai", "智谱", "智谱AI", "bigmodel", "zai")
-                && "openai".equalsIgnoreCase(protocolName);
+                && ("openai".equalsIgnoreCase(protocolName) || "dashscope".equalsIgnoreCase(protocolName));
     }
 
     // ==================== Chat ====================

@@ -3,6 +3,7 @@ package com.byteq.ai.ragstudio.admin.service;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphBuildLogVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphEntityVO;
+import com.byteq.ai.ragstudio.admin.controller.vo.GraphKbStatusVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphOverviewVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphRelationVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphSubgraphVO;
@@ -19,6 +20,11 @@ public interface GraphAdminService {
      * 图谱统计概览
      */
     GraphOverviewVO overview(String kbId);
+
+    /**
+     * 全部知识库的图谱状态列表（Graph RAG 总览页）
+     */
+    List<GraphKbStatusVO> kbsStatus();
 
     /**
      * 实体分页查询（支持关键词与类型过滤）

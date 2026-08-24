@@ -20,6 +20,9 @@ export interface GraphEntity {
   createTime?: string | null;
 }
 
+/** 实体详情（getGraphEntity） */
+export interface GraphEntityDetail extends GraphEntity {}
+
 export interface GraphBuildLog {
   id: string;
   triggerType?: string | null;
@@ -60,6 +63,41 @@ export interface PageResult<T> {
   size: number;
 }
 
+export interface GraphConfig {
+  enabled: boolean;
+  retrievalEnabled: boolean;
+  extractModelId?: string | null;
+  extractModelName?: string | null;
+  followsChatDefault?: boolean;
+  chatModelId?: string | null;
+  chatModelName?: string | null;
+}
+
+export interface GraphKbStatus {
+  kbId: string;
+  kbName: string;
+  entityCount: number;
+  relationCount: number;
+  extractionCount: number;
+  failedCount: number;
+  lastBuildTime?: string | null;
+}
+
+/** 获取 Graph RAG 运行期配置（总开关/检索开关/抽取模型） */
+export async function getGraphConfig(): Promise<GraphConfig> {
+  return api.get("/admin/graph/config");
+}
+
+/** 保存 Graph RAG 运行期配置（extractModelId 传空串表示跟随对话默认模型） */
+export async function saveGraphConfig(vo: Partial<GraphConfig>): Promise<void> {
+  await api.put("/admin/graph/config", vo);
+}
+
+/** 全部知识库的图谱状态列表 */
+export async function getKbGraphStatuses(): Promise<GraphKbStatus[]> {
+  return api.get("/admin/graph/kbs/status");
+}
+
 /** 获取图谱统计概览 */
 export async function getGraphOverview(kbId: string): Promise<GraphOverview> {
   return api.get(`/admin/graph/kb/${kbId}/overview`);
@@ -81,6 +119,11 @@ export async function getGraphEntities(
 /** 合并实体 */
 export async function mergeGraphEntities(kbId: string, keepEntityId: string, mergeEntityIds: string[]): Promise<void> {
   return api.post("/admin/graph/entities/merge", { kbId, keepEntityId, mergeEntityIds });
+}
+
+/** 实体详情 */
+export async function getGraphEntity(entityId: string): Promise<GraphEntityDetail> {
+  return api.get(`/admin/graph/entities/${entityId}`);
 }
 
 /** 子图可视化数据（mermaid 渲染） */

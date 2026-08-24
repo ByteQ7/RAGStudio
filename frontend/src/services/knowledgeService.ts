@@ -9,6 +9,7 @@ export interface KnowledgeBase {
   dimension?: number;
   collectionName: string;
   supportsImageEmbedding?: number;
+  parseEngine?: string;
   createdBy?: string | null;
   documentCount?: number;
   createTime?: string;
@@ -29,9 +30,10 @@ export interface KnowledgeDocument {
   fileType?: string | null;
   fileSize?: number | null;
   processMode?: string | null;
-  chunkStrategy?: string | null;
+chunkStrategy?: string | null;
   chunkConfig?: string | null;
-  pipelineId?: string | number | null;
+  pipelineId?: string | null;
+  parseEngine?: string | null;
   status?: string | null;
   createdBy?: string | null;
   updatedBy?: string | null;
@@ -95,6 +97,7 @@ export interface KnowledgeBaseUpdatePayload {
   name?: string;
   description?: string;
   embeddingModel?: string;
+  parseEngine?: string;
 }
 
 export interface KnowledgeDocumentPageParams {
@@ -114,6 +117,7 @@ export interface KnowledgeDocumentUploadPayload {
   chunkStrategy?: string;
   chunkConfig?: string | null;
   pipelineId?: string | null;
+  parseEngine?: string | null;
 }
 
 export interface KnowledgeChunkPageParams {
@@ -232,6 +236,9 @@ export const uploadDocument = async (
   if (payload.pipelineId) {
     formData.append("pipelineId", payload.pipelineId);
   }
+  if (payload.parseEngine) {
+    formData.append("parseEngine", payload.parseEngine);
+  }
   return api.post<KnowledgeDocument, KnowledgeDocument>(`/knowledge-base/${kbId}/docs/upload`, formData, {
     headers: {
       "Content-Type": "multipart/form-data"
@@ -282,6 +289,7 @@ export const updateDocument = async (docId: string, data: {
   chunkStrategy?: string;
   chunkConfig?: string;
   pipelineId?: string;
+  parseEngine?: string;
   sourceLocation?: string;
   scheduleEnabled?: number;
   scheduleCron?: string;

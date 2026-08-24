@@ -1,3 +1,17 @@
+-- ============================================================================
+-- RAGStudio 全量数据库初始化脚本（Schema + 种子数据，单文件）
+-- ============================================================================
+-- 仅用于「全新部署」：createdb 后执行本文件一次即可完成全部初始化。
+-- ⚠️ 已有数据的数据库禁止执行本文件（CREATE TABLE 无 IF NOT EXISTS 会报错）。
+-- 历史升级脚本（V2/V3 目录）已合并入库，旧库升级所需增量语句见 Git 历史。
+-- 合并来源：V2/schema_pg.sql + V2/init_data_pg.sql + V3/graph_pg.sql
+--          + V3/mineru_parse_engine.sql + V3/model_connection_protocol.sql
+--          + V3/graph_runtime_config.sql
+-- ============================================================================
+
+-- ============================================================================
+-- 第一部分：Schema（V2 基础 + 已并入的 MinerU 表）
+-- ============================================================================
 -- ============================================
 -- PostgreSQL Schema for RAGStudio V2
 -- 根据 Java 实体类精确生成
@@ -171,6 +185,7 @@ CREATE TABLE t_knowledge_base (
     dimension          INTEGER     NOT NULL DEFAULT 1536,
     collection_name    VARCHAR(128) NOT NULL,
     supports_image_embedding SMALLINT NOT NULL DEFAULT 0,
+    parse_engine         VARCHAR(32) NOT NULL DEFAULT 'AUTO',
     created_by         VARCHAR(64)  NOT NULL,
     updated_by         VARCHAR(64),
     create_time        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -207,6 +222,7 @@ CREATE TABLE t_knowledge_document (
     file_type        VARCHAR(32)   NOT NULL,
     file_size        BIGINT,
     process_mode     VARCHAR(32)   DEFAULT 'chunk',
+    parse_engine     VARCHAR(32),
     chunk_strategy   VARCHAR(32),
     chunk_config     JSONB,
     pipeline_id      VARCHAR(64),
@@ -863,3 +879,464 @@ COMMENT ON COLUMN t_alert_config.failure_threshold IS '窗口内熔断次数阈�
 COMMENT ON COLUMN t_alert_config.create_time IS '创建时间';
 COMMENT ON COLUMN t_alert_config.update_time IS '更新时间';
 COMMENT ON COLUMN t_alert_config.deleted IS '是否删除 0：正常 1：删除';
+
+-- ---------------------------------------------------------------------------
+-- MinerU 解析服务端点配置表
+-- ---------------------------------------------------------------------------
+CREATE TABLE t_mineru_config (
+    id              VARCHAR(64)   NOT NULL PRIMARY KEY,
+    local_enabled   BOOLEAN       NOT NULL DEFAULT FALSE,
+    local_base_url  VARCHAR(512),
+    local_backend   VARCHAR(32)   NOT NULL DEFAULT 'pipeline',
+    local_lang      VARCHAR(32)   DEFAULT 'ch',
+    local_extra     VARCHAR(1024),
+    remote_enabled  BOOLEAN       NOT NULL DEFAULT FALSE,
+    remote_base_url VARCHAR(512),
+    remote_api_key  VARCHAR(512),
+    remote_backend  VARCHAR(32)   NOT NULL DEFAULT 'pipeline',
+    remote_lang     VARCHAR(32)   DEFAULT 'ch',
+    remote_extra    VARCHAR(1024),
+    updated_by      VARCHAR(64),
+    update_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+COMMENT ON TABLE  t_mineru_config IS 'MinerU 文档解析服务端点配置（本地/远程）';
+COMMENT ON COLUMN t_mineru_config.id IS '主键（固定单行，如 single）';
+COMMENT ON COLUMN t_mineru_config.local_enabled IS '是否启用本地 MinerU';
+COMMENT ON COLUMN t_mineru_config.local_base_url IS '本地 MinerU base URL';
+COMMENT ON COLUMN t_mineru_config.remote_enabled IS '是否启用远程 MinerU';
+COMMENT ON COLUMN t_mineru_config.remote_base_url IS '远程 MinerU base URL';
+COMMENT ON COLUMN t_mineru_config.remote_api_key IS '远程 MinerU API Key（可选）';
+
+-- ============================================================================
+-- 第二部分：V3 增量（MinerU 解析引擎；列已在 Schema 定义，IF NOT EXISTS 自动跳过）
+-- ============================================================================
+-- ============================================================================
+-- MinerU PDF 智能解析接入 - 增量迁移脚本
+-- 1. t_knowledge_base 增加 parse_engine 列（知识库级解析引擎）
+-- 2. t_knowledge_document 增加 parse_engine 列（文档级解析引擎覆盖）
+-- 3. 新增 t_mineru_config 表（本地/远程 MinerU 服务端点配置）
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. 知识库级解析引擎（默认 AUTO：优先 MinerU，失败回退多模态 LLM）
+-- ---------------------------------------------------------------------------
+ALTER TABLE t_knowledge_base
+    ADD COLUMN IF NOT EXISTS parse_engine VARCHAR(32) NOT NULL DEFAULT 'AUTO';
+
+COMMENT ON COLUMN t_knowledge_base.parse_engine IS '解析引擎：AUTO/LOCAL_MINERU/REMOTE_MINERU/MULTIMODAL_LLM';
+
+-- ---------------------------------------------------------------------------
+-- 2. 文档级解析引擎覆盖（NULL 时沿用知识库级配置）
+-- ---------------------------------------------------------------------------
+ALTER TABLE t_knowledge_document
+    ADD COLUMN IF NOT EXISTS parse_engine VARCHAR(32);
+
+COMMENT ON COLUMN t_knowledge_document.parse_engine IS '文档级解析引擎覆盖（NULL 沿用知识库级）';
+
+-- ---------------------------------------------------------------------------
+-- 3. MinerU 服务端点配置表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS t_mineru_config (
+    id              VARCHAR(64)   PRIMARY KEY,
+    -- 本地 MinerU
+    local_enabled   BOOLEAN       NOT NULL DEFAULT FALSE,
+    local_base_url  VARCHAR(512),
+    local_backend   VARCHAR(32)   NOT NULL DEFAULT 'pipeline',
+    local_lang      VARCHAR(32)   DEFAULT 'ch',
+    local_extra     VARCHAR(1024),
+    -- 远程 MinerU
+    remote_enabled  BOOLEAN       NOT NULL DEFAULT FALSE,
+    remote_base_url VARCHAR(512),
+    remote_api_key  VARCHAR(512),
+    remote_backend  VARCHAR(32)   NOT NULL DEFAULT 'pipeline',
+    remote_lang     VARCHAR(32)   DEFAULT 'ch',
+    remote_extra    VARCHAR(1024),
+    updated_by      VARCHAR(64),
+    update_time     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE  t_mineru_config IS 'MinerU 文档解析服务端点配置（本地/远程）';
+COMMENT ON COLUMN t_mineru_config.id              IS '主键（固定单行，如 single）';
+COMMENT ON COLUMN t_mineru_config.local_enabled   IS '是否启用本地 MinerU';
+COMMENT ON COLUMN t_mineru_config.local_base_url  IS '本地 MinerU base URL，如 http://127.0.0.1:8000';
+COMMENT ON COLUMN t_mineru_config.local_backend   IS '本地引擎：pipeline/vlm/hybrid';
+COMMENT ON COLUMN t_mineru_config.local_lang      IS '语言分组，如 ch/en';
+COMMENT ON COLUMN t_mineru_config.remote_enabled  IS '是否启用远程 MinerU';
+COMMENT ON COLUMN t_mineru_config.remote_base_url IS '远程 MinerU base URL';
+COMMENT ON COLUMN t_mineru_config.remote_api_key  IS '远程 MinerU API Key（可选）';
+COMMENT ON COLUMN t_mineru_config.remote_backend  IS '远程引擎：pipeline/vlm/hybrid';
+COMMENT ON COLUMN t_mineru_config.remote_lang     IS '远程语言分组';
+
+-- 初始化单行记录（默认全部关闭，依赖 yml 默认值兜底）
+INSERT INTO t_mineru_config (id)
+VALUES ('single')
+ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- 第三部分：V3 增量（模型连接协议语义调整，注释覆盖）
+-- ============================================================================
+-- ============================================================
+-- V3 增量：模型连接协议语义调整
+-- 1) 去除「继承供应商」协议选项：模型连接协议三选一
+--    （openai / dashscope / anthropic），模型 api_protocol 必填
+-- 2) 供应商 base_url 仅 OpenAI/Anthropic 兼容协议必填，
+--    官方 SDK（dashscope 及智谱/火山专属 SDK）内置默认地址可留空
+-- ============================================================
+
+COMMENT ON COLUMN t_ai_model.api_protocol IS '连接协议: openai / dashscope / anthropic';
+COMMENT ON COLUMN t_ai_provider.api_protocol IS '连接协议: openai / dashscope / anthropic';
+COMMENT ON COLUMN t_ai_provider.base_url IS 'API 基础地址（官方 SDK 可空，SDK 内置默认地址）';
+-- ============================================================================
+-- 第四部分：V3 增量（Graph RAG 实体-关系图谱）
+-- 设计文档：docs/graph-rag-design.md
+-- ============================================================================
+-- ============================================
+-- Graph RAG Schema for RAGStudio V3
+-- 实体-关系图谱：入库侧 LLM 抽取，检索侧图遍历
+-- 设计文档：docs/graph-rag-design.md
+-- ============================================
+
+-- ============================================
+-- 图谱实体表
+-- 每个知识库独立维护 (kb_id, canonical_name) 唯一，同名实体自然归并为同一节点
+-- ============================================
+CREATE TABLE t_graph_entity (
+    id              VARCHAR(64) NOT NULL PRIMARY KEY,
+    kb_id           VARCHAR(64) NOT NULL,
+    canonical_name  VARCHAR(256) NOT NULL,
+    display_name    VARCHAR(256) NOT NULL,
+    entity_type     VARCHAR(64) NOT NULL DEFAULT 'ENTITY',
+    description     TEXT,
+    aliases         JSONB NOT NULL DEFAULT '[]',
+    extra           JSONB,
+    created_by      VARCHAR(64),
+    update_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    create_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_graph_entity_kb_name UNIQUE (kb_id, canonical_name)
+);
+CREATE INDEX idx_graph_entity_kb ON t_graph_entity (kb_id);
+CREATE INDEX idx_graph_entity_type ON t_graph_entity (kb_id, entity_type);
+COMMENT ON TABLE t_graph_entity IS '知识图谱实体表';
+COMMENT ON COLUMN t_graph_entity.id IS '主键 ID';
+COMMENT ON COLUMN t_graph_entity.kb_id IS '知识库 ID';
+COMMENT ON COLUMN t_graph_entity.canonical_name IS '规范化名称（合并/去重键）';
+COMMENT ON COLUMN t_graph_entity.display_name IS '展示名（首次出现的原文）';
+COMMENT ON COLUMN t_graph_entity.entity_type IS '实体类型：PERSON/ORG/DEPT/ROLE/PRODUCT/PROCESS/SYSTEM/DOC/OTHER';
+COMMENT ON COLUMN t_graph_entity.description IS '实体一句话描述';
+COMMENT ON COLUMN t_graph_entity.aliases IS '别名数组 JSON';
+COMMENT ON COLUMN t_graph_entity.extra IS '扩展属性 JSON';
+
+-- ============================================
+-- 图谱关系表
+-- 关系携带证据 chunk（source_chunk_id），图谱检索结果可回链 chunk 体系
+-- ============================================
+CREATE TABLE t_graph_relation (
+    id               VARCHAR(64) NOT NULL PRIMARY KEY,
+    kb_id            VARCHAR(64) NOT NULL,
+    source_entity_id VARCHAR(64) NOT NULL,
+    target_entity_id VARCHAR(64) NOT NULL,
+    predicate        VARCHAR(128) NOT NULL,
+    direction        SMALLINT NOT NULL DEFAULT 1,
+    weight           FLOAT NOT NULL DEFAULT 1.0,
+    evidence         TEXT,
+    source_chunk_id  VARCHAR(64),
+    doc_id           VARCHAR(64),
+    extra            JSONB,
+    create_time      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_graph_relation UNIQUE (kb_id, source_entity_id, target_entity_id, predicate)
+);
+CREATE INDEX idx_graph_rel_src ON t_graph_relation (source_entity_id);
+CREATE INDEX idx_graph_rel_tgt ON t_graph_relation (target_entity_id);
+CREATE INDEX idx_graph_rel_kb ON t_graph_relation (kb_id);
+CREATE INDEX idx_graph_rel_doc ON t_graph_relation (kb_id, doc_id);
+CREATE INDEX idx_graph_rel_chunk ON t_graph_relation (source_chunk_id);
+COMMENT ON TABLE t_graph_relation IS '知识图谱关系表';
+COMMENT ON COLUMN t_graph_relation.id IS '主键 ID';
+COMMENT ON COLUMN t_graph_relation.kb_id IS '知识库 ID';
+COMMENT ON COLUMN t_graph_relation.source_entity_id IS '源实体 ID';
+COMMENT ON COLUMN t_graph_relation.target_entity_id IS '目标实体 ID';
+COMMENT ON COLUMN t_graph_relation.predicate IS '关系谓词（如 汇报给/负责/属于/审批）';
+COMMENT ON COLUMN t_graph_relation.direction IS '方向 1=有向 source→target 0=无向';
+COMMENT ON COLUMN t_graph_relation.weight IS '聚合权重（重复证据累加）';
+COMMENT ON COLUMN t_graph_relation.evidence IS '证据原文（截断 200 字符）';
+COMMENT ON COLUMN t_graph_relation.source_chunk_id IS '证据 chunk ID（回链 chunk 体系）';
+COMMENT ON COLUMN t_graph_relation.doc_id IS '来源文档 ID（级联清理）';
+
+-- ============================================
+-- 抽取结果缓存表
+-- content_hash 与 t_knowledge_chunk.content_hash 同源：
+-- 内容未变直接复用缓存，重跑/重导零 LLM 成本（幂等）
+-- ============================================
+CREATE TABLE t_graph_extraction (
+    id                 VARCHAR(64) NOT NULL PRIMARY KEY,
+    kb_id              VARCHAR(64) NOT NULL,
+    doc_id             VARCHAR(64) NOT NULL,
+    chunk_id           VARCHAR(64) NOT NULL,
+    chunk_content_hash VARCHAR(64) NOT NULL,
+    entity_json        JSONB,
+    relation_json      JSONB,
+    status             VARCHAR(16) NOT NULL DEFAULT 'DONE',
+    model_id           VARCHAR(128),
+    duration_ms        INTEGER,
+    error_message      TEXT,
+    create_time        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_graph_extraction_chunk UNIQUE (chunk_id)
+);
+CREATE INDEX idx_graph_extraction_doc ON t_graph_extraction (doc_id);
+COMMENT ON TABLE t_graph_extraction IS '图谱抽取结果缓存表';
+COMMENT ON COLUMN t_graph_extraction.chunk_content_hash IS 'chunk 内容哈希（幂等复用键）';
+COMMENT ON COLUMN t_graph_extraction.entity_json IS '抽取实体 JSON [{name,type,description}]';
+COMMENT ON COLUMN t_graph_extraction.relation_json IS '抽取关系 JSON [{source,target,predicate,evidence}]';
+COMMENT ON COLUMN t_graph_extraction.status IS 'DONE/FAILED/SKIPPED';
+COMMENT ON COLUMN t_graph_extraction.model_id IS '生成所用模型（换模型需失效重抽）';
+
+-- ============================================
+-- 构建任务日志表
+-- ============================================
+CREATE TABLE t_graph_build_log (
+    id               VARCHAR(64) NOT NULL PRIMARY KEY,
+    kb_id            VARCHAR(64) NOT NULL,
+    trigger_type     VARCHAR(16) NOT NULL,
+    doc_id           VARCHAR(64),
+    status           VARCHAR(16) NOT NULL,
+    entity_added     INTEGER DEFAULT 0,
+    entity_merged    INTEGER DEFAULT 0,
+    relation_added   INTEGER DEFAULT 0,
+    relation_removed INTEGER DEFAULT 0,
+    llm_calls        INTEGER DEFAULT 0,
+    duration_ms      BIGINT,
+    error_message    TEXT,
+    create_time      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_graph_build_log_kb ON t_graph_build_log (kb_id);
+CREATE INDEX idx_graph_build_log_doc ON t_graph_build_log (doc_id);
+COMMENT ON TABLE t_graph_build_log IS '图谱构建任务日志表';
+COMMENT ON COLUMN t_graph_build_log.trigger_type IS '触发类型 DOC(单文档)/KB(全库重建)/CHUNK(单块)';
+COMMENT ON COLUMN t_graph_build_log.status IS 'RUNNING/SUCCESS/FAILED';
+COMMENT ON COLUMN t_graph_build_log.llm_calls IS 'LLM 调用次数（成本统计）';
+
+-- ============================================
+-- 社区表（可选：全局检索 Phase 2 预留）
+-- ============================================
+CREATE TABLE t_graph_community (
+    id           VARCHAR(64) NOT NULL PRIMARY KEY,
+    kb_id        VARCHAR(64) NOT NULL,
+    community_id VARCHAR(64) NOT NULL,
+    level        INTEGER NOT NULL DEFAULT 1,
+    summary      TEXT,
+    entity_count INTEGER NOT NULL DEFAULT 0,
+    entity_ids   JSONB,
+    build_id     VARCHAR(64),
+    create_time  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_graph_community_kb ON t_graph_community (kb_id, community_id);
+COMMENT ON TABLE t_graph_community IS '知识图谱社区表（全局检索摘要缓存）';
+-- ============================================================================
+-- 第五部分：V3 增量（Graph RAG 运行期配置表，后管「知识图谱」页动态控制）
+-- ============================================================================
+-- ============================================================================
+-- Graph RAG 运行期配置表（后管页面动态控制）
+-- 1. t_graph_config：图谱总开关 / 检索通道开关（单行，总开关仅由本表控制，不读 yaml/.env）
+-- 2. 抽取 LLM 复用 t_default_model_config 的 graph_extract 场景键（无需新表）
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS t_graph_config (
+    id                VARCHAR(64)   PRIMARY KEY,
+    enabled           BOOLEAN       NOT NULL DEFAULT FALSE,
+    retrieval_enabled BOOLEAN       NOT NULL DEFAULT TRUE,
+    updated_by        VARCHAR(64),
+    update_time       TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE  t_graph_config IS 'Graph RAG 运行期配置（后管页面控制，单行）';
+COMMENT ON COLUMN t_graph_config.id                IS '主键（固定单行，如 single）';
+COMMENT ON COLUMN t_graph_config.enabled           IS '图谱总开关：false 时构建与检索全部停用';
+COMMENT ON COLUMN t_graph_config.retrieval_enabled IS '图谱检索通道开关（依赖图谱已构建）';
+COMMENT ON COLUMN t_graph_config.updated_by        IS '最后修改人';
+COMMENT ON COLUMN t_graph_config.update_time       IS '最后修改时间';
+
+-- 初始化单行记录（默认关闭，总开关仅由后管「知识图谱」页控制）
+INSERT INTO t_graph_config (id)
+VALUES ('single')
+ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- 第六部分：种子数据（全新部署初始化，全部 ON CONFLICT 幂等）
+-- ============================================================================
+-- PostgreSQL Initial Data for RAGStudio
+-- ============================================================
+-- 说明：本脚本为「全新部署」种子数据。
+--   - 供应商：17 家（全部默认禁用，api_key 为 NULL，需在管理后台配置密钥后手动启用）
+--   - 模型：46 条（全部默认禁用，与供应商一致：未配置 API Key 前不可用）
+--   - 默认模型配置：7 个场景（chat / summary / title / doc_image / multimodal / tool_selector / rerank，
+--     指向默认模型，管理员启用对应模型后生效）
+--   - 知识库/文档：不预置（Embedding 模型未启用，无法摄入文档）
+--   - 示例问题：3 条
+--   - MCP Server：3 个（全部默认禁用，headers 含认证信息，需配置后手动启用）
+--   - 告警配置：1 条（默认禁用，SMTP 为示例占位值，需配置后手动启用）
+--   - 通用文档摄入流水线：1 条（4 节点）
+-- 安全策略：api_key、MCP headers、SMTP 密码等敏感字段一律为 NULL，部署后需手动配置。
+-- ============================================================
+
+-- ============================================
+-- 默认管理员账号 (UserDO: @TableName="t_user")
+-- ============================================
+
+
+INSERT INTO t_user (id, username, password, avatar, role, deleted, create_time, update_time) VALUES
+('2001523723396308993', 'admin', 'admin', NULL, 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- AI Provider（18 家）
+-- 全部默认禁用（api_key 均为 NULL，需在管理后台配置密钥后手动启用）
+-- ============================================
+
+
+INSERT INTO t_ai_provider (id, name, display_name, base_url, api_key, endpoints, enabled, icon_url, deleted, api_protocol, create_time, update_time) VALUES
+('1821609200841654272', 'zhipu', '智谱 AI', 'https://open.bigmodel.cn', NULL, '{"chat": "/api/paas/v4/chat/completions", "models": "/api/paas/v4/models", "embedding": "/api/paas/v4/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/zhipu.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200845848576', 'baidu', '百度千帆 (ERNIE)', 'https://qianfan.baidubce.com', NULL, '{"chat": "/v2/chat/completions", "models": "/v2/models", "embedding": "/v2/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/baidu.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200850042880', 'minimax', 'MiniMax (海螺AI)', 'https://api.minimaxi.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/minimax.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200854237184', 'moonshot', '月之暗面 (Kimi)', 'https://api.moonshot.cn', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/moonshot.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200862625792', 'openai', 'OpenAI', 'https://api.openai.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/openai.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200866820096', 'sensetime', '商汤 (日日新)', 'https://api.sensetime.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/sensetime.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200871014400', 'stepfun', '阶跃星辰 (StepFun)', 'https://api.stepfun.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/stepfun.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200875208704', 'groq', 'Groq', 'https://api.groq.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/groq.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200879403008', 'volcengine', '火山引擎', 'https://ark.cn-beijing.volces.com/api/v3', NULL, '{"chat": "/chat/completions", "models": "/models", "embedding": "/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/volcengine.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200883597312', 'mistral', 'Mistral AI', 'https://api.mistral.ai', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/mistral.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200887791616', 'openrouter', 'OpenRouter', 'https://openrouter.ai/api', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/openrouter.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200891985920', 'siliconflow', 'SiliconFlow', 'https://api.siliconflow.cn', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/siliconflow.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200896180224', 'bailian', '百炼 (阿里云)', 'https://dashscope.aliyuncs.com', NULL, '{"chat": "/compatible-mode/v1/chat/completions", "models": "/compatible-mode/v1/models", "rerank": "/api/v1/services/rerank/text-rerank/text-rerank", "embedding": "/compatible-mode/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/bailian.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200900374528', 'together', 'Together AI', 'https://api.together.xyz', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/together.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200904568832', 'tencent', '腾讯混元', 'https://api.hunyuan.cloud.tencent.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/tencent.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200908763136', 'zeroone', '零一万物 (Yi)', 'https://api.lingyiwanwu.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/zeroone.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200912957440', 'deepseek', 'DeepSeek', 'https://api.deepseek.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/deepseek.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200917151744', 'anthropic', 'Anthropic (Claude)', 'https://api.anthropic.com', NULL, '{"chat": "/v1/messages", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/anthropic.svg', 0, 'anthropic', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- AI Model（47 条）
+-- 全部默认禁用（供应商均未配置 API Key，启用前不可用）；is_default 统一置 0
+-- ============================================
+
+
+INSERT INTO t_ai_model (id, provider_id, model_id, model_name, capability, is_default, priority, enabled, supports_thinking, supports_multimodal, dimension, custom_url, deleted, api_protocol, create_time, update_time) VALUES
+('1831609201718198272', '1821609200896180224', 'qwen-plus', 'qwen-plus-latest', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392576', '1821609200896180224', 'qwen3-max', 'qwen3-max', 'CHAT', 0, 2, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201726586880', '1821609200912957440', 'deepseek-v4-flash', 'deepseek-v4-flash', 'CHAT', 0, 4, 0, 1, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201730781184', '1821609200896180224', 'qwen-vl-plus', 'qwen-vl-plus-latest', 'CHAT', 0, 5, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079528360321232896', '1821609200896180224', 'qwen3.5-plus', 'qwen3.5-plus', 'CHAT', 0, 100, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201734975488', '1821609200875208704', 'groq-llama', 'llama-3.3-70b-versatile', 'CHAT', 0, 1, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201739169792', '1821609200850042880', 'minimax-text-01', 'MiniMax-Text-01', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201743364096', '1821609200883597312', 'mistral-large', 'mistral-large-latest', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201747558400', '1821609200854237184', 'kimi-k2', 'kimi-k2', 'CHAT', 0, 1, 0, 1, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201751752704', '1821609200854237184', 'moonshot-v1-8k', 'moonshot-v1-8k', 'CHAT', 0, 2, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201760141312', '1821609200862625792', 'gpt-4o', 'gpt-4o', 'CHAT', 0, 1, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201764335616', '1821609200862625792', 'gpt-4o-mini', 'gpt-4o-mini', 'CHAT', 0, 2, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201768529920', '1821609200862625792', 'o3-mini', 'o3-mini', 'CHAT', 0, 3, 0, 1, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201772724224', '1821609200862625792', 'text-embedding-3-small', 'text-embedding-3-small', 'EMBEDDING', 0, 1, 0, 0, 0, '[1536]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201776918528', '1821609200887791616', 'openrouter-auto', 'openrouter/auto', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201781112832', '1821609200866820096', 'sensechat-5', 'sensechat-5', 'CHAT', 0, 1, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201785307136', '1821609200845848576', 'ernie-4.0', 'ernie-4.0', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201789501440', '1821609200871014400', 'step-2', 'step-2-16k', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201793695744', '1821609200904568832', 'hunyuan-standard', 'hunyuan-standard', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201797890048', '1821609200900374528', 'together-mix', 'mistralai/Mixtral-8x22B-Instruct-v0.1', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201802084352', '1821609200908763136', 'yi-lightning', 'yi-lightning', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079528066833199104', '1821609200912957440', 'deepseek-v4-pro', 'deepseek-v4-pro', 'CHAT', 0, 100, 0, 1, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079528360262512640', '1821609200896180224', 'qwen3.5-27b', 'qwen3.5-27b', 'CHAT', 0, 100, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079536785260306432', '1821609200891985920', 'zai-org/GLM-5.2', 'zai-org/GLM-5.2', 'CHAT', 0, 100, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079536785319026688', '1821609200891985920', 'deepseek-ai/DeepSeek-V4-Flash', 'deepseek-ai/DeepSeek-V4-Flash', 'CHAT', 0, 100, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079536402521677824', '1821609200891985920', 'Qwen/Qwen3-Embedding-8B', 'Qwen/Qwen3-Embedding-8B', 'EMBEDDING', 0, 100, 0, 0, 0, '[1024,1536,4096]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079536402827862016', '1821609200891985920', 'Qwen/Qwen3-Embedding-4B', 'Qwen/Qwen3-Embedding-4B', 'EMBEDDING', 0, 100, 0, 0, 0, '[1024,1536,4096]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079536402861416448', '1821609200891985920', 'Qwen/Qwen3-Embedding-0.6B', 'Qwen/Qwen3-Embedding-0.6B', 'EMBEDDING', 0, 100, 0, 0, 0, '[1024,1536,4096]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079528241484017664', '1821609200896180224', 'qwen3.7-text-embedding', 'qwen3.7-text-embedding', 'EMBEDDING', 0, 100, 0, 0, 0, '[1024,1536]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201806278656', '1821609200896180224', 'qwen3-rerank', 'Qwen3-Rerank', 'RERANK', 0, 1, 0, 0, 0, NULL, NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079576579919106048', '1821609200896180224', 'qwen-vl-max', 'qwen-vl-max', 'CHAT', 0, 100, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079576579659059200', '1821609200896180224', 'qwen3-vl-plus', 'qwen3-vl-plus', 'CHAT', 0, 100, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079944277522014208', '1821609200896180224', 'glm-5.2', 'glm-5.2', 'CHAT', 0, 100, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079954231406522368', '1821609200896180224', 'kimi/kimi-k3', 'kimi/kimi-k3', 'CHAT', 0, 100, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079954287371120640', '1821609200896180224', 'qwen3.7-plus', 'qwen3.7-plus', 'CHAT', 0, 100, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079954287400480768', '1821609200896180224', 'ZHIPU/GLM-5', 'ZHIPU/GLM-5', 'CHAT', 0, 100, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079985040964366336', '1821609200891985920', 'Qwen/Qwen3-VL-Embedding-8B', 'Qwen/Qwen3-VL-Embedding-8B', 'EMBEDDING', 0, 100, 0, 0, 1, '[1024,1536,4096]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079985041002115072', '1821609200891985920', 'Pro/BAAI/bge-m3', 'Pro/BAAI/bge-m3', 'EMBEDDING', 0, 100, 0, 0, 0, '[1024]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2080317589754445824', '1821609200891985920', 'BAAI/bge-m3', 'BAAI/bge-m3', 'EMBEDDING', 0, 100, 0, 0, 0, '[1024]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2080329083053383680', '1821609200879403008', 'doubao-embedding-large-text-240915', 'doubao-embedding-large-text-240915', 'EMBEDDING', 0, 100, 0, 0, 0, '[1536]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2080329083158241280', '1821609200879403008', 'doubao-embedding-large-text-250515', 'doubao-embedding-large-text-250515', 'EMBEDDING', 0, 100, 0, 0, 0, '[1536]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2080575030685585408', '1821609200896180224', 'text-embedding-v3', 'Text-Embedding-V3', 'EMBEDDING', 0, 100, 0, 0, 0, '[1024,768,512,256,128,64]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2081933747104677888', '1821609200896180224', 'qwen3-vl-embedding', 'Qwen3-VL-Embedding', 'EMBEDDING', 0, 99, 0, 0, 1, '[2048,1536,1024,768,512,256,128,64]', NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2080340695344721920', '1821609200896180224', 'text-embedding-v4', 'Text-Embedding-V4', 'EMBEDDING', 0, 100, 0, 0, 0, '[2048,1536,1024,768,512,256,128,64]', 'https://llm-nei1m03l1jpqle1c.cn-beijing.maas.aliyuncs.com', 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2083045145763516416', '1821609200891985920', 'Qwen/Qwen3-VL-Reranker-8B', 'Qwen/Qwen3-VL-Reranker-8B', 'RERANK', 0, 2, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2083210690620817408', '1821609200896180224', 'qwen3-vl-rerank', 'Qwen3-VL-Rerank', 'RERANK', 0, 100, 0, 0, 1, NULL, NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392640', '1821609200917151744', 'claude-sonnet-4-5', 'claude-sonnet-4-5', 'CHAT', 0, 1, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392641', '1821609200917151744', 'claude-opus-4-1', 'claude-opus-4-1', 'CHAT', 0, 2, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- 默认模型配置（7 个场景，指向当前库实际使用的模型）
+-- ============================================
+
+
+INSERT INTO t_default_model_config (id, config_key, model_id, create_time, update_time) VALUES
+('1851609203471286272', 'chat', 'deepseek-v4-flash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1851609203475480576', 'summary', 'deepseek-v4-flash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1851609203479674880', 'title', 'deepseek-v4-flash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1851609203483869184', 'doc_image', 'qwen3.5-27b', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1851609203488063488', 'multimodal', 'qwen3-vl-plus', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2080317483776966656', 'tool_selector', 'qwen3-vl-embedding', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1851609203492257792', 'rerank', 'qwen3-vl-rerank', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- 知识库：不预置（Embedding 模型未启用，无法摄入文档，
+-- 由管理员配置供应商 API Key 并启用 Embedding 模型后自行创建）
+-- ============================================
+
+-- ============================================
+-- 示例问题（3 条）
+-- ============================================
+
+
+INSERT INTO t_sample_question (id, title, description, question, deleted, create_time, update_time) VALUES
+('2079548151316643840', '天气查询', '查询用户本地今日天气', '今天天气怎么样？', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079548278735405056', '知识库查询', '查询知识库示例', '公司的薪资福利待遇怎么样？', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079548451087745024', 'SKILL示例', 'SKILL使用示例', '最近有什么值得关注的大事件或新闻吗？', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- 告警配置（1 条，默认关闭：SMTP 为示例占位值，需在管理后台配置后手动启用）
+-- ============================================
+
+
+INSERT INTO t_alert_config (id, enabled, smtp_host, smtp_port, smtp_username, smtp_password, from_address, to_address, time_window_hours, failure_threshold, deleted, create_time, update_time) VALUES
+('default', 0, 'smtp.qq.com', 465, NULL, NULL, 'RAGStudio <example@qq.com>', NULL, 5, 3, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- MCP Server（3 个，默认关闭：headers 含认证信息，需在管理后台补充配置后手动启用。
+--   last_status 置为 disconnected 且不携带失败错误，避免误导为已连接）
+-- ============================================
+
+
+INSERT INTO t_mcp_server (id, name, url, description, enabled, transport_type, headers, last_status, last_error, created_by, updated_by, deleted, create_time, last_check_time, update_time) VALUES
+('2079547856670982144', '千问-图像生成', 'https://dashscope.aliyuncs.com/api/v1/mcps/QwenImage/mcp', '阿里云百炼官方图像生成 MCP 服务，基于千问系列图像生成模型封装，包括文生图、图像编辑工具，按模型调用量计费。', 0, 'streamable_http', NULL, 'disconnected', NULL, 'admin', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079547705776701440', '天气预报', 'https://dashscope.aliyuncs.com/api/v1/mcps/market-cmapi033617/mcp', '天气预报查询是万维易源提供的一个通过输入坐标、IP、地名、区号/邮编、景点名称，查询天气情况（天气状况包括：湿度、天气图标、当前温度、风向、风级、紫外线、穿衣指南、空气指数）等信息。可查询到当前天气、未来24小时、7天、15天、40天内天气预报和过往的历史天气情况，通过 MCP 工具获取所需服务。', 0, 'streamable_http', NULL, 'disconnected', NULL, 'admin', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079547963990638592', '万相-图像生成', 'https://dashscope.aliyuncs.com/api/v1/mcps/WanImage/mcp', '阿里云百炼官方图像生成 MCP 服务，基于万相系列图像生成模型封装，包括文生图、图像编辑、风格迁移等工具，按模型调用量计费。', 0, 'streamable_http', NULL, 'disconnected', NULL, 'admin', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- 通用文档摄入流水线（1 条 + 4 节点）
+-- ============================================
+
+
+INSERT INTO t_ingestion_pipeline (id, name, description, created_by, updated_by, deleted, create_time, update_time) VALUES
+('2079548908929581056', '通用文档通道', '适用于大部分的简单文档，例如MarkDown文档，HTML文档等', 'admin', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;
+
+
+
+INSERT INTO t_ingestion_pipeline_node (id, pipeline_id, node_id, node_type, next_node_id, settings_json, condition_json, created_by, updated_by, deleted, create_time, update_time) VALUES
+('2079548908988301312', '2079548908929581056', 'step_1', 'fetcher', 'step_2', NULL, NULL, 'admin', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079548909017661440', '2079548908929581056', 'step_2', 'parser', 'step_3', '{"rules": [{"mimeType": "text/plain"}, {"mimeType": "text/markdown"}, {"mimeType": "text/html"}]}'::jsonb, NULL, 'admin', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079548909021855744', '2079548908929581056', 'step_3', 'chunker', 'step_4', '{"strategy": "structure_aware", "chunkSize": 512, "overlapSize": 18}'::jsonb, NULL, 'admin', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2079548909026050048', '2079548908929581056', 'step_4', 'indexer', NULL, '{"embeddingModel": "Qwen/Qwen3-Embedding-8B"}'::jsonb, NULL, 'admin', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO NOTHING;

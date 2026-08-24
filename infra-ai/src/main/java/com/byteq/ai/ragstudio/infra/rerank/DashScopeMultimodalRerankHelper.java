@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -75,7 +76,10 @@ public class DashScopeMultimodalRerankHelper {
         }
 
         JsonObject reqBody = new JsonObject();
-        reqBody.addProperty("model", HttpResponseHelper.requireModel(target, PROVIDER));
+        // DashScope 原生接口严格区分大小写，模型名一律小写（如 Qwen3-VL-Rerank → qwen3-vl-rerank），
+        // 与 DashScopeGateway#dashScopeModelName 的归一化策略一致，否则报 "Model not exist"
+        String modelName = HttpResponseHelper.requireModel(target, PROVIDER);
+        reqBody.addProperty("model", modelName.toLowerCase(Locale.ROOT));
 
         JsonObject input = new JsonObject();
         input.addProperty("query", query);

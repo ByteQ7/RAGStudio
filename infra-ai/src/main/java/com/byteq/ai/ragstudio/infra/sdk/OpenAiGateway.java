@@ -186,15 +186,44 @@ public class OpenAiGateway implements ProviderGateway {
         }
         OpenAIClient client = buildClient(target);
         try {
+            Integer dim = target.candidate() != null ? target.candidate().getDimension() : null;
+            boolean withDimensions = dim != null && dim > 0;
             EmbeddingCreateParams.Builder pb = EmbeddingCreateParams.builder()
                     .model(SdkGatewaySupport.requireModelName(target))
                     .inputOfArrayOfStrings(List.copyOf(texts));
-            Integer dim = target.candidate() != null ? target.candidate().getDimension() : null;
-            if (dim != null && dim > 0) {
+            if (withDimensions) {
                 pb.dimensions((long) dim);
             }
-            CreateEmbeddingResponse response = client.embeddings().create(pb.build());
-            return extractEmbeddings(response, texts.size());
+            try {
+                CreateEmbeddingResponse response = client.embeddings().create(pb.build());
+                return extractEmbeddings(response, texts.size());
+            } catch (Exception e) {
+                // 部分 OpenAI 兼容厂商（如硅基流动 bge 系列）不支持 dimensions 参数，
+                // 带 dimensions 请求会返回 400/422；去掉后按模型默认维度重试一次
+                if (!withDimensions || !SdkGatewaySupport.isParamError(e)) {
+                    throw SdkGatewaySupport.translateError(provider(), e);
+                }
+                log.warn("embedding 请求携带 dimensions={} 被拒，去掉 dimensions 重试: {}", dim, e.getMessage());
+                EmbeddingCreateParams retry = EmbeddingCreateParams.builder()
+                        .model(SdkGatewaySupport.requireModelName(target))
+                        .inputOfArrayOfStrings(List.copyOf(texts))
+                        .build();
+                try {
+                    CreateEmbeddingResponse response = client.embeddings().create(retry);
+                    List<List<Float>> vectors = extractEmbeddings(response, texts.size());
+                    // 降级后服务端按模型默认维度返回，可能与配置维度不一致（如配置 1536 但模型仅支持 1024），
+                    // 告警提示，避免向量维度不匹配问题在入库后才暴露
+                    if (dim != null && dim > 0 && !vectors.isEmpty() && !vectors.get(0).isEmpty()
+                            && vectors.get(0).size() != dim) {
+                        log.warn("embedding 降级后实际维度 {} 与配置维度 {} 不一致（model={}），"
+                                        + "请改用支持该维度的模型或调整模型维度配置",
+                                vectors.get(0).size(), dim, SdkGatewaySupport.requireModelName(target));
+                    }
+                    return vectors;
+                } catch (Exception retryError) {
+                    throw SdkGatewaySupport.translateError(provider(), retryError);
+                }
+            }
         } finally {
             client.close();
         }

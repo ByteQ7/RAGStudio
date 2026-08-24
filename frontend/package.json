@@ -11,6 +11,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@antv/g6": "^5.1.1",
     "@fontsource/geist-mono": "^5.3.0",
     "@fontsource/geist-sans": "^5.3.0",
     "@hookform/resolvers": "^5.2.2",
@@ -28,6 +29,7 @@
     "axios": "^1.7.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "d3-force": "^3.0.0",
     "date-fns": "^3.6.0",
     "dompurify": "^3.4.8",
     "geist": "^1.7.2",
@@ -56,6 +58,7 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.13",
+    "@types/d3-force": "^3.0.10",
     "@types/node": "^22.5.5",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",

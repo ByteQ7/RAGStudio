@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -51,6 +52,8 @@ public class RagSearchTool implements Tool {
 
     /** 查询改写阶段拆分的子问题列表：Agent 检索时复用，多问句查询按子问题并行召回 */
     private final List<String> subQuestions;
+    /** 已收集的引用 Chunk ID 集（跨多次检索去重，保证 [^chunk_N] 编号与引用列表一一对应） */
+    private final Set<String> collectedChunkIds = new java.util.HashSet<>();
     /** 检索到的 Chunk 回调（用于引用溯源） */
     private Consumer<List<RetrievedChunk>> chunksConsumer;
 
@@ -226,14 +229,20 @@ public class RagSearchTool implements Tool {
                     ? new RewriteResult(query, subQuestions)
                     : new RewriteResult(query, List.of(query));
             RetrievalContext ctx = retrievalEngine.retrieveByKnowledgeBases(
-                    knowledgeBaseIds, rewriteResult, topK, userOriginalQuestion, citationStartIndex);
+                    knowledgeBaseIds, rewriteResult, topK, userOriginalQuestion, citationStartIndex,
+                    collectedChunkIds);
 
             if (ctx == null || StrUtil.isBlank(ctx.getKbContext())) {
                 return ToolResult.success(TOOL_NAME, "未检索到与 \"" + query + "\" 相关的文档。");
             }
 
-            // 回调 Chunk 收集器（引用溯源用）
+            // 回调 Chunk 收集器（引用溯源用），并记录 ID 供后续检索去重
             if (chunksConsumer != null && CollUtil.isNotEmpty(ctx.getChunks())) {
+                for (RetrievedChunk chunk : ctx.getChunks()) {
+                    if (chunk.getId() != null) {
+                        collectedChunkIds.add(chunk.getId());
+                    }
+                }
                 chunksConsumer.accept(ctx.getChunks());
             }
 

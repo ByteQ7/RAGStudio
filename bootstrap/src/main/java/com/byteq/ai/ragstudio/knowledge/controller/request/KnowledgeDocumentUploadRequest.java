@@ -53,4 +53,10 @@ public class KnowledgeDocumentUploadRequest {
      * 仅在 processMode=pipeline 时有效
      */
     private String pipelineId;
+
+    /**
+     * 文档级解析引擎覆盖（可空）
+     * 空/NULL 时沿用知识库级 parse_engine。
+     */
+    private String parseEngine;
 }

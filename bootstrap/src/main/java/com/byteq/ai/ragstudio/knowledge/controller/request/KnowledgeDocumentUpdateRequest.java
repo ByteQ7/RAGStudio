@@ -48,4 +48,9 @@ public class KnowledgeDocumentUpdateRequest {
      * 定时表达式（cron）
      */
     private String scheduleCron;
+
+    /**
+     * 文档级解析引擎覆盖（可空：null 沿用知识库级，空串清除覆盖）
+     */
+    private String parseEngine;
 }

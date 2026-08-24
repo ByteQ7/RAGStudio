@@ -95,6 +95,12 @@ public class KnowledgeDocumentDO {
     private String processMode;
 
     /**
+     * 文档级解析引擎覆盖：AUTO/LOCAL_MINERU/REMOTE_MINERU/MULTIMODAL_LLM
+     * NULL 时沿用知识库级配置（t_knowledge_base.parse_engine）
+     */
+    private String parseEngine;
+
+    /**
      * 分块策略（仅在 processMode=chunk 时有效）
      */
     private String chunkStrategy;

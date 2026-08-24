@@ -10,6 +10,7 @@ import com.byteq.ai.ragstudio.core.chunk.VectorChunk;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
+import com.byteq.ai.ragstudio.graph.config.GraphConfigService;
 import com.byteq.ai.ragstudio.graph.config.GraphProperties;
 import com.byteq.ai.ragstudio.graph.dao.entity.GraphBuildLogDO;
 import com.byteq.ai.ragstudio.graph.dao.entity.GraphEntityDO;
@@ -25,6 +26,7 @@ import com.byteq.ai.ragstudio.graph.extract.GraphSchemaValidator;
 import com.byteq.ai.ragstudio.graph.prompt.GraphExtractionPromptManager;
 import com.byteq.ai.ragstudio.graph.service.GraphExtractionService;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
+import com.byteq.ai.ragstudio.infra.model.ModelHealthStore;
 import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeChunkDO;
 import com.byteq.ai.ragstudio.knowledge.dao.entity.KnowledgeDocumentDO;
 import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeChunkMapper;
@@ -45,6 +47,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -63,7 +67,9 @@ import java.util.stream.Collectors;
 public class GraphExtractionServiceImpl implements GraphExtractionService {
 
     private final GraphProperties properties;
+    private final GraphConfigService graphConfigService;
     private final LLMService llmService;
+    private final ModelHealthStore healthStore;
     private final DefaultModelConfigService defaultModelConfigService;
     private final GraphEntityMapper entityMapper;
     private final GraphRelationMapper relationMapper;
@@ -82,8 +88,13 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
     private static final String STATUS_FAILED = "FAILED";
     private static final String STATUS_SKIPPED = "SKIPPED";
 
+    /** LLM 连续失败达到该次数即中止剩余 chunk（模型大概率不可用，避免批量撞墙空转） */
+    private static final int ABORT_FAILURE_THRESHOLD = 3;
+
     public GraphExtractionServiceImpl(GraphProperties properties,
+                                      GraphConfigService graphConfigService,
                                       LLMService llmService,
+                                      ModelHealthStore healthStore,
                                       DefaultModelConfigService defaultModelConfigService,
                                       GraphEntityMapper entityMapper,
                                       GraphRelationMapper relationMapper,
@@ -94,7 +105,9 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                                       JdbcTemplate jdbcTemplate,
                                       ObjectMapper objectMapper) {
         this.properties = properties;
+        this.graphConfigService = graphConfigService;
         this.llmService = llmService;
+        this.healthStore = healthStore;
         this.defaultModelConfigService = defaultModelConfigService;
         this.entityMapper = entityMapper;
         this.relationMapper = relationMapper;
@@ -110,12 +123,12 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
 
     @Override
     public boolean isEnabled() {
-        return properties.isEnabled();
+        return graphConfigService.isEnabled();
     }
 
     @Override
     public boolean isKbGraphBuilt(String kbId) {
-        if (!properties.isEnabled() || StrUtil.isBlank(kbId)) {
+        if (!graphConfigService.isEnabled() || StrUtil.isBlank(kbId)) {
             return false;
         }
         // 图相关表未创建（V3 SQL 未执行）时静默视为未构建，保证检索链路不中断
@@ -132,7 +145,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
     @Override
     public GraphExtractionReport extractForDocument(String kbId, String docId, List<VectorChunk> chunks,
                                                     String triggerType) {
-        if (!properties.isEnabled()) {
+        if (!graphConfigService.isEnabled()) {
             return GraphExtractionReport.empty();
         }
         if (StrUtil.isBlank(kbId) || StrUtil.isBlank(docId) || chunks == null || chunks.isEmpty()) {
@@ -210,16 +223,15 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                 ExtractionOutcome outcome = outcomes.get(unit.chunkId());
                 if (outcome == null) {
                     // 非变更但缓存状态异常（如 SKIPPED）：记录 SKIPPED
-                    upsertExtraction(kbId, docId, unit, null, STATUS_SKIPPED, null, null);
+                    upsertExtraction(kbId, docId, unit, null, STATUS_SKIPPED, null, null, null);
                 } else if (outcome.success()) {
                     collectResult(kbId, docId, unit, outcome.result(), canonicalToId, currentCanonicals,
                             counters, false);
                     upsertExtraction(kbId, docId, unit, outcome.result(), STATUS_DONE,
-                            outcome.modelId(), outcome.durationMs());
+                            outcome.modelId(), outcome.durationMs(), null);
                 } else {
                     upsertExtraction(kbId, docId, unit, null, STATUS_FAILED,
-                            outcome.modelId(), outcome.durationMs());
-                    failedChunks++;
+                            outcome.modelId(), outcome.durationMs(), outcome.error());
                 }
             }
         }
@@ -242,7 +254,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
 
     @Override
     public void extractForDocumentAsync(String kbId, String docId, List<VectorChunk> chunks) {
-        if (!properties.isEnabled() || chunks == null || chunks.isEmpty()) {
+        if (!graphConfigService.isEnabled() || chunks == null || chunks.isEmpty()) {
             return;
         }
         graphExecutor.submit(() -> {
@@ -256,7 +268,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
 
     @Override
     public void extractForChunk(String kbId, String docId, String chunkId, String content) {
-        if (!properties.isEnabled()) {
+        if (!graphConfigService.isEnabled()) {
             return;
         }
         // 加载文档全部启用 chunk，仅替换变更 chunk 内容，其余复用缓存（零额外 LLM 成本）
@@ -281,7 +293,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
 
     @Override
     public void deleteDocumentGraph(String kbId, String docId) {
-        if (!properties.isEnabled()) {
+        if (!graphConfigService.isEnabled()) {
             return;
         }
         int removed = deleteRelationsByDoc(kbId, docId);
@@ -293,7 +305,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
 
     @Override
     public void deleteChunkGraph(String kbId, String docId, String chunkId) {
-        if (!properties.isEnabled()) {
+        if (!graphConfigService.isEnabled()) {
             return;
         }
         // 仅删除该 chunk 派生的关系与孤立实体；抽取缓存保留（禁用后可复用，重新启用零 LLM 成本）
@@ -307,8 +319,8 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
 
     @Override
     public String rebuildKnowledgeBase(String kbId) {
-        if (!properties.isEnabled()) {
-            return "图谱总开关未开启（rag.graph.enabled=false），无法重建";
+        if (!graphConfigService.isEnabled()) {
+            return "图谱总开关未开启（后管「知识图谱」页可开启），无法重建";
         }
         graphExecutor.submit(() -> {
             long start = System.currentTimeMillis();
@@ -356,34 +368,51 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
     private Map<String, ExtractionOutcome> extractChangedChunks(String kbId, List<ChunkUnit> units,
                                                                 GraphProperties.Extract config) {
         Map<String, ExtractionOutcome> outcomes = new java.util.concurrent.ConcurrentHashMap<>();
+        // 模型解析一次（避免每个 chunk 重复查库）+ 熔断预检：模型不可用时快速失败，不发起批量任务
+        String modelId = resolveExtractionModelId();
+        if (modelId != null && healthStore.isUnavailable(modelId)) {
+            log.warn("图谱抽取模型熔断中，跳过本次批量抽取: kbId={}, modelId={}", kbId, modelId);
+            for (ChunkUnit unit : units) {
+                outcomes.put(unit.chunkId(), ExtractionOutcome.failed("抽取模型熔断: " + modelId));
+            }
+            return outcomes;
+        }
+        AtomicBoolean aborted = new AtomicBoolean(false);
+        AtomicInteger consecutiveFailures = new AtomicInteger();
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (ChunkUnit unit : units) {
             futures.add(CompletableFuture.runAsync(() -> {
+                if (aborted.get()) {
+                    outcomes.put(unit.chunkId(), ExtractionOutcome.failed("已中止（抽取模型连续失败）"));
+                    return;
+                }
                 try {
-                    outcomes.put(unit.chunkId(), extractChunkWithRetry(kbId, unit, config));
+                    outcomes.put(unit.chunkId(), extractChunkWithRetry(kbId, unit, config, modelId,
+                            aborted, consecutiveFailures));
                 } catch (Exception e) {
                     log.warn("chunk 图谱抽取异常: chunkId={}, error={}", unit.chunkId(), e.getMessage());
                     outcomes.put(unit.chunkId(), ExtractionOutcome.failed(e.getMessage()));
                 }
             }, graphExecutor));
         }
+        // 整体截止（并行等待，非逐个串行）：超时后已完成的 chunk 照常落库，
+        // 未完成的记 SKIPPED，下次构建自动重试（缓存幂等）
+        // 截止放宽到 4 分钟：抽取含一次重试（两次 LLM 调用），冷启动/排队模型耗时可达分钟级
+        long overallDeadline = Math.max(config.getTimeoutMs() * 2L, 240_000L);
         try {
-            // 整体截止（并行等待，非逐个串行）：超时后已完成的 chunk 照常落库，
-            // 未完成的记 SKIPPED，下次构建自动重试（缓存幂等）
-            // 截止放宽到 4 分钟：抽取含一次重试（两次 LLM 调用），冷启动/排队模型耗时可达分钟级
-            long overallDeadline = Math.max(config.getTimeoutMs() * 2L, 240_000L);
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .get(overallDeadline, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
-            log.warn("批量图谱抽取部分超时（已完成的照常落库）: {}", e.getMessage());
+            log.warn("批量图谱抽取部分超时（超过 {}ms，已完成的照常落库）", overallDeadline);
         }
         return outcomes;
     }
 
     /** 单 chunk 抽取，解析失败带修复提示重试一次 */
-    private ExtractionOutcome extractChunkWithRetry(String kbId, ChunkUnit unit, GraphProperties.Extract config) {
+    private ExtractionOutcome extractChunkWithRetry(String kbId, ChunkUnit unit, GraphProperties.Extract config,
+                                                    String modelId, AtomicBoolean aborted,
+                                                    AtomicInteger consecutiveFailures) {
         long start = System.currentTimeMillis();
-        String modelId = resolveExtractionModelId();
         String systemPrompt = GraphExtractionPromptManager.extractionSystemPrompt(config);
         String content = unit.content();
 
@@ -398,8 +427,16 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                     .build();
             raw = llmService.chat(request, modelId);
         } catch (Exception e) {
+            int failures = consecutiveFailures.incrementAndGet();
+            log.warn("图谱抽取 LLM 调用失败: chunkId={}, modelId={}, err={}, 连续失败={}",
+                    unit.chunkId(), modelId, e.getMessage(), failures);
+            if (failures >= ABORT_FAILURE_THRESHOLD) {
+                aborted.set(true);
+                log.warn("图谱抽取模型连续失败 {} 次，中止剩余 chunk（避免批量撞墙空转）", failures);
+            }
             return ExtractionOutcome.failed("LLM 调用失败: " + e.getMessage());
         }
+        consecutiveFailures.set(0);
         GraphExtractionResult result = GraphSchemaValidator.parse(raw, config.getMaxEntitiesPerChunk(),
                 config.getMaxRelationsPerChunk());
         if (result == null) {
@@ -596,7 +633,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
 
     /** upsert 抽取缓存（按 chunk_id 唯一键） */
     private void upsertExtraction(String kbId, String docId, ChunkUnit unit, GraphExtractionResult result,
-                                  String status, String modelId, Integer durationMs) {
+                                  String status, String modelId, Integer durationMs, String errorMessage) {
         GraphExtractionDO existing = extractionMapper.selectOne(Wrappers.<GraphExtractionDO>lambdaQuery()
                 .eq(GraphExtractionDO::getChunkId, unit.chunkId())
                 .last("LIMIT 1"));
@@ -605,6 +642,9 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
         if (result != null) {
             entityJson = result.entities().isEmpty() ? null : toJson(result.entities());
             relationJson = result.relations().isEmpty() ? null : toJson(result.relations());
+        }
+        if (!StringUtils.hasText(errorMessage) && STATUS_FAILED.equals(status)) {
+            errorMessage = "抽取失败";
         }
         if (existing != null) {
             GraphExtractionDO update = new GraphExtractionDO();
@@ -617,7 +657,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
             update.setStatus(status);
             update.setModelId(modelId);
             update.setDurationMs(durationMs);
-            update.setErrorMessage(STATUS_FAILED.equals(status) ? "抽取失败" : null);
+            update.setErrorMessage(errorMessage);
             extractionMapper.updateById(update);
         } else {
             extractionMapper.insert(GraphExtractionDO.builder()
@@ -630,6 +670,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                     .status(status)
                     .modelId(modelId)
                     .durationMs(durationMs)
+                    .errorMessage(errorMessage)
                     .build());
         }
     }

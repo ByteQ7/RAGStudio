@@ -75,7 +75,7 @@
 ┌─────────────────────────── 检索侧（查询） ───────────────────────────┐
 │  RrfHybridChannel（per-KB 并行）                                        │
 │    ├─ 向量检索（已有）      ─┐                                          │
-│    ├─ 关键词检索（已有）     ─┼→ RRF 融合 → 簇感知截断 → 全局 TopK       │
+│    ├─ 关键词检索（已有）     ─┼→ per-KB RRF 融合 → 簇感知截断 → Rerank 统一排序   │
 │    └─ 【新增】GraphSearch    ─┘    （图谱通道返回“命中关系的源 chunk”）    │
 │         ├─ 查询实体识别（LLM 抽取 / trgm 兜底 / 实体向量兜底）            │
 │         ├─ K 跳子图展开（递归 CTE，双向，度数/深度上限）                  │
@@ -96,7 +96,7 @@
 
 ## 4. 数据模型（SQL DDL）
 
-新增 6 张表（追加到 `resources/database/V2/schema_pg.sql`，或用 `resources/database/V3/` 增量文件）。
+新增 6 张表（已并入 `resources/database/schema_all.sql`，全新部署执行该单文件即可；历史升级语句见 Git 历史）。
 
 ### 4.1 实体表 `t_graph_entity`
 
@@ -333,7 +333,7 @@ public class GraphRetrievalChannel implements SearchChannel {
 与向量、关键词的 future 一起 `allOf` 后 RRF 融合。**改动点仅 3~5 行**，融合/截断/超时逻辑全部复用。
 
 `isEnabled(context)` 条件：
-- `rag.graph.retrieval.enabled=true` 且 `rag.graph.enabled=true`；
+- 图谱总开关开启（后管「知识图谱」页配置）且 `rag.graph.retrieval.enabled=true`；
 - 目标 KB 已构建图谱（`t_graph_relation` 有该 kb 数据）；
 - LLM 实体识别可用（熔断/健康检查，见 §11 降级）；
 - 问题为**事实/关系型**（规则预判，§6.3 可选加速）。
@@ -613,7 +613,7 @@ rag:
 
 | 模块 | 新增文件（建议） |
 |------|------------------|
-| SQL | `resources/database/V3/graph_pg.sql`（含 schema + 索引 + 注释） |
+| SQL | `resources/database/schema_all.sql`（Graph RAG 图谱表 + 运行期配置表已并入，含 schema + 索引 + 注释） |
 | 实体/映射 | `bootstrap/.../graph/dao/entity/GraphEntityDO / GraphRelationDO / GraphExtractionDO / GraphCommunityDO / GraphBuildLogDO` + Mapper |
 | 抽取 | `graph/service/GraphExtractionService`、`graph/service/impl/GraphExtractionServiceImpl`、`graph/extract/GraphEntityNormalizer`、`graph/extract/GraphSchemaValidator`、`ingestion/prompt/GraphExtractionPromptManager`、`ingestion/node/GraphExtractorNode` |
 | 检索 | `rag/core/retrieve/channel/GraphRetrievalChannel`、`graph/query/GraphQueryEntityExtractor`、`graph/query/GraphSubgraphExpander`、`graph/query/GraphSubgraphScorer`、`rag/core/prompt/GraphContextFormatter` |

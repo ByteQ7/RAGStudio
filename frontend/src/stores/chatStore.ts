@@ -47,6 +47,8 @@ interface ChatState {
 
 /** 前端模拟流式输出的字符缓冲与定时器 */
 let streamingBuffer = "";
+/** 思考通道（SSE type=think）缓冲：与正文共用同一播放定时器节拍 */
+let thinkingStreamBuffer = "";
 let streamingTimer: number | null = null;
 
 /** 定位当前正在流式输出的消息 */
@@ -63,7 +65,7 @@ function findStreamingMessage(messages: Message[]): { idx: number; msg: Message 
 function startStreamingTimer(get: () => ChatState) {
   if (streamingTimer) return;
   streamingTimer = window.setInterval(() => {
-    if (streamingBuffer.length === 0) {
+    if (streamingBuffer.length === 0 && thinkingStreamBuffer.length === 0) {
       const state = get();
       // 缓冲空 + 后端已完成 → 流式结束
       if (state.streamingMessageId === null && state.isStreaming) {
@@ -77,35 +79,49 @@ function startStreamingTimer(get: () => ChatState) {
     // 一次性消费全部缓冲，避免"服务端已完成、前端还在逐字播"的感知延迟
     const chars = streamingBuffer;
     streamingBuffer = "";
+    const thinkChars = thinkingStreamBuffer;
+    thinkingStreamBuffer = "";
     useChatStore.setState((prev) => {
       const found = findStreamingMessage(prev.messages);
       if (!found) return prev;
       if (found.msg.status === "cancelled" || found.msg.status === "error") return prev;
       const updated = [...prev.messages];
-      updated[found.idx] = { ...found.msg, content: found.msg.content + chars };
+      updated[found.idx] = {
+        ...found.msg,
+        content: chars ? found.msg.content + chars : found.msg.content,
+        thinking: thinkChars ? (found.msg.thinking ?? "") + thinkChars : found.msg.thinking
+      };
       return { messages: updated };
     });
   }, 8);
 }
 
-/** 停止定时器，可选 flush 剩余缓冲 */
+/** 停止定时器，可选 flush 剩余缓冲（正文与思考通道一并处理） */
 function stopStreamingTimer(flushRemaining = true) {
   if (streamingTimer) {
     window.clearInterval(streamingTimer!);
     streamingTimer = null;
   }
-  if (flushRemaining && streamingBuffer.length > 0) {
-    const remaining = streamingBuffer;
-    streamingBuffer = "";
-    useChatStore.setState((prev) => {
-      const found = findStreamingMessage(prev.messages);
-      if (!found) return prev;
-      if (found.msg.status === "cancelled" || found.msg.status === "error") return prev;
-      const updated = [...prev.messages];
-      updated[found.idx] = { ...found.msg, content: found.msg.content + remaining };
-      return { messages: updated };
-    });
-  }
+  if (!flushRemaining) return;
+  const remaining = streamingBuffer;
+  const remainingThinking = thinkingStreamBuffer;
+  streamingBuffer = "";
+  thinkingStreamBuffer = "";
+  if (remaining.length === 0 && remainingThinking.length === 0) return;
+  useChatStore.setState((prev) => {
+    const found = findStreamingMessage(prev.messages);
+    if (!found) return prev;
+    if (found.msg.status === "cancelled" || found.msg.status === "error") return prev;
+    const updated = [...prev.messages];
+    updated[found.idx] = {
+      ...found.msg,
+      content: remaining ? found.msg.content + remaining : found.msg.content,
+      thinking: remainingThinking
+        ? (found.msg.thinking ?? "") + remainingThinking
+        : found.msg.thinking
+    };
+    return { messages: updated };
+  });
 }
 
 function mapVoteToFeedback(vote?: number | null): FeedbackValue {
@@ -272,6 +288,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agentSteps: item.agentSteps ? parseAgentSteps(item.agentSteps) : undefined,
         citations: safeJsonParse(item.citations) as Citation[] | undefined,
         imageUrls: safeJsonParse(item.imageUrls) as string[] | undefined,
+        thinking: item.thinkingContent ?? undefined,
+        thinkingDurationSeconds: item.thinkingDuration ?? undefined,
         thinkingLevel: item.thinkingLevel ?? undefined
       }));
       set({ messages: mapped });
@@ -311,6 +329,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const knowledgeBaseIds = get().knowledgeBaseIds;
     // 清除旧缓冲，防止残留字符泄漏到新消息
     streamingBuffer = "";
+    thinkingStreamBuffer = "";
     if (streamingTimer) {
       window.clearInterval(streamingTimer!);
       streamingTimer = null;
@@ -411,6 +430,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       onMessage: (payload: MessageDeltaPayload) => {
         if (!payload || typeof payload !== "object") return;
+        // 思考通道增量：写入独立 thinking 缓冲（与正文共用播放定时器节拍），
+        // 由 ThinkingPanel 在正文上方折叠展示，不混入回答正文
+        if (payload.type === "think") {
+          if (payload.delta) {
+            thinkingStreamBuffer += payload.delta;
+            startStreamingTimer(get);
+          }
+          return;
+        }
         if (payload.type !== "response") return;
         get().appendStreamContent(payload.delta);
       },
@@ -507,7 +535,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       onDone: () => {
         if (get().streamingMessageId !== assistantId) return;
         // 缓冲已空且无定时器活动时直接结束流式状态
-        if (streamingBuffer.length === 0 && streamingTimer === null) {
+        if (streamingBuffer.length === 0 && thinkingStreamBuffer.length === 0 && streamingTimer === null) {
           set({
             isStreaming: false,
             streamTaskId: null,

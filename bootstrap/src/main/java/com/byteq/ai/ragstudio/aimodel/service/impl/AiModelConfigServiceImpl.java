@@ -32,6 +32,7 @@ import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.http.ModelHttpClient;
 import com.byteq.ai.ragstudio.infra.protocol.ModelProtocol;
 import com.byteq.ai.ragstudio.infra.protocol.ProtocolRegistry;
+import com.byteq.ai.ragstudio.infra.sdk.SdkGatewaySupport;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -78,11 +79,16 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         if (StrUtil.isBlank(request.getName())) {
             throw new ClientException("供应商标识不能为空");
         }
-        if (StrUtil.isBlank(request.getBaseUrl())) {
+        String protocol = StrUtil.isNotBlank(request.getApiProtocol()) ? request.getApiProtocol() : "openai";
+        validateProtocol(protocol);
+        // 官方 SDK（dashscope 及智谱/火山专属 SDK）内置默认地址，baseUrl 可空；
+        // OpenAI / Anthropic 兼容协议必须显式配置 API 基础地址
+        if (!isOfficialSdk(request.getName(), protocol) && StrUtil.isBlank(request.getBaseUrl())) {
             throw new ClientException("API 基础地址不能为空");
         }
         // 管理员录入地址仅做协议/格式校验（内网模型服务为合法场景）
-        String baseUrl = UrlSafetyValidator.validateHttpUrl(request.getBaseUrl(), "API 基础地址");
+        String baseUrl = StrUtil.isNotBlank(request.getBaseUrl())
+                ? UrlSafetyValidator.validateHttpUrl(request.getBaseUrl(), "API 基础地址") : null;
 
         Map<String, String> mergedEndpoints = fillDefaultEndpoints(
                 request.getName(), request.getEndpoints());
@@ -92,7 +98,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 .displayName(request.getDisplayName())
                 .baseUrl(baseUrl)
                 .apiKey(request.getApiKey())
-                .apiProtocol(StrUtil.isNotBlank(request.getApiProtocol()) ? request.getApiProtocol() : "openai")
+                .apiProtocol(protocol)
                 .endpoints(serializeEndpoints(mergedEndpoints))
                 .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                 .build();
@@ -151,6 +157,10 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             existing.setEnabled(request.getEnabled());
         }
         if (StrUtil.isNotBlank(request.getApiProtocol())) {
+            validateProtocol(request.getApiProtocol());
+            if (!isOfficialSdk(existing.getName(), request.getApiProtocol()) && StrUtil.isBlank(existing.getBaseUrl())) {
+                throw new ClientException("切换为 OpenAI/Anthropic 兼容协议前请先配置 API 基础地址");
+            }
             existing.setApiProtocol(request.getApiProtocol());
         }
 
@@ -222,6 +232,10 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         if (StrUtil.isBlank(request.getCapability())) {
             throw new ClientException("能力类型不能为空");
         }
+        if (StrUtil.isBlank(request.getApiProtocol())) {
+            throw new ClientException("连接协议不能为空");
+        }
+        validateProtocol(request.getApiProtocol());
 
         // 校验供应商存在
         AiProviderDO provider = providerMapper.selectById(request.getProviderId());
@@ -310,7 +324,11 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             wrapper.set(AiModelDO::getCustomUrl, request.getCustomUrl().isBlank() ? null : request.getCustomUrl().trim());
         }
         if (request.getApiProtocol() != null) {
-            wrapper.set(AiModelDO::getApiProtocol, request.getApiProtocol().isBlank() ? null : request.getApiProtocol().trim());
+            if (request.getApiProtocol().isBlank()) {
+                throw new ClientException("连接协议不能为空");
+            }
+            validateProtocol(request.getApiProtocol());
+            wrapper.set(AiModelDO::getApiProtocol, request.getApiProtocol().trim());
         }
 
         modelMapper.update(null, wrapper);
@@ -513,6 +531,31 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
 
 
     // 将 endpoints Map 序列化为 JSON 字符串，用于数据库存储
+    /**
+     * 校验连接协议是否为合法值（openai / dashscope / anthropic）
+     */
+    private void validateProtocol(String protocol) {
+        String p = protocol.trim().toLowerCase();
+        if (!"openai".equals(p) && !"dashscope".equals(p) && !"anthropic".equals(p)) {
+            throw new ClientException("连接协议不合法：" + protocol);
+        }
+    }
+
+    /**
+     * 判断供应商是否走官方 SDK（内置默认地址，无需配置 baseUrl）：
+     * dashscope 协议，或 openai 协议下命中智谱 / 火山引擎专属 SDK 别名
+     */
+    private boolean isOfficialSdk(String providerName, String protocol) {
+        if ("dashscope".equalsIgnoreCase(protocol)) {
+            return true;
+        }
+        if (!"openai".equalsIgnoreCase(protocol)) {
+            return false;
+        }
+        return SdkGatewaySupport.matchesAlias(providerName, "zhipu", "zhipuai", "智谱", "智谱AI", "bigmodel", "zai")
+                || SdkGatewaySupport.matchesAlias(providerName, "volcengine", "volcano", "火山引擎", "doubao", "豆包");
+    }
+
     /**
      * 为已知供应商补充默认 endpoint（仅在用户未设置时填充）
      */
@@ -746,10 +789,17 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                             : "openai";
 
             ModelProtocol proto = protocolRegistry.get(protocolName);
-            String url = proto.resolveRerankUrl(baseUrl);
+            // 端点优先取供应商 endpoints 配置（如百炼 rerank 指向原生 /api/v1/services/rerank/...），
+            // 未配置时按协议兜底路径拼接
+            String url = resolveEndpointUrl(baseUrl, endpoints, "rerank", proto.resolveRerankUrlFallback());
 
+            // DashScope 原生接口严格区分大小写，模型名一律小写（与运行时网关归一化一致）
+            String modelName = effectiveModelName(model);
+            if ("dashscope".equalsIgnoreCase(protocolName)) {
+                modelName = modelName.toLowerCase();
+            }
             Map<String, Object> requestBody = proto.buildRerankRequest(
-                    effectiveModelName(model), "test", List.of("test document"));
+                    modelName, "test", List.of("test document"));
             String body = objectMapper.writeValueAsString(requestBody);
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -963,7 +1013,8 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                         .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
                         .dimension(serializeDimension(request.getDimension()))
                         .customUrl(request.getCustomUrl())
-                        .apiProtocol(request.getApiProtocol())
+                        .apiProtocol(StrUtil.isNotBlank(request.getApiProtocol())
+                                ? request.getApiProtocol().trim() : provider.getApiProtocol())
                         .build();
 
                 modelMapper.insert(model);

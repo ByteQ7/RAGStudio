@@ -48,6 +48,7 @@ const formSchema = z.object({
     .min(1, "请输入Collection名称")
     .max(128, "名称不能超过128个字符")
     .regex(/^[a-zA-Z0-9_\-.]+$/, "只能包含英文字母、数字、下划线、短横线和点"),
+  parseEngine: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -77,6 +78,7 @@ export function CreateKnowledgeBaseDialog({
       embeddingModel: "",
       dimension: undefined as unknown as number,
       collectionName: "",
+      parseEngine: "AUTO",
     },
   });
 
@@ -191,6 +193,7 @@ export function CreateKnowledgeBaseDialog({
         embeddingModel: "",
         dimension: undefined as unknown as number,
         collectionName: "",
+        parseEngine: "AUTO",
       });
     }
     onOpenChange(nextOpen);
@@ -373,6 +376,50 @@ export function CreateKnowledgeBaseDialog({
                 </FormItem>
               )}
             />
+
+            {!isMultimodalModel && (
+              <FormField
+                control={form.control}
+                name="parseEngine"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>解析引擎（PDF/复杂文档）</FormLabel>
+                    <FormControl>
+                      <div className="grid gap-2">
+                        {[
+                          { value: "AUTO", label: "自动（推荐）", desc: "优先本地/远程MinerU识别公式、表格，失败自动回退多模态LLM" },
+                          { value: "LOCAL_MINERU", label: "本地 MinerU", desc: "使用本机部署的 MinerU 服务（需在系统设置配置端点）" },
+                          { value: "REMOTE_MINERU", label: "远程 MinerU", desc: "使用远程 MinerU API 服务" },
+                          { value: "MULTIMODAL_LLM", label: "多模态 LLM", desc: "强制使用多模态大模型（doc_image），适合 MinerU 识别不佳的复杂版面" },
+                        ].map((opt) => (
+                          <label
+                            key={opt.value}
+                            className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 transition-colors ${
+                              field.value === opt.value
+                                ? "border-blue-300 bg-blue-50"
+                                : "border-gray-200 hover:border-gray-300"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              className="mt-0.5 accent-blue-600"
+                              checked={field.value === opt.value}
+                              onChange={() => field.onChange(opt.value)}
+                            />
+                            <span className="text-sm">
+                              <span className="font-medium text-gray-800">{opt.label}</span>
+                              <span className="block text-xs text-gray-500">{opt.desc}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </FormControl>
+                    <FormDescription>选择用于解析 PDF/复杂文档的引擎（仅文本型知识库生效）</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <DialogFooter>
               <Button

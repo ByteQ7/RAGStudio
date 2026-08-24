@@ -38,4 +38,10 @@ public class KnowledgeBaseCreateRequest {
      * 向量集合名称
      */
     private String collectionName;
+
+    /**
+     * 文档解析引擎：AUTO/LOCAL_MINERU/REMOTE_MINERU/MULTIMODAL_LLM
+     * 默认 AUTO（优先 MinerU，失败回退多模态 LLM），仅文本型知识库生效
+     */
+    private String parseEngine;
 }

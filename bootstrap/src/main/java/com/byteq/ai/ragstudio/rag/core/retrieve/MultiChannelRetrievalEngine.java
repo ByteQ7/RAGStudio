@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
+import com.byteq.ai.ragstudio.rag.core.retrieve.audit.SearchAudit;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.RrfHybridChannel;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannel;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannelType;
@@ -48,8 +49,8 @@ public class MultiChannelRetrievalEngine {
         for (SearchChannel channel : searchChannels) {
             if (channel instanceof RrfHybridChannel hybrid) {
                 SearchChannelProperties.HybridRrf config = searchProperties.getChannels().getHybridRrf();
-                hybrid.configure(config.getK(), config.getTopK());
-                log.info("RRF 混合通道已配置：k={}, topK={}", config.getK(), config.getTopK());
+                hybrid.configure(config.getK());
+                log.info("RRF 混合通道已配置：k={}", config.getK());
             }
         }
     }
@@ -67,7 +68,26 @@ public class MultiChannelRetrievalEngine {
     @RagTraceNode(name = "multi-channel-retrieval", type = "RETRIEVE_CHANNEL")
     public List<RetrievedChunk> retrieveKnowledgeChannels(List<String> collectionNames, List<String> subQuestions,
                                                            String mainQuestion, int topK, String userOriginalQuestion) {
-        SearchContext context = buildSearchContext(collectionNames, mainQuestion, subQuestions, topK, userOriginalQuestion);
+        return retrieveKnowledgeChannels(collectionNames, subQuestions, mainQuestion, topK, userOriginalQuestion, null);
+    }
+
+    /**
+     * 执行多通道检索（基于知识库 Collection 名称，带审计缓冲）
+     *
+     * @param collectionNames      知识库向量集合名称列表
+     * @param subQuestions         子问题列表
+     * @param mainQuestion         主问题（可能经过改写，用于检索）
+     * @param topK                 期望返回的结果数量
+     * @param userOriginalQuestion 用户原始提问（未经改写，用于重排序）
+     * @param searchAudit          本次检索的审计缓冲（可为 null）
+     * @return 检索到的 Chunk 列表
+     */
+    @RagTraceNode(name = "multi-channel-retrieval", type = "RETRIEVE_CHANNEL")
+    public List<RetrievedChunk> retrieveKnowledgeChannels(List<String> collectionNames, List<String> subQuestions,
+                                                           String mainQuestion, int topK, String userOriginalQuestion,
+                                                           SearchAudit searchAudit) {
+        SearchContext context = buildSearchContext(collectionNames, mainQuestion, subQuestions, topK,
+                userOriginalQuestion, searchAudit);
 
         // 【阶段1：多通道并行检索】
         List<SearchChannelResult> channelResults = executeSearchChannels(context);
@@ -235,6 +255,15 @@ public class MultiChannelRetrievalEngine {
      */
     private SearchContext buildSearchContext(List<String> collectionNames, String mainQuestion,
                                             List<String> subQuestions, int topK, String userOriginalQuestion) {
+        return buildSearchContext(collectionNames, mainQuestion, subQuestions, topK, userOriginalQuestion, null);
+    }
+
+    /**
+     * 构建检索上下文（带审计缓冲）
+     */
+    private SearchContext buildSearchContext(List<String> collectionNames, String mainQuestion,
+                                            List<String> subQuestions, int topK, String userOriginalQuestion,
+                                            SearchAudit searchAudit) {
         return SearchContext.builder()
                 .originalQuestion(mainQuestion)
                 .rewrittenQuestion(mainQuestion)
@@ -242,6 +271,7 @@ public class MultiChannelRetrievalEngine {
                 .subQuestions(subQuestions)
                 .selectedCollectionNames(collectionNames)
                 .topK(topK)
+                .searchAudit(searchAudit)
                 .build();
     }
 }

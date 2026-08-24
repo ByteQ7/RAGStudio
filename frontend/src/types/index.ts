@@ -28,6 +28,9 @@ export interface Session {
   lastTime?: string;
 }
 
+/** 引用来源类型：KB=知识库文档，WEB=网络搜索 */
+export type CitationSourceType = "KB" | "WEB";
+
 export interface Citation {
   id: string;
   chunkId?: string;
@@ -37,12 +40,24 @@ export interface Citation {
   docName?: string;
   contentType?: string;
   imageUrl?: string;
+  /** 引用来源类型，缺省视为 KB（兼容历史数据） */
+  sourceType?: CitationSourceType;
+  /** WEB 来源网站链接 */
+  url?: string;
+  /** WEB 结果标题 */
+  title?: string;
+  /** WEB 来源搜索引擎 */
+  engine?: string;
 }
 
 export interface Message {
   id: string;
   role: Role;
   content: string;
+  /** 思考过程内容（reasoning/thinking 通道累积），独立于正文展示 */
+  thinking?: string;
+  /** 思考耗时（秒），后端持久化值 */
+  thinkingDurationSeconds?: number;
   createdAt?: string;
   feedback?: FeedbackValue;
   status?: MessageStatus;

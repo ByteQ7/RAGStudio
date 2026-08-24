@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceNode;
+import com.byteq.ai.ragstudio.graph.config.GraphConfigService;
 import com.byteq.ai.ragstudio.graph.config.GraphProperties;
 import com.byteq.ai.ragstudio.graph.query.GraphQueryEntityExtractor;
 import com.byteq.ai.ragstudio.graph.query.GraphSubgraphExpander;
@@ -37,6 +38,7 @@ import java.util.Set;
 public class GraphRetrievalChannel implements SearchChannel {
 
     private final GraphProperties properties;
+    private final GraphConfigService graphConfigService;
     private final GraphExtractionService graphExtractionService;
     private final GraphQueryEntityExtractor queryEntityExtractor;
     private final GraphSubgraphExpander subgraphExpander;
@@ -47,12 +49,14 @@ public class GraphRetrievalChannel implements SearchChannel {
     private static final int MAX_EVIDENCE_PER_CHUNK = 10;
 
     public GraphRetrievalChannel(GraphProperties properties,
+                                 GraphConfigService graphConfigService,
                                  GraphExtractionService graphExtractionService,
                                  GraphQueryEntityExtractor queryEntityExtractor,
                                  GraphSubgraphExpander subgraphExpander,
                                  KnowledgeBaseMapper knowledgeBaseMapper,
                                  KnowledgeChunkMapper knowledgeChunkMapper) {
         this.properties = properties;
+        this.graphConfigService = graphConfigService;
         this.graphExtractionService = graphExtractionService;
         this.queryEntityExtractor = queryEntityExtractor;
         this.subgraphExpander = subgraphExpander;
@@ -72,7 +76,7 @@ public class GraphRetrievalChannel implements SearchChannel {
 
     @Override
     public boolean isEnabled(SearchContext context) {
-        if (!properties.isEnabled() || !properties.getRetrieval().isEnabled()) {
+        if (!graphConfigService.isEnabled() || !graphConfigService.isRetrievalEnabled()) {
             return false;
         }
         List<String> collections = context.getSelectedCollectionNames();

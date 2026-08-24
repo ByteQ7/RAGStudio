@@ -113,10 +113,9 @@ rag:
       min-interval-seconds: 60
 
   # Graph RAG（实体关系图谱）：docs/graph-rag-design.md
-  # - 默认关闭：开启后文档入库/变更时增量抽取实体关系（chunk 哈希缓存，未变更零 LLM 成本）
+  # - 总开关在后管「知识图谱」页动态控制（t_graph_config 表，默认关闭），此处不再配置
   # - 检索侧：图谱通道接入 RrfHybridChannel，与向量/关键词 RRF 融合
   graph:
-    enabled: ${RAG_GRAPH_ENABLED:false}
     extract:
       model-key: graph_extract   # t_default_model_config 场景键，缺省回退 chat 默认模型
       max-entities-per-chunk: 30
@@ -175,7 +174,7 @@ rag:
     #   明显无关问题被强制触发知识库检索）
     kb-selection-top-k: 8
     kb-selection-tie-band-ratio: 0.10
-    kb-selection-threshold: 0.32
+    kb-selection-threshold: 0.40
 
     # 语义裁剪（ContextCropper）性能优化（进程内 bge-small-zh-v1.5 模型，单句约 10ms）
     # - enabled：是否启用语义裁剪（.env 中 RAG_CROP_ENABLED，默认关闭；
@@ -198,6 +197,14 @@ rag:
     # 远程 Rerank 全局候选数量上限：多知识库粗召候选先截断再送 Rerank，避免输入量线性膨胀
     max-rerank-candidates: 40
 
+    # RAG 检索审计日志（默认关闭）：记录每次检索的 Chunk 所属文档名、RRF 分数、重排后顺序，
+    # 每次检索输出一行 JSON 到 {log-dir}/YYYYMMDD.log（按日归档）
+    audit-log:
+      enabled: ${RAG_SEARCH_AUDIT_LOG:false}
+      include-chunk-text: true
+      record-rrf-candidates: true
+      log-dir: ${RAG_SEARCH_AUDIT_LOG_DIR:./logs/rag-search}
+
     channels:
       # 向量全局检索（当前已禁用：VectorGlobalSearchChannel.isEnabled() 返回 false）
       vector-global:
@@ -213,11 +220,12 @@ rag:
         enabled: true
         top-k-multiplier: 2
 
-      # 混合检索：向量 + 关键词 → RRF 融合
+      # 混合检索：向量 + 关键词 per-KB RRF 融合（不做跨 KB 全局截断——
+      # 各 KB 的 RRF 分数不可比，按 KB 顺序截断会让靠前 KB 独占名额；
+      # 全部 per-KB 结果进入 Rerank 统一排序，最终数量由动态 TopK 控制）
       hybrid-rrf:
         enabled: true
         k: 60                # RRF 平滑常数
-        top-k: 5             # 融合后最终返回的结果数
 
   trace:
     enabled: ${TRACE_ENABLED:true}

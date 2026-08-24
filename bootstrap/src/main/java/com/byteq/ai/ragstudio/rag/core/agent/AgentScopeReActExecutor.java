@@ -29,6 +29,7 @@ import com.byteq.ai.ragstudio.rag.core.skill.SkillDefinition;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
 import com.byteq.ai.ragstudio.rag.core.skill.SkillTool;
 import com.byteq.ai.ragstudio.rag.core.skill.ToolReaderTool;
+import com.byteq.ai.ragstudio.rag.core.skill.WebSearchTool;
 import com.byteq.ai.ragstudio.rag.core.tool.Tool;
 import com.byteq.ai.ragstudio.rag.core.tool.ToolNameUtil;
 import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
@@ -115,9 +116,32 @@ public class AgentScopeReActExecutor {
 
     private static final Pattern CHUNK_REF_PATTERN = Pattern.compile("\\[\\^chunk_(\\w+)\\]");
 
-    /** Final Answer 分隔标记：兼容 "Final Answer:" / "Final Answer：" / "最终回答：" / "最终答案：" */
+    /**
+     * 推理信号：模型在 Final Answer 标记前输出分析过程的典型特征。
+     * 命中时迭代文本改道 think 通道（推理过程保持可见），等待标记后再放行正文，
+     * 防止"长推理前缀 + 末尾才出现标记"型输出把思维链泄漏进用户可见回答。
+     * 仅收录强信号（协议词/工具调用描述/系统提醒复读），避免误伤含「第一步」「【通知】」的正常回答。
+     */
+    private static final Pattern REASONING_SIGNAL_PATTERN = Pattern.compile(
+            "Observation|Thought\\s*:|Action\\s*Input|调用\\s*`|下一步[：:]|【(强制检索|多轮对话)】");
+
+    /** 否定性回答判定：此类结论不应携带任何引用标记（模型常误将"检索过"当作"引用过"） */
+    private static final Pattern NO_RESULT_ANSWER_PATTERN =
+            Pattern.compile("未检索到|未找到|找不到|没有找到|未能找到|没有相关|无相关|暂无相关");
+
+    /** 否定性回答判定的正文长度上限（去引用标记后），超长回答不做该兜底以免误伤 */
+    private static final int MAX_NO_RESULT_BODY_LEN = 120;
+
+    /** Final Answer 分隔标记：兼容 "Final Answer:" / "Final Answer：" / "Finish Answer:" / "最终回答：" / "最终答案：" */
     private static final Pattern FINAL_ANSWER_MARKER_PATTERN =
-            Pattern.compile("(?i)(?:final answer|最终回答|最终答案)\\s*[:：]\\s*");
+            Pattern.compile("(?i)(?:fin(?:al|ish) answer|最终回答|最终答案)\\s*[:：]\\s*");
+
+    /**
+     * ReACT 协议行（自由文本模式）：Thought / Action / Action Input。
+     * 模型在未检测到回答标记时若只输出协议前缀文本，剥离后避免其泄漏为最终回答。
+     */
+    private static final Pattern REACT_PROTOCOL_LINE_PATTERN =
+            Pattern.compile("(?im)^\\s*(?:thought|action(?:\\s+input)?)\\s*[:：].*$");
 
     /**
      * 最终回答增量直透阈值（字符）：
@@ -126,6 +150,16 @@ public class AgentScopeReActExecutor {
      * 64 字符内误判为最终回答的概率极低，可换取长回答"生成即显示"的感知收益。
      */
     private static final int INCREMENTAL_CONTENT_THRESHOLD = 64;
+
+    /** 普通长回答提交长度：缓冲超过该长度仍无标记与推理信号时，判定为回答流，恢复 content 增量透出 */
+    private static final int PLAIN_ANSWER_COMMIT_LEN = INCREMENTAL_CONTENT_THRESHOLD * 4;
+
+    /**
+     * FINISH 步骤卡片 thought 截断长度：finishStep.thought 携带全量 thinkingBuffer
+     * 会在步骤面板重复展示整条思维链（完整版已持久化到消息 thinkingContent，
+     * 由前端独立思考面板展示），超长部分截断。
+     */
+    private static final int MAX_STEP_THOUGHT_LEN = 2000;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
@@ -316,8 +350,12 @@ public class AgentScopeReActExecutor {
                          AtomicBoolean maxItersExceeded) {
         try {
             if (event instanceof ModelCallStartEvent) {
+                // 冲洗上一模型调用在剥离器中的悬挂缓冲（归属上一迭代的通道），并复位状态：
+                // 未闭合的 <think> 不得跨调用污染下一次迭代的正文路由
+                flushThinkTagFilter(state, callback);
                 state.modelCallCount.incrementAndGet();
                 state.iterationText.setLength(0);
+                state.iterationThinkSentLen = 0;
                 state.iterationHadToolCall.set(false);
                 state.incrementalContent.set(false);
                 // 每次模型调用单独建节点：Agent 循环内部的 LLM 耗时不再不可见
@@ -325,6 +363,8 @@ public class AgentScopeReActExecutor {
                         startTraceNode(state, "LLM_CALL", "Agent模型调用#" + state.modelCallCount.get()));
             } else if (event instanceof ModelCallEndEvent) {
                 finishTraceNode(state, state.modelCallNodeIds.remove(state.modelCallCount.get()));
+                // 先冲洗剥离器悬挂的标签前缀尾字，归属当前迭代后再做收尾判定
+                flushThinkTagFilter(state, callback);
                 // 纯文本迭代（无工具调用）→ 该文本即为最终回答，透出到 content 通道
                 if (!state.iterationHadToolCall.get() && state.iterationText.length() > 0) {
                     flushIterationText(state, callback);
@@ -337,37 +377,27 @@ public class AgentScopeReActExecutor {
                 }
             } else if (event instanceof TextBlockDeltaEvent text) {
                 // 缓冲当前迭代文本；若随后出现工具调用则转为 think 透出，
-                // 避免"调用工具前的思考文本"污染最终回答内容
+                // 避免"调用工具前的思考文本"污染最终回答内容。
+                // 先经 think 标签剥离器：content 中内联的 <think> 区间改道 think 通道
+                // （部分模型不经 reasoning_content 而以内联标签下发思维链；跨增量标签切分安全）
                 String delta = text.getDelta();
                 if (StrUtil.isNotBlank(delta)) {
-                    if (state.incrementalContent.get()) {
-                        // 已确认最终回答流：增量直透，保持流式输出
-                        state.answerBuffer.append(delta);
-                        callback.onContent(delta);
-                    } else {
-                        state.iterationText.append(delta);
-                        // 长文本且未出现工具调用 → 判定为最终回答流，提前增量透出，
-                        // 避免整段回答生成期间用户零反馈（生成完毕才一次性显示）
-                        if (!state.iterationHadToolCall.get()
-                                && state.iterationText.length() >= INCREMENTAL_CONTENT_THRESHOLD) {
-                            // 剥离 Final Answer 标记后再透出，避免标记泄漏到用户可见回答
-                            String flushed = extractFinalAnswerText(state.iterationText.toString());
-                            state.iterationText.setLength(0);
-                            if (StrUtil.isNotBlank(flushed)) {
-                                state.answerBuffer.append(flushed);
-                                state.incrementalContent.set(true);
-                                callback.onContent(flushed);
-                            }
-                            // 剥离后为空（仅到达 "Final Answer:" 前缀）：继续缓冲等待正文，不进入增量模式
-                        }
-                    }
+                    state.thinkTagFilter.feed(delta,
+                            content -> handleIterationContent(state, callback, content),
+                            think -> {
+                                state.thinkingBuffer.append(think);
+                                callback.onThinking(think);
+                            });
                 }
             } else if (event instanceof ToolCallStartEvent toolStart) {
-                // 工具调用前的文本 → think 通道（推理摘要）
-                if (state.iterationText.length() > 0) {
-                    callback.onThinking(state.iterationText.toString());
-                    state.iterationText.setLength(0);
+                // 先冲洗剥离器悬挂的尾字，使其并入迭代文本后一并改道 think（归属一致）
+                flushThinkTagFilter(state, callback);
+                // 工具调用前的文本 → think 通道（推理摘要）；仅透出未改道部分，避免重复
+                if (state.iterationText.length() > state.iterationThinkSentLen) {
+                    callback.onThinking(state.iterationText.substring(state.iterationThinkSentLen));
                 }
+                state.iterationText.setLength(0);
+                state.iterationThinkSentLen = 0;
                 state.iterationHadToolCall.set(true);
                 state.pendingToolCalls.put(toolStart.getToolCallId(),
                         new PendingToolCall(toolStart.getToolCallName(), new StringBuilder()));
@@ -449,7 +479,9 @@ public class AgentScopeReActExecutor {
             log.info("AgentScope 执行完成但任务已取消，任务ID：{}", state.taskId);
             return;
         }
-        // 安全收尾：未触发的迭代文本（正常流程已在 MODEL_CALL_END 透出）
+        // 安全收尾：先冲洗剥离器悬挂缓冲，再透出未触发的迭代文本
+        // （正常流程已在 MODEL_CALL_END 透出）
+        flushThinkTagFilter(state, callback);
         if (state.iterationText.length() > 0) {
             flushIterationText(state, callback);
         }
@@ -465,16 +497,128 @@ public class AgentScopeReActExecutor {
         finishStream(state, callback);
     }
 
-    /** 透出迭代文本到 content 通道并累计到回答缓冲（若含 Final Answer 标记则只透出标记后的最终回答） */
+    /**
+     * 冲洗 think 标签剥离器的悬挂缓冲（跨增量切分扣住的标签前缀尾字、未闭合区间），
+     * 内容按当前区间归属路由后复位状态。
+     * 在模型调用边界与流收尾时调用，防止尾字丢失或 think 状态跨迭代污染。
+     */
+    private void flushThinkTagFilter(RunState state, StreamCallback callback) {
+        if (!state.thinkTagFilter.hasPending()) {
+            return;
+        }
+        state.thinkTagFilter.flush(
+                content -> handleIterationContent(state, callback, content),
+                think -> {
+                    state.thinkingBuffer.append(think);
+                    callback.onThinking(think);
+                });
+        state.thinkTagFilter.reset();
+    }
+
+    /**
+     * 处理剥离 think 标签后的正文增量：
+     * 已确认最终回答流 → 增量直透；否则缓冲迭代文本，达到阈值时按"标记/推理信号/普通长回答"分流
+     */
+    private void handleIterationContent(RunState state, StreamCallback callback, String delta) {
+        if (StrUtil.isEmpty(delta)) {
+            return;
+        }
+        if (state.incrementalContent.get()) {
+            // 已确认最终回答流：增量直透，保持流式输出
+            state.answerBuffer.append(delta);
+            callback.onContent(delta);
+        } else {
+            state.iterationText.append(delta);
+            // 达到增量阈值：按"标记 / 推理信号 / 普通长回答"分流，
+            // 防止推理前缀在标记出现前被误判为回答透出（思维链泄漏）
+            if (!state.iterationHadToolCall.get()
+                    && state.iterationText.length() >= INCREMENTAL_CONTENT_THRESHOLD) {
+                routeIterationText(state, callback);
+            }
+        }
+    }
+
+    /**
+     * 迭代收尾透出：有标记只放行标记后的正文；
+     * 无标记但已改道 think 且命中推理信号时判定为未收敛的推理文本，不进正文（防思维链泄漏）；
+     * 其余视为普通无标记回答原样透出。
+     */
     private void flushIterationText(RunState state, StreamCallback callback) {
         if (state.iterationText.length() == 0) {
             return;
         }
-        String text = extractFinalAnswerText(state.iterationText.toString());
+        String buffered = state.iterationText.toString();
+        int thinkSentLen = state.iterationThinkSentLen;
         state.iterationText.setLength(0);
-        if (StrUtil.isNotBlank(text)) {
-            state.answerBuffer.append(text);
-            callback.onContent(text);
+        state.iterationThinkSentLen = 0;
+
+        // 已出现最终回答标记：只透出标记后的正文
+        if (FINAL_ANSWER_MARKER_PATTERN.matcher(buffered).find()) {
+            String tail = extractFinalAnswerText(buffered);
+            if (StrUtil.isNotBlank(tail)) {
+                state.answerBuffer.append(tail);
+                callback.onContent(tail);
+            }
+            return;
+        }
+
+        // 无标记但命中推理信号且此前已改道 think：推理文本不进正文
+        if (thinkSentLen > 0 && REASONING_SIGNAL_PATTERN.matcher(buffered).find()) {
+            log.info("迭代文本命中推理信号且未出现最终回答标记，抑制透出防止思维链泄漏");
+            return;
+        }
+
+        if (StrUtil.isNotBlank(buffered)) {
+            state.answerBuffer.append(buffered);
+            callback.onContent(buffered);
+        }
+    }
+
+    /**
+     * 迭代文本达到增量阈值时的分流处理：
+     * <ul>
+     *   <li>已出现 Final Answer 标记 → 只透出标记后的正文到 content 通道并进入增量直透；</li>
+     *   <li>命中推理信号 → 新增部分改道 think 通道（过程保持可见），继续缓冲等待标记；</li>
+     *   <li>超过普通回答提交长度仍无任何信号 → 判定为普通长回答，整体透出并进入增量直通。</li>
+     * </ul>
+     */
+    private void routeIterationText(RunState state, StreamCallback callback) {
+        String buffered = state.iterationText.toString();
+
+        // 1. 已出现最终回答标记：只放行标记后的正文
+        if (FINAL_ANSWER_MARKER_PATTERN.matcher(buffered).find()) {
+            commitFinalAnswerTail(state, callback, buffered);
+            return;
+        }
+
+        // 2. 推理信号：新增部分改道 think 通道，继续缓冲等待标记
+        if (REASONING_SIGNAL_PATTERN.matcher(buffered).find()) {
+            if (buffered.length() > state.iterationThinkSentLen) {
+                callback.onThinking(buffered.substring(state.iterationThinkSentLen));
+                state.iterationThinkSentLen = buffered.length();
+            }
+            return;
+        }
+
+        // 3. 无信号且达到普通回答提交长度：视为普通长回答，整体进入增量直透
+        if (buffered.length() >= PLAIN_ANSWER_COMMIT_LEN) {
+            state.iterationText.setLength(0);
+            state.iterationThinkSentLen = 0;
+            state.answerBuffer.append(buffered);
+            state.incrementalContent.set(true);
+            callback.onContent(buffered);
+        }
+    }
+
+    /** 提取标记后的最终回答正文透出 content；标记后暂无正文时清空缓冲继续等待 */
+    private void commitFinalAnswerTail(RunState state, StreamCallback callback, String buffered) {
+        String tail = extractFinalAnswerText(buffered);
+        state.iterationText.setLength(0);
+        state.iterationThinkSentLen = 0;
+        if (StrUtil.isNotBlank(tail)) {
+            state.answerBuffer.append(tail);
+            state.incrementalContent.set(true);
+            callback.onContent(tail);
         }
     }
 
@@ -489,25 +633,36 @@ public class AgentScopeReActExecutor {
         if (StrUtil.isBlank(raw)) {
             return raw;
         }
+        // 兜底剥除内联 think 标签（正常路径已在流式增量中剥离，此处覆盖同步提取路径）
+        raw = ThinkTagStreamFilter.strip(raw);
         Matcher m = FINAL_ANSWER_MARKER_PATTERN.matcher(raw);
         int split = -1;
         while (m.find()) {
             split = m.end();
         }
-        if (split < 0) {
-            return raw;
+        if (split >= 0) {
+            // 标记后无正文（仅到达前缀）返回空：增量路径继续缓冲等待正文，不提前透出标记
+            return raw.substring(split).trim();
         }
-        String tail = raw.substring(split).trim();
-        return StrUtil.isBlank(tail) ? raw : tail;
+        // 未检测到回答标记：剥离 ReACT 协议前缀（Thought:/Action:/Action Input: 行），
+        // 避免"检索不到时模型只输出协议文本"被当作最终回答显示
+        int lastProtocolLineEnd = -1;
+        Matcher pm = REACT_PROTOCOL_LINE_PATTERN.matcher(raw);
+        while (pm.find()) {
+            lastProtocolLineEnd = pm.end();
+        }
+        if (lastProtocolLineEnd >= 0) {
+            return raw.substring(lastProtocolLineEnd).trim();
+        }
+        return raw;
     }
 
-    private void finishStream(RunState state, StreamCallback callback) {
-        String finalAnswer = extractFinalAnswer(state);
+    private void finishStream(RunState state, StreamCallback callback) {        String finalAnswer = extractFinalAnswer(state);
         if (StrUtil.isBlank(finalAnswer)) {
             finalAnswer = "（无回答内容）";
         }
         AgentStep finishStep = AgentStep.finish(state.modelCallCount.get() - 1,
-                drain(state.thinkingBuffer), finalAnswer);
+                truncateThought(drain(state.thinkingBuffer)), finalAnswer);
         state.steps.add(finishStep);
         pushStep(finishStep, callback);
         pushStepsComplete(state, callback);
@@ -520,6 +675,15 @@ public class AgentScopeReActExecutor {
             callback.setRetrievedImageUrls(new ArrayList<>(state.s3ImageUrls));
         }
         callback.onComplete();
+    }
+
+    /** 步骤卡片 thought 超长截断：完整思维链已持久化到消息 thinkingContent，面板不重复展示 */
+    private static String truncateThought(String thought) {
+        if (thought == null || thought.length() <= MAX_STEP_THOUGHT_LEN) {
+            return thought;
+        }
+        return thought.substring(0, MAX_STEP_THOUGHT_LEN)
+                + "\n…（思考内容过长已截断，完整内容见回答下方的思考过程面板）";
     }
 
     private String extractFinalAnswer(RunState state) {
@@ -568,6 +732,17 @@ public class AgentScopeReActExecutor {
                         referencedIds.add(id);
                     }
                 }
+            }
+
+            // 否定性回答兜底：「未检索到/未找到」类结论不生成引用。
+            // 模型常误将"检索过"当作"引用过"，在否定性结论后挂上全部检索片段的标记，
+            // 导致引用列表出现与答案无关的内容
+            String answerBody = StrUtil.isNotBlank(finalAnswer)
+                    ? CHUNK_REF_PATTERN.matcher(finalAnswer).replaceAll("") : "";
+            if (answerBody.length() <= MAX_NO_RESULT_BODY_LEN
+                    && NO_RESULT_ANSWER_PATTERN.matcher(answerBody).find()) {
+                log.info("否定性回答不生成引用: {}", StrUtil.subPre(answerBody, 50));
+                return;
             }
 
             List<Map<String, Object>> citations = new ArrayList<>();
@@ -632,6 +807,7 @@ public class AgentScopeReActExecutor {
     }
 
     private Map<String, Object> toCitationEntry(String id, RetrievedChunk c) {
+        boolean web = c.isWebSource();
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("id", id);
         entry.put("chunkId", c.getId() != null ? c.getId() : "");
@@ -642,6 +818,11 @@ public class AgentScopeReActExecutor {
         entry.put("contentType", c.getContentType() != null ? c.getContentType() : "TEXT");
         entry.put("imageUrl", c.getMetadata() != null
                 && c.getMetadata().get("image_url") instanceof String imgUrl ? imgUrl : "");
+        // 引用来源类型：KB=知识库文档，WEB=网络搜索来源（带链接）
+        entry.put("sourceType", web ? "WEB" : "KB");
+        entry.put("url", web && c.getUrl() != null ? c.getUrl() : "");
+        entry.put("title", web && c.getTitle() != null ? c.getTitle() : "");
+        entry.put("engine", web && c.getEngine() != null ? c.getEngine() : "");
         return entry;
     }
 
@@ -681,14 +862,26 @@ public class AgentScopeReActExecutor {
                 continue;
             }
             executableSkills++;
-            register(toolkit, toolNames, new SkillTool(def, syncHttpClient, sandboxExecutor,
-                    sandboxEnabled, allowedCommandPrefixes), state);
+            SkillTool skillTool = new SkillTool(def, syncHttpClient, sandboxExecutor,
+                    sandboxEnabled, allowedCommandPrefixes);
+            // 网络搜索技能包装为引用溯源工具：结果与知识库 Chunk 共用 [^chunk_N] 编号进入 citations
+            Tool tool = isWebSearchSkill(def)
+                    ? new WebSearchTool(skillTool,
+                            chunks -> state.retrievedChunks.addAll(chunks),
+                            () -> state.retrievedChunks.size())
+                    : skillTool;
+            register(toolkit, toolNames, tool, state);
         }
 
         state.toolNames.addAll(toolNames);
         log.info("AgentScope 工具注册: MCP={}, SKILL={}(可执行 {})，内置={}, 总计={}",
                 mcpToolRegistry.size(), skills.size(), executableSkills, 3, toolNames.size());
         return toolkit;
+    }
+
+    /** 是否为网络搜索类 SKILL（结果接入 WEB 引用溯源） */
+    private boolean isWebSearchSkill(SkillDefinition def) {
+        return "web-search".equalsIgnoreCase(def.getName());
     }
 
     private void register(Toolkit toolkit, List<String> toolNames, Tool tool, RunState state) {
@@ -1092,6 +1285,8 @@ public class AgentScopeReActExecutor {
         final StringBuilder thinkingBuffer = new StringBuilder();
         final StringBuilder answerBuffer = new StringBuilder();
         final StringBuilder iterationText = new StringBuilder();
+        /** 当前迭代已改道 think 通道的文本长度（防止重复透出） */
+        int iterationThinkSentLen = 0;
         final AtomicBoolean iterationHadToolCall = new AtomicBoolean(false);
         /** 当前迭代已确认进入最终回答流（文本增量直透，避免整段等 ModelCallEnd） */
         final AtomicBoolean incrementalContent = new AtomicBoolean(false);
@@ -1101,6 +1296,8 @@ public class AgentScopeReActExecutor {
         final Map<String, AgentStep> stepByToolCall = new java.util.concurrent.ConcurrentHashMap<>();
         final Map<String, StringBuilder> toolResultBuffers = new java.util.concurrent.ConcurrentHashMap<>();
         final Map<String, Long> toolCallStartTimes = new java.util.concurrent.ConcurrentHashMap<>();
+        /** think 标签流式剥离器：content 内联 <think> 区间改道 think 通道（每次运行独立状态） */
+        final ThinkTagStreamFilter thinkTagFilter = new ThinkTagStreamFilter();
         volatile Msg finalMsg;
 
         RunState(String taskId, AgentContext ctx) {

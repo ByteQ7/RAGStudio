@@ -20,7 +20,8 @@ import {
   Users,
   Workflow,
   Zap,
-  BrainCircuit
+  BrainCircuit,
+  Network
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
@@ -53,6 +54,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: "/admin/dashboard", label: "仪表盘", icon: LayoutDashboard },
   { path: "/admin/knowledge", label: "知识库", icon: Database },
+  { path: "/admin/graph", label: "知识图谱", icon: Network },
   { path: "/admin/ingestion", label: "数据通道", icon: Upload },
   { path: "/admin/traces", label: "链路追踪", icon: Workflow },
   { path: "/admin/mappings", label: "关键词映射", icon: KeyRound },
@@ -121,7 +123,7 @@ export function AdminLayout() {
     const items: { label: string; to?: string }[] = [{ label: "首页", to: "/admin/dashboard" }];
     if (segments[0] !== "admin") return items;
     const labels: Record<string, string> = {
-      dashboard: "仪表盘", knowledge: "知识库", ingestion: "数据通道",
+      dashboard: "仪表盘", knowledge: "知识库", graph: "知识图谱", ingestion: "数据通道",
       traces: "链路追踪", mappings: "关键词映射", users: "用户管理",
       "sample-questions": "示例问题", "mcp-servers": "MCP 服务",
       "ai-models": "模型管理", defaults: "默认模型", skills: "SKILL管理", settings: "系统设置",

@@ -107,9 +107,13 @@ public class DashScopeGateway implements ProviderGateway {
 
     @Override
     public boolean supports(String providerName, String protocolName) {
-        // dashscope 协议即 DashScope 原生接口 → 统一走官方 SDK；
-        // 配置为 openai（兼容模式）的百炼模型由 OpenAiGateway 兜底
-        return DASHSCOPE_PROTOCOL.equalsIgnoreCase(protocolName);
+        // dashscope 协议即「官方 SDK」语义：按供应商别名路由到专属 SDK 网关
+        // （百炼走本网关，智谱/火山由各自网关处理）。
+        // 必须同时校验供应商别名（百炼/dashscope/阿里云），否则硅基流动等
+        // OpenAI 兼容供应商选「官方 SDK」会被错误路由到百炼原生接口（404 Model not exist）；
+        // 未命中别名的供应商回落 OpenAiGateway（OpenAI 兼容兜底）
+        return DASHSCOPE_PROTOCOL.equalsIgnoreCase(protocolName)
+                && SdkGatewaySupport.matchesAlias(providerName, "bailian", "百炼", "dashscope", "阿里云", "aliyun");
     }
 
     // ==================== Chat ====================

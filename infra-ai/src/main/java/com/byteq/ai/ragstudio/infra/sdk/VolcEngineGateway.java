@@ -69,8 +69,10 @@ public class VolcEngineGateway implements ProviderGateway {
 
     @Override
     public boolean supports(String providerName, String protocolName) {
+        // 火山引擎官方 SDK：命中火山别名，且协议为 openai（OpenAI 兼容声明）或 dashscope（「官方 SDK」语义）。
+        // 协议语义统一：dashscope 表示走供应商专属 SDK，按别名路由到百炼/智谱/火山各自的 SDK 网关
         return SdkGatewaySupport.matchesAlias(providerName, "volcengine", "volcano", "火山引擎", "doubao", "豆包")
-                && "openai".equalsIgnoreCase(protocolName);
+                && ("openai".equalsIgnoreCase(protocolName) || "dashscope".equalsIgnoreCase(protocolName));
     }
 
     // ==================== Chat ====================

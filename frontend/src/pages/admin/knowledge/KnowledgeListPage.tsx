@@ -55,6 +55,7 @@ export function KnowledgeListPage() {
   });
   const [renameValue, setRenameValue] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editParseEngine, setEditParseEngine] = useState("AUTO");
   const [stats, setStats] = useState({
     totalCount: 0,
     documentCount: 0,
@@ -161,6 +162,7 @@ export function KnowledgeListPage() {
     if (renameDialog.open) {
       setRenameValue(renameDialog.kb?.name || "");
       setEditDescription(renameDialog.kb?.description || "");
+      setEditParseEngine(renameDialog.kb?.parseEngine || "AUTO");
     }
   }, [renameDialog]);
 
@@ -218,6 +220,21 @@ export function KnowledgeListPage() {
   const getCollectionBadgeClass = () =>
     "border-blue-200 bg-blue-50 text-blue-700";
 
+  const getParseEngineLabel = (engine?: string) => {
+    switch (engine) {
+      case "LOCAL_MINERU":
+        return "本地 MinerU";
+      case "REMOTE_MINERU":
+        return "远程 MinerU";
+      case "MULTIMODAL_LLM":
+        return "多模态 LLM";
+      case "AUTO":
+        return "自动";
+      default:
+        return engine || "自动";
+    }
+  };
+
   const handleEditSave = async () => {
     if (!renameDialog.kb) return;
     const nextName = renameValue.trim();
@@ -229,7 +246,8 @@ export function KnowledgeListPage() {
     try {
       await updateKnowledgeBase(renameDialog.kb.id, {
         name: nextName,
-        description: nextDesc
+        description: nextDesc,
+        parseEngine: editParseEngine
       });
       toast.success("保存成功");
       setRenameDialog({ open: false, kb: null });
@@ -289,6 +307,7 @@ export function KnowledgeListPage() {
                   <TableHead>名称</TableHead>
                   <TableHead>Embedding模型</TableHead>
                   <TableHead>Collection</TableHead>
+                  <TableHead className="w-[120px]">解析引擎</TableHead>
                   <TableHead className="text-center w-[70px] whitespace-nowrap">文档数</TableHead>
                   <TableHead className="w-[90px] whitespace-nowrap">负责人</TableHead>
                   <TableHead className="w-[150px]">创建时间</TableHead>
@@ -321,6 +340,11 @@ export function KnowledgeListPage() {
                       ) : (
                         "-"
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="whitespace-nowrap border-gray-200 bg-gray-50 text-gray-600">
+                        {getParseEngineLabel(kb.parseEngine)}
+                      </Badge>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{kb.documentCount ?? "-"}</TableCell>
                     <TableCell className="whitespace-nowrap">{kb.createdBy || "-"}</TableCell>
@@ -383,6 +407,37 @@ export function KnowledgeListPage() {
                 className="resize-none"
                 rows={3}
               />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">解析引擎</label>
+              <div className="grid gap-2">
+                {[
+                  { value: "AUTO", label: "自动（推荐）", desc: "优先MinerU，失败回退多模态LLM" },
+                  { value: "LOCAL_MINERU", label: "本地 MinerU", desc: "使用本机部署的 MinerU 服务" },
+                  { value: "REMOTE_MINERU", label: "远程 MinerU", desc: "使用远程 MinerU API 服务" },
+                  { value: "MULTIMODAL_LLM", label: "多模态 LLM", desc: "强制使用多模态大模型" },
+                ].map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 transition-colors ${
+                      editParseEngine === opt.value
+                        ? "border-blue-300 bg-blue-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      className="mt-0.5 accent-blue-600"
+                      checked={editParseEngine === opt.value}
+                      onChange={() => setEditParseEngine(opt.value)}
+                    />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-800">{opt.label}</span>
+                      <span className="block text-xs text-gray-500">{opt.desc}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
           <DialogFooter>

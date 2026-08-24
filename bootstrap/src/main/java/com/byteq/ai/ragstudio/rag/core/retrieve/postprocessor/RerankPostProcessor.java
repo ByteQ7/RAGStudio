@@ -10,6 +10,7 @@ import com.byteq.ai.ragstudio.infra.rerank.RerankService;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
 import com.byteq.ai.ragstudio.rag.core.retrieve.ImageChunkResolver;
 import com.byteq.ai.ragstudio.rag.core.retrieve.ScoreClusterTopK;
+import com.byteq.ai.ragstudio.rag.core.retrieve.audit.SearchAudit;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchChannelResult;
 import com.byteq.ai.ragstudio.rag.core.retrieve.channel.SearchContext;
 import lombok.extern.slf4j.Slf4j;
@@ -106,12 +107,17 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
 
         String rerankQuery = resolveRerankQuery(context);
 
+        SearchAudit audit = context.getSearchAudit();
+        if (audit != null && effectiveRerankModelId != null) {
+            audit.markRerank(effectiveRerankModelId);
+        }
+
         if (modelSupportsMultimodal) {
             // 预解析图片 Chunk 的可访问地址（s3:// → base64 data URI），供 rerank 服务下载
             imageChunkResolver.enrichRerankImageUrls(chunks);
-            return processWithMultimodalRerank(textChunks, imageChunks, rerankQuery, effectiveRerankModelId);
+            return processWithMultimodalRerank(textChunks, imageChunks, rerankQuery, effectiveRerankModelId, audit);
         } else {
-            return processWithTextRerank(textChunks, imageChunks, rerankQuery, effectiveRerankModelId);
+            return processWithTextRerank(textChunks, imageChunks, rerankQuery, effectiveRerankModelId, audit);
         }
     }
 
@@ -153,14 +159,17 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
     private List<RetrievedChunk> processWithTextRerank(List<RetrievedChunk> textChunks,
                                                         List<RetrievedChunk> imageChunks,
                                                         String query,
-                                                        String preferredModelId) {
+                                                        String preferredModelId,
+                                                        SearchAudit audit) {
         List<RetrievedChunk> rerankedText;
         if (!textChunks.isEmpty()) {
             // 远程 Rerank 前先做全局候选截断，避免多知识库粗召膨胀导致远程输入线性放大
             List<RetrievedChunk> rerankInput = limitRerankCandidates(textChunks);
-            rerankedText = executeRerank(query, rerankInput, rerankInput.size(), preferredModelId);
+            rerankedText = executeRerank(query, rerankInput, rerankInput.size(), preferredModelId, audit);
             int finalTextCount = computeDynamicTopK(textChunks.size(), rerankedText);
-            rerankedText = rerankedText.subList(0, Math.min(finalTextCount, rerankedText.size()));
+            // 精确标识符匹配保底：被动态 TopK/minScore 丢弃的 exactMatch Chunk 回插头部
+            rerankedText = retainExactMatches(
+                    rerankedText.subList(0, Math.min(finalTextCount, rerankedText.size())), rerankInput);
             log.info("文本 Rerank 完成: 输入 {} 个, 重排后取前 {} 个", rerankInput.size(), rerankedText.size());
         } else {
             rerankedText = List.of();
@@ -179,7 +188,8 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
     private List<RetrievedChunk> processWithMultimodalRerank(List<RetrievedChunk> textChunks,
                                                               List<RetrievedChunk> imageChunks,
                                                               String query,
-                                                              String preferredModelId) {
+                                                              String preferredModelId,
+                                                              SearchAudit audit) {
         List<RetrievedChunk> allChunks = new ArrayList<>(textChunks);
         allChunks.addAll(imageChunks);
 
@@ -188,9 +198,10 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
         }
 
         List<RetrievedChunk> rerankInput = limitRerankCandidates(allChunks);
-        List<RetrievedChunk> reranked = executeRerank(query, rerankInput, rerankInput.size(), preferredModelId);
+        List<RetrievedChunk> reranked = executeRerank(query, rerankInput, rerankInput.size(), preferredModelId, audit);
         int finalCount = computeDynamicTopK(allChunks.size(), reranked);
-        List<RetrievedChunk> result = reranked.subList(0, Math.min(finalCount, reranked.size()));
+        List<RetrievedChunk> result = retainExactMatches(
+                reranked.subList(0, Math.min(finalCount, reranked.size())), rerankInput);
 
         log.info("多模态 Rerank 完成: 输入 {} 个(TEXT:{}+IMAGE:{}), 重排后取前 {} 个",
                 rerankInput.size(), textChunks.size(), imageChunks.size(), result.size());
@@ -200,21 +211,64 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
     /**
      * 远程 Rerank 前全局候选截断：按分数降序保留最多 {@code max-rerank-candidates} 条，
      * 避免多知识库场景下粗召候选膨胀（per-kb-overflow-cap × KB 数）导致远程调用输入量线性放大。
+     * 精确标识符匹配（exactMatch）的 Chunk 恒保留，不参与截断。
      */
     private List<RetrievedChunk> limitRerankCandidates(List<RetrievedChunk> candidates) {
         int cap = searchProperties.getMaxRerankCandidates();
         if (cap <= 0 || candidates.size() <= cap) {
             return candidates;
         }
+        List<RetrievedChunk> exact = candidates.stream()
+                .filter(RetrievedChunk::isExactMatch)
+                .toList();
         List<RetrievedChunk> sorted = new ArrayList<>(candidates);
         sorted.sort(Comparator.comparingDouble((RetrievedChunk c) -> c.getScore() != null ? -c.getScore() : 0));
-        List<RetrievedChunk> limited = sorted.subList(0, cap);
-        log.info("Rerank 候选截断: {} -> {}（max-rerank-candidates={}）", candidates.size(), cap, cap);
+        List<RetrievedChunk> limited = new ArrayList<>(sorted.subList(0, cap));
+        // 截断可能挤掉的精确匹配 Chunk 补回，保持客观相关候选始终可达 rerank
+        for (RetrievedChunk chunk : exact) {
+            boolean present = limited.stream().anyMatch(c ->
+                    (chunk.getId() != null && chunk.getId().equals(c.getId())) || c == chunk);
+            if (!present) {
+                limited.add(chunk);
+            }
+        }
+        log.info("Rerank 候选截断: {} -> {}（max-rerank-candidates={}）", candidates.size(), limited.size(), cap);
         return limited;
     }
 
+    /**
+     * 精确标识符匹配保底：动态 TopK 与 rerank-min-score 底线过滤可能丢弃内容精确包含
+     * 查询强 ID token 的 Chunk——cross-encoder 对随机 ID 串普遍打分偏低，
+     * 但 ID 精确包含是可证明的客观相关性，不允许被语义打分淘汰。
+     * <p>
+     * 实现按 Chunk ID 对比 rerank 输入（rerank 网关会重建对象、字段不保证透传），
+     * 将被过滤丢弃的 exactMatch 原始对象回插到结果头部；
+     * 保底数量上限为 max-final-chunks，防止"每个分段都重复同一税号"类文档撑爆上下文。
+     * </p>
+     */
+    private List<RetrievedChunk> retainExactMatches(List<RetrievedChunk> current,
+                                                    List<RetrievedChunk> rerankInput) {
+        java.util.Set<String> presentIds = current.stream()
+                .map(RetrievedChunk::getId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        int cap = searchProperties.getMaxFinalChunks() > 0 ? searchProperties.getMaxFinalChunks() : 5;
+        List<RetrievedChunk> missingExact = rerankInput.stream()
+                .filter(RetrievedChunk::isExactMatch)
+                .filter(c -> c.getId() == null || !presentIds.contains(c.getId()))
+                .limit(cap)
+                .toList();
+        if (missingExact.isEmpty()) {
+            return current;
+        }
+        log.info("精确匹配保底: {} 个含强 ID token 的 Chunk 被 rerank 过滤丢弃，回插结果头部", missingExact.size());
+        List<RetrievedChunk> merged = new ArrayList<>(missingExact);
+        merged.addAll(current);
+        return merged;
+    }
+
     private List<RetrievedChunk> executeRerank(String query, List<RetrievedChunk> candidates,
-                                                int topN, String preferredModelId) {
+                                                int topN, String preferredModelId, SearchAudit audit) {
         try {
             if (StrUtil.isNotBlank(preferredModelId)) {
                 return rerankService.rerankWithModel(query, candidates, topN, preferredModelId);
@@ -222,6 +276,9 @@ public class RerankPostProcessor implements SearchResultPostProcessor {
             return rerankService.rerank(query, candidates, topN);
         } catch (Exception e) {
             log.warn("Rerank 调用失败，降级为原始排序: {}", e.getMessage());
+            if (audit != null) {
+                audit.markRerankFallback();
+            }
             return candidates;
         }
     }

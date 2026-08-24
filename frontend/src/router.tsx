@@ -16,6 +16,7 @@ const KnowledgeListPage = lazyPage(() => import("@/pages/admin/knowledge/Knowled
 const KnowledgeDocumentsPage = lazyPage(() => import("@/pages/admin/knowledge/KnowledgeDocumentsPage"), "KnowledgeDocumentsPage");
 const KnowledgeChunksPage = lazyPage(() => import("@/pages/admin/knowledge/KnowledgeChunksPage"), "KnowledgeChunksPage");
 const KnowledgeGraphPage = lazyPage(() => import("@/pages/admin/knowledge/KnowledgeGraphPage"), "KnowledgeGraphPage");
+const GraphRagPage = lazyPage(() => import("@/pages/admin/graph/GraphRagPage"), "GraphRagPage");
 const IngestionPage = lazyPage(() => import("@/pages/admin/ingestion/IngestionPage"), "IngestionPage");
 const RagTracePage = lazyPage(() => import("@/pages/admin/traces/RagTracePage"), "RagTracePage");
 const RagTraceDetailPage = lazyPage(() => import("@/pages/admin/traces/RagTraceDetailPage"), "RagTraceDetailPage");
@@ -137,6 +138,10 @@ export const router = createBrowserRouter([
       {
         path: "knowledge/:kbId/graph",
         element: <LazyPage Component={KnowledgeGraphPage} />
+      },
+      {
+        path: "graph",
+        element: <LazyPage Component={GraphRagPage} />
       },
       {
         path: "knowledge/:kbId/docs/:docId",

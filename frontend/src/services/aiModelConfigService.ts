@@ -76,9 +76,37 @@ export interface CallingStrategyInfo {
   dotColor: string;
 }
 
+const normalizeProviderName = (name: string): string =>
+  name.trim().toLowerCase().replace(/[-_\s]/g, "");
+
+/**
+ * 判断供应商是否走官方 SDK（内置默认地址，无需配置 baseUrl），与后端
+ * AiModelConfigServiceImpl.isOfficialSdk / ProviderGatewayRegistry 保持一致：
+ * - dashscope 协议（「官方 SDK」语义）→ 是（按别名路由到百炼/智谱/火山 SDK）
+ * - openai 协议：命中智谱 / 火山引擎别名 → 是（zai-sdk / ark-runtime）
+ * - 其余（OpenAI 兼容 / Anthropic 兼容）→ 否
+ */
+export function isOfficialSdkProvider(
+  providerName: string | null | undefined,
+  protocol?: string | null
+): boolean {
+  const p = (protocol || "openai").toLowerCase();
+  if (p === "dashscope") {
+    return true;
+  }
+  if (p !== "openai") {
+    return false;
+  }
+  const n = normalizeProviderName(providerName || "");
+  return [
+    "zhipu", "zhipuai", "智谱", "智谱ai", "bigmodel", "zai",
+    "volcengine", "volcano", "火山引擎", "doubao", "豆包"
+  ].includes(n);
+}
+
 /**
  * 根据供应商名 + 生效协议推导「调用策略」（与后端 ProviderGatewayRegistry 一致）：
- * - dashscope 协议 → 官方 SDK（DashScope）
+ * - dashscope 协议 → 官方 SDK（按别名路由到百炼/智谱/火山专属 SDK）
  * - anthropic 协议 → Anthropic 兼容（anthropic-java）
  * - openai 协议：智谱 / 火山由官方 SDK 承载（zai-sdk / ark-runtime），其余为 OpenAI 兼容（openai-java）
  */
@@ -87,8 +115,7 @@ export function resolveCallingStrategy(
   protocol?: string | null
 ): CallingStrategyInfo {
   const p = (protocol || "openai").toLowerCase();
-  const n = (providerName || "").toLowerCase();
-  if (p === "dashscope") {
+  if (isOfficialSdkProvider(providerName, p)) {
     return {
       key: "sdk",
       label: "官方 SDK",
@@ -102,14 +129,6 @@ export function resolveCallingStrategy(
       label: "Anthropic 兼容",
       className: "border-amber-200 bg-amber-50 text-amber-700",
       dotColor: "bg-amber-500"
-    };
-  }
-  if (n === "zhipu" || n === "volcengine") {
-    return {
-      key: "sdk",
-      label: "官方 SDK",
-      className: "border-indigo-200 bg-indigo-50 text-indigo-600",
-      dotColor: "bg-indigo-500"
     };
   }
   return {

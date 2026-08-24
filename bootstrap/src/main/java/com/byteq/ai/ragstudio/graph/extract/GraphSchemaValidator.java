@@ -34,7 +34,7 @@ public final class GraphSchemaValidator {
      * @param raw LLM 原始响应
      * @param maxEntities 实体上限（超出截断）
      * @param maxRelations 关系上限（超出截断）
-     * @return 解析结果；解析失败返回 null
+     * @return 解析结果；非法输出返回 null，合法但抽取为空返回空结果
      */
     public static GraphExtractionResult parse(String raw, int maxEntities, int maxRelations) {
         if (raw == null || raw.isBlank()) {
@@ -49,10 +49,8 @@ public final class GraphSchemaValidator {
 
         List<GraphExtractionResult.ExtractedEntity> entities = parseEntities(root.get("entities"), maxEntities);
         List<GraphExtractionResult.ExtractedRelation> relations = parseRelations(root.get("relations"), maxRelations);
-        if (entities.isEmpty() && relations.isEmpty()) {
-            log.debug("图谱抽取结果为空: {}", truncate(raw, 200));
-            return null;
-        }
+        // 合法 JSON 对象但未抽取出实体/关系（如纯数值表格 chunk）：视为成功的空抽取，
+        // 而非失败——否则该 chunk 每次重建都会重试并永久标记为 FAILED，白白消耗 LLM 调用
         return new GraphExtractionResult(entities, relations);
     }
 

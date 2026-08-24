@@ -4,17 +4,21 @@ import cn.dev33.satoken.annotation.SaCheckRole;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphBuildLogVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphEntityVO;
+import com.byteq.ai.ragstudio.admin.controller.vo.GraphKbStatusVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphOverviewVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphSubgraphVO;
 import com.byteq.ai.ragstudio.admin.service.GraphAdminService;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
+import com.byteq.ai.ragstudio.graph.config.GraphConfigService;
+import com.byteq.ai.ragstudio.graph.config.GraphConfigVO;
 import com.byteq.ai.ragstudio.graph.service.GraphExtractionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -37,6 +41,34 @@ public class GraphAdminController {
 
     private final GraphAdminService graphAdminService;
     private final GraphExtractionService graphExtractionService;
+    private final GraphConfigService graphConfigService;
+
+    /**
+     * Graph RAG 运行期配置（总开关/检索开关/抽取模型）
+     */
+    @GetMapping("/config")
+    public Result<GraphConfigVO> config() {
+        return Results.success(graphConfigService.loadVO());
+    }
+
+    /**
+     * 保存 Graph RAG 运行期配置
+     */
+    @PutMapping("/config")
+    public Result<Void> saveConfig(@RequestBody GraphConfigVO vo) {
+        log.info("更新 Graph RAG 运行期配置: enabled={}, retrieval={}, extractModel={}",
+                vo.getEnabled(), vo.getRetrievalEnabled(), vo.getExtractModelId());
+        graphConfigService.saveVO(vo);
+        return Results.success();
+    }
+
+    /**
+     * 全部知识库的图谱状态列表
+     */
+    @GetMapping("/kbs/status")
+    public Result<List<GraphKbStatusVO>> kbsStatus() {
+        return Results.success(graphAdminService.kbsStatus());
+    }
 
     /**
      * 图谱统计概览
