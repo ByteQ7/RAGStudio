@@ -168,7 +168,7 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
               </div>
             ) : null}
             {hasContent ? (
-              <div ref={contentRef} className="text-[15px] leading-relaxed" style={{ color: 'var(--color-text)' }}>
+              <div ref={contentRef} className="[&_.prose]:text-[18px] leading-relaxed" style={{ color: 'var(--color-text)' }}>
                 <MarkdownRenderer content={cleanContent} citations={message.citations} />
                 {/* 位置请求组件：仅当这是最后一条消息时才触发 */}
                 {/* 历史消息中的 [LOCATION_REQUEST] 已有后续位置回复，不再重定位 */}

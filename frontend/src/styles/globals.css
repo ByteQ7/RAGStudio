@@ -230,7 +230,7 @@ body {
   max-width: 78%;
   width: fit-content;
   margin-left: auto;
-  font-size: 14.5px;
+  font-size: 19px;
   line-height: 1.65;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -239,6 +239,7 @@ body {
 
 .user-message .prose {
   color: inherit;
+  font-size: 19px;
 }
 
 .user-message .prose > :first-child { margin-top: 0; }

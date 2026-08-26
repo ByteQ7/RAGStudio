@@ -227,7 +227,7 @@ export function WelcomeScreen() {
     <div className="flex min-h-full flex-col items-center justify-center px-6 py-10" style={{ background: 'var(--color-bg-layout)' }}>
       {/* Hero section */}
       <div
-        className="w-[60%] text-center opacity-0 animate-fade-up"
+        className="w-[70%] text-center opacity-0 animate-fade-up"
         style={{ animationFillMode: "both" }}
       >
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl" style={{ background: 'var(--color-fill-quaternary)' }}>
@@ -236,14 +236,14 @@ export function WelcomeScreen() {
         <h1 className="mt-6 font-display text-[2rem] font-bold leading-tight tracking-tight sm:text-[2.5rem]" style={{ color: 'var(--color-text)' }}>
           <span className="text-primary">你好，有什么可以帮你的？</span>
         </h1>
-        <p className="mt-3 text-[15px] leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
+        <p className="mt-3 text-[18px] leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
           基于企业知识库的 AI 智能助手，支持深度推理与分析
         </p>
       </div>
 
       {/* Preset cards */}
       <div
-        className="mt-8 w-[60%] opacity-0 animate-fade-up"
+        className="mt-8 w-[70%] opacity-0 animate-fade-up"
         style={{ animationDelay: "80ms", animationFillMode: "both" }}
       >
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
@@ -278,7 +278,7 @@ export function WelcomeScreen() {
 
       {/* Input area */}
       <div
-        className="mt-8 w-[60%] opacity-0 animate-fade-up"
+        className="mt-8 w-[70%] opacity-0 animate-fade-up"
         style={{ animationDelay: "160ms", animationFillMode: "both" }}
       >
         <div className="mb-3">
@@ -304,7 +304,7 @@ export function WelcomeScreen() {
             onChange={(event) => setValue(event.target.value)}
             onPaste={handlePaste}
             placeholder={"输入你的问题..."}
-            className="max-h-40 min-h-[64px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] focus:outline-none"
+            className="max-h-40 min-h-[64px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[18px] focus:outline-none"
             style={{ color: 'var(--color-text)' }}
             rows={2}
             onFocus={() => setIsFocused(true)}
