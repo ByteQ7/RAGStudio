@@ -30,6 +30,8 @@ export interface AiModel {
   enabled: number;
   supportsThinking: number;
   supportsMultimodal?: number;
+  supportsJsonOutput?: number;
+  supportsJsonSchema?: number;
   dimension?: number[] | null;
   customUrl?: string | null;
   apiProtocol?: string | null;
@@ -57,6 +59,8 @@ export interface AiModelPayload {
   enabled?: number;
   supportsThinking?: number;
   supportsMultimodal?: number;
+  supportsJsonOutput?: number;
+  supportsJsonSchema?: number;
   dimension?: number[];
   customUrl?: string;
   apiProtocol?: string;

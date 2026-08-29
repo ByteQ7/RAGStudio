@@ -76,6 +76,18 @@ public class AiModelDO {
     private Integer supportsMultimodal;
 
     /**
+     * 是否支持 JSON Output（response_format=json_object）：1-是，0-否
+     * <p>仅保证输出合法 JSON，不约束结构（如 deepseek-chat）。</p>
+     */
+    private Integer supportsJsonOutput;
+
+    /**
+     * 是否支持 JSON Schema 结构化输出（response_format=json_schema）：1-是，0-否
+     * <p>约束解码，按 schema 强保证输出结构（如 qwen 系列、vLLM 部署的模型）。</p>
+     */
+    private Integer supportsJsonSchema;
+
+    /**
      * 向量维度列表（JSON 数组，如 "[1024,1536,4096]"），仅 embedding 模型使用
      * <p>多个值表示模型支持多种输出维度，由用户在创建知识库时选择 ≤2000 的值。</p>
      */

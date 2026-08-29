@@ -9,6 +9,7 @@ import com.byteq.ai.ragstudio.graph.config.GraphProperties;
 import com.byteq.ai.ragstudio.graph.dao.entity.GraphEntityDO;
 import com.byteq.ai.ragstudio.graph.dao.mapper.GraphEntityMapper;
 import com.byteq.ai.ragstudio.graph.extract.GraphEntityNormalizer;
+import com.byteq.ai.ragstudio.graph.extract.GraphSchemas;
 import com.byteq.ai.ragstudio.graph.prompt.GraphExtractionPromptManager;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
 import com.byteq.ai.ragstudio.infra.util.LLMResponseCleaner;
@@ -45,6 +46,7 @@ public class GraphQueryEntityExtractor {
     private final GraphEntityMapper entityMapper;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final GraphExtractionPromptManager graphExtractionPromptManager;
 
     private static final Gson GSON = new Gson();
 
@@ -74,13 +76,15 @@ public class GraphQueryEntityExtractor {
                                      DefaultModelConfigService defaultModelConfigService,
                                      GraphEntityMapper entityMapper,
                                      JdbcTemplate jdbcTemplate,
-                                     ObjectMapper objectMapper) {
+                                     ObjectMapper objectMapper,
+                                     GraphExtractionPromptManager graphExtractionPromptManager) {
         this.properties = properties;
         this.llmService = llmService;
         this.defaultModelConfigService = defaultModelConfigService;
         this.entityMapper = entityMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.graphExtractionPromptManager = graphExtractionPromptManager;
     }
 
     /**
@@ -230,11 +234,12 @@ public class GraphQueryEntityExtractor {
             String modelId = defaultModelConfigService.getModelId(properties.getExtract().getModelKey());
             ChatRequest request = ChatRequest.builder()
                     .messages(List.of(
-                            ChatMessage.system(GraphExtractionPromptManager.queryEntitySystemPrompt()),
-                            ChatMessage.user(GraphExtractionPromptManager.queryEntityUserPrompt(
+                            ChatMessage.system(graphExtractionPromptManager.queryEntitySystemPrompt()),
+                            ChatMessage.user(graphExtractionPromptManager.queryEntityUserPrompt(
                                     question, properties.getRetrieval().getQueryEntityLimit()))
                     ))
                     .temperature(0.1D)
+                    .jsonSchema(GraphSchemas.QUERY_ENTITIES)
                     .build();
             String raw = llmService.chat(request, modelId);
             return parseNames(raw);

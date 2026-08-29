@@ -6,6 +6,8 @@ import com.openai.core.JsonValue;
 import com.openai.core.http.StreamResponse;
 import com.openai.models.FunctionDefinition;
 import com.openai.models.FunctionParameters;
+import com.openai.models.ResponseFormatJsonObject;
+import com.openai.models.ResponseFormatJsonSchema;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionContentPart;
@@ -24,6 +26,7 @@ import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
 import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
+import com.byteq.ai.ragstudio.infra.chat.StructuredOutputs;
 import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
 import com.byteq.ai.ragstudio.infra.http.ModelClientException;
@@ -89,10 +92,22 @@ public class OpenAiGateway implements ProviderGateway {
     @Override
     public String chat(ChatRequest request, ModelTarget target) {
         OpenAIClient client = buildClient(target);
+        StructuredOutputs.Spec spec = StructuredOutputs.resolve(request, target);
         try {
-            ChatCompletionCreateParams params = buildParams(request, target, false);
-            ChatCompletion completion = client.chat().completions().create(params);
+            ChatCompletion completion = client.chat().completions()
+                    .create(buildParams(request, target, false, spec));
             return extractContent(completion);
+        } catch (Exception e) {
+            // 结构化输出能力误标（或供应商不支持 response_format）的安全网：
+            // 400/422 参数错误时去掉格式约束重试一次，避免整次调用失败
+            if (spec.active() && SdkGatewaySupport.isParamError(e)) {
+                log.warn("response_format={} 被供应商拒绝，去掉约束重试: model={}, err={}",
+                        StructuredOutputs.describe(spec), target.candidate().getModel(), e.getMessage());
+                ChatCompletion completion = client.chat().completions()
+                        .create(buildParams(request, target, false, StructuredOutputs.Spec.NONE));
+                return extractContent(completion);
+            }
+            throw e;
         } finally {
             client.close();
         }
@@ -101,7 +116,7 @@ public class OpenAiGateway implements ProviderGateway {
     @Override
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
         OpenAIClient client = buildClient(target);
-        ChatCompletionCreateParams params = buildParams(request, target, true);
+        StructuredOutputs.Spec spec = StructuredOutputs.resolve(request, target);
 
         AtomicBoolean finished = new AtomicBoolean(false);
         AtomicBoolean firstReceived = new AtomicBoolean(false);
@@ -110,7 +125,7 @@ public class OpenAiGateway implements ProviderGateway {
         AtomicReference<StreamResponse<ChatCompletionChunk>> streamRef = new AtomicReference<>();
 
         try {
-            StreamResponse<ChatCompletionChunk> stream = client.chat().completions().createStreaming(params);
+            StreamResponse<ChatCompletionChunk> stream = startStream(request, target, spec, client);
             streamRef.set(stream);
             // 用独立线程消费流，避免阻塞调用线程（与同步等待首包语义兼容）
             Thread consumer = new Thread(() -> {
@@ -325,7 +340,8 @@ public class OpenAiGateway implements ProviderGateway {
                 .build();
     }
 
-    private ChatCompletionCreateParams buildParams(ChatRequest request, ModelTarget target, boolean stream) {
+    private ChatCompletionCreateParams buildParams(ChatRequest request, ModelTarget target, boolean stream,
+                                                   StructuredOutputs.Spec spec) {
         ChatCompletionCreateParams.Builder pb = ChatCompletionCreateParams.builder()
                 .model(SdkGatewaySupport.requireModelName(target));
         if (request.getTemperature() != null) {
@@ -337,10 +353,64 @@ public class OpenAiGateway implements ProviderGateway {
         if (request.getMaxTokens() != null) {
             pb.maxTokens((long) request.getMaxTokens());
         }
+        applyResponseFormat(pb, spec);
         for (ChatMessageParamParam message : buildMessages(request, target)) {
             pb.addMessage(message.param());
         }
         return pb.build();
+    }
+
+    /**
+     * 按能力解析结果下发 response_format：json_schema（约束解码强保证）或 json_object（JSON Output）。
+     * 模型能力未标记时不下发，保持纯提示词行为。
+     */
+    private void applyResponseFormat(ChatCompletionCreateParams.Builder pb, StructuredOutputs.Spec spec) {
+        switch (spec.mode()) {
+            case JSON_OBJECT -> pb.responseFormat(ChatCompletionCreateParams.ResponseFormat
+                    .ofJsonObject(ResponseFormatJsonObject.builder().build()));
+            case JSON_SCHEMA -> {
+                ResponseFormatJsonSchema.JsonSchema jsonSchema = ResponseFormatJsonSchema.JsonSchema.builder()
+                        .name(spec.name())
+                        .schema(ResponseFormatJsonSchema.JsonSchema.Schema.builder()
+                                .additionalProperties(toJsonValues(spec.schema()))
+                                .build())
+                        .strict(spec.strict())
+                        .build();
+                pb.responseFormat(ChatCompletionCreateParams.ResponseFormat.ofJsonSchema(
+                        ResponseFormatJsonSchema.builder().jsonSchema(jsonSchema).build()));
+            }
+            case NONE -> {
+            }
+        }
+    }
+
+    private Map<String, JsonValue> toJsonValues(Map<String, Object> schema) {
+        Map<String, JsonValue> values = new LinkedHashMap<>();
+        if (schema != null) {
+            for (Map.Entry<String, Object> entry : schema.entrySet()) {
+                values.put(entry.getKey(), JsonValue.from(entry.getValue()));
+            }
+        }
+        return values;
+    }
+
+    /**
+     * 启动流式请求：response_format 被供应商以参数错误拒绝时去掉约束重试一次
+     * （能力误标安全网，与同步 chat 行为一致）
+     */
+    private StreamResponse<ChatCompletionChunk> startStream(ChatRequest request, ModelTarget target,
+                                                            StructuredOutputs.Spec spec, OpenAIClient client) {
+        try {
+            return client.chat().completions().createStreaming(buildParams(request, target, true, spec));
+        } catch (Exception e) {
+            if (spec.active() && SdkGatewaySupport.isParamError(e)) {
+                log.warn("流式 response_format={} 被供应商拒绝，去掉约束重试: model={}, err={}",
+                        StructuredOutputs.describe(spec), target.candidate().getModel(), e.getMessage());
+                return client.chat().completions()
+                        .createStreaming(buildParams(request, target, true, StructuredOutputs.Spec.NONE));
+            }
+            throw e;
+        }
     }
 
     private List<ChatMessageParamParam> buildMessages(ChatRequest request, ModelTarget target) {

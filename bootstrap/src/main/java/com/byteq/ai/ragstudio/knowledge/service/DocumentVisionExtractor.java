@@ -4,6 +4,7 @@ import com.byteq.ai.ragstudio.aimodel.service.DefaultModelConfigService;
 import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
+import com.byteq.ai.ragstudio.rag.prompt.config.PromptConfigService;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,6 +58,7 @@ public class DocumentVisionExtractor {
     private final FileStorageService fileStorageService;
     private final DefaultModelConfigService defaultModelConfigService;
     private final LLMService llmService;
+    private final PromptConfigService promptConfigService;
 
     // 文本长度低于此阈值时触发多模态提取
     private static final int MIN_TEXT_LENGTH = 50;
@@ -165,7 +167,7 @@ public class DocumentVisionExtractor {
 
             // 构建多模态请求：将 Base64 data URI 附在 user message 的 imageUrls 上
             ChatMessage userMsg = ChatMessage.user(
-                    "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法（| 列名 | 列名 |\\n|--- |--- |\\n| 内容 |），标题用 # 号标记，列表保持层级。"
+                    promptConfigService.getEffectiveContent("doc_image_extract")
             );
             userMsg.setImageUrls(imageDataUris);
 
@@ -234,7 +236,7 @@ public class DocumentVisionExtractor {
             if (dataUri == null) return "";
 
             ChatMessage userMsg = ChatMessage.user(
-                    "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法（| 列名 | 列名 |\\n|--- |--- |\\n| 内容 |），标题用 # 号标记，列表保持层级。如果是图表、流程图或示意图，请用文字详细描述其内容和结构。"
+                    promptConfigService.getEffectiveContent("doc_image_extract_describe")
             );
             userMsg.setImageUrls(List.of(dataUri));
 
@@ -278,7 +280,7 @@ public class DocumentVisionExtractor {
         if (dataUris.isEmpty()) return "";
 
         ChatMessage userMsg = ChatMessage.user(
-                "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法，标题用 # 号标记，列表保持层级。如果是图表、流程图或示意图，请用文字详细描述其内容和结构。"
+                promptConfigService.getEffectiveContent("doc_image_extract_describe")
         );
         userMsg.setImageUrls(dataUris);
 
@@ -299,7 +301,7 @@ public class DocumentVisionExtractor {
         String dataUri = toBase64DataUri(imageBytes, mimeType);
 
         ChatMessage userMsg = ChatMessage.user(
-                "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法，标题用 # 号标记，列表保持层级。如果是图表、流程图或示意图，请用文字详细描述其内容和结构。"
+                promptConfigService.getEffectiveContent("doc_image_extract_describe")
         );
         userMsg.setImageUrls(List.of(dataUri));
 
@@ -341,7 +343,7 @@ public class DocumentVisionExtractor {
             }
 
             ChatMessage userMsg = ChatMessage.user(
-                    "请提取以下图片中的所有文字内容，以 Markdown 格式输出。保持原有结构和顺序，表格请用 Markdown 表格语法（| 列名 | 列名 |\\n|--- |--- |\\n| 内容 |），标题用 # 号标记，列表保持层级。"
+                    promptConfigService.getEffectiveContent("doc_image_extract")
             );
             userMsg.setImageUrls(dataUris);
 

@@ -82,6 +82,8 @@ const emptyModelForm = () => ({
   enabled: 1,
   supportsThinking: 0,
   supportsMultimodal: 0,
+  supportsJsonOutput: 0,
+  supportsJsonSchema: 0,
   dimension: undefined as number[] | undefined,
   dimensionText: "",
   customUrl: "",
@@ -299,6 +301,8 @@ export function AiModelConfigPage() {
       enabled: model.enabled,
       supportsThinking: model.supportsThinking,
       supportsMultimodal: model.supportsMultimodal ?? 0,
+      supportsJsonOutput: model.supportsJsonOutput ?? 0,
+      supportsJsonSchema: model.supportsJsonSchema ?? 0,
       dimension: model.dimension ?? undefined,
       dimensionText: dimensionArrayToText(model.dimension ?? undefined),
       customUrl: model.customUrl || "",
@@ -347,6 +351,8 @@ export function AiModelConfigPage() {
       enabled: modelForm.enabled ?? 1,
       supportsThinking: modelForm.supportsThinking ?? 0,
       supportsMultimodal: modelForm.supportsMultimodal ?? 0,
+      supportsJsonOutput: modelForm.supportsJsonOutput ?? 0,
+      supportsJsonSchema: modelForm.supportsJsonSchema ?? 0,
       dimension,
       customUrl: modelForm.customUrl?.trim() ?? "",
       apiProtocol: modelForm.apiProtocol?.trim() || "openai"
@@ -905,6 +911,38 @@ export function AiModelConfigPage() {
                   setModelForm((prev) => ({
                     ...prev,
                     supportsMultimodal: checked ? 1 : 0
+                  }))
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-700">JSON Output</p>
+                <p className="text-xs text-gray-400">保证输出合法 JSON（如 deepseek-chat）</p>
+              </div>
+              <Switch
+                checked={modelForm.supportsJsonOutput === 1}
+                onCheckedChange={(checked) =>
+                  setModelForm((prev) => ({
+                    ...prev,
+                    supportsJsonOutput: checked ? 1 : 0
+                  }))
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-700">JSON Schema</p>
+                <p className="text-xs text-gray-400">按 Schema 约束输出结构（如 Qwen 系列、vLLM 部署）</p>
+              </div>
+              <Switch
+                checked={modelForm.supportsJsonSchema === 1}
+                onCheckedChange={(checked) =>
+                  setModelForm((prev) => ({
+                    ...prev,
+                    supportsJsonSchema: checked ? 1 : 0
                   }))
                 }
               />

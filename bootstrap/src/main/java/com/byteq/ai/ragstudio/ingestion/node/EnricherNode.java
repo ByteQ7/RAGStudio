@@ -60,9 +60,19 @@ public class EnricherNode implements IngestionNode {
      */
     private final LLMService llmService;
 
-    public EnricherNode(ObjectMapper objectMapper, LLMService llmService) {
+    /**
+     * 分块富化默认提示词管理器（DB 优先、classpath 兜底，热重载）
+     */
+    private final EnricherPromptManager enricherPromptManager;
+
+    /** METADATA 任务的结构化输出 Schema：开放对象（键值不定），仅引导不收紧 */
+    private static final ChatRequest.JsonSchemaSpec METADATA_SCHEMA =
+            ChatRequest.JsonSchemaSpec.of("chunk_metadata", Map.of("type", "object"));
+
+    public EnricherNode(ObjectMapper objectMapper, LLMService llmService, EnricherPromptManager enricherPromptManager) {
         this.objectMapper = objectMapper;
         this.llmService = llmService;
+        this.enricherPromptManager = enricherPromptManager;
     }
 
     @Override
@@ -99,15 +109,19 @@ public class EnricherNode implements IngestionNode {
                 ChunkEnrichType type = task.getType();
                 String systemPrompt = StringUtils.hasText(task.getSystemPrompt())
                         ? task.getSystemPrompt()
-                        : EnricherPromptManager.systemPrompt(type);
+                        : enricherPromptManager.systemPrompt(type);
                 String userPrompt = buildUserPrompt(task.getUserPromptTemplate(), chunk, context);
-                ChatRequest request = ChatRequest.builder()
+                ChatRequest.ChatRequestBuilder requestBuilder = ChatRequest.builder()
                         .messages(List.of(
                                 ChatMessage.system(systemPrompt == null ? "" : systemPrompt),
                                 ChatMessage.user(userPrompt)
-                        ))
-                        .build();
-                String response = chat(request, settings.getModelId());
+                        ));
+                // METADATA 输出为任意键值 JSON 对象，用开放 schema 引导；KEYWORDS
+                // 为顶层 JSON 数组，多数供应商的 response_format 要求对象根节点，保持纯提示词
+                if (type == ChunkEnrichType.METADATA) {
+                    requestBuilder.jsonSchema(METADATA_SCHEMA);
+                }
+                String response = chat(requestBuilder.build(), settings.getModelId());
                 applyResult(chunk, type, response);
             }
         }

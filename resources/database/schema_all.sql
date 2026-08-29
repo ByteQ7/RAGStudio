@@ -796,6 +796,8 @@ CREATE TABLE t_ai_model (
     enabled             SMALLINT     NOT NULL DEFAULT 1,
     supports_thinking   SMALLINT     NOT NULL DEFAULT 0,
     supports_multimodal SMALLINT     NOT NULL DEFAULT 0,
+    supports_json_output SMALLINT    NOT NULL DEFAULT 0,
+    supports_json_schema SMALLINT    NOT NULL DEFAULT 0,
     dimension           TEXT,
     custom_url        VARCHAR(500),
     api_protocol      VARCHAR(32),
@@ -817,6 +819,8 @@ COMMENT ON COLUMN t_ai_model.priority IS '优先级，数字越小优先级越�
 COMMENT ON COLUMN t_ai_model.enabled IS '是否启用 1：启用 0：禁用';
 COMMENT ON COLUMN t_ai_model.supports_thinking IS '是否支持深度思考 1：是 0：否';
 COMMENT ON COLUMN t_ai_model.supports_multimodal IS '是否支持多模态(图片识别) 1：是 0：否';
+COMMENT ON COLUMN t_ai_model.supports_json_output IS '是否支持JSON Output(response_format=json_object) 1：是 0：否';
+COMMENT ON COLUMN t_ai_model.supports_json_schema IS '是否支持JSON Schema结构化输出(response_format=json_schema) 1：是 0：否';
 COMMENT ON COLUMN t_ai_model.dimension IS '向量维度（仅embedding模型）';
 COMMENT ON COLUMN t_ai_model.custom_url IS '自定义URL（覆盖供应商地址）';
 COMMENT ON COLUMN t_ai_model.api_protocol IS 'API 协议类型覆盖: openai / dashscope / anthropic，NULL=继承供应商';
@@ -1160,6 +1164,62 @@ COMMENT ON COLUMN t_graph_config.update_time       IS '最后修改时间';
 INSERT INTO t_graph_config (id)
 VALUES ('single')
 ON CONFLICT (id) DO NOTHING;
+-- ============================================================================
+-- 第五部分 B：V4 增量（提示词统一管理，后管「提示词管理」页动态编辑 + 热重载）
+-- ============================================================================
+-- 说明：
+--   1. t_prompt_config：提示词主表。key 为语义化标识（如 react_system / query_rewrite），
+--      content 保存提示词正文（含 section 的模板保存完整文件）。
+--   2. t_prompt_config_history：变更历史（每次更新前将旧内容落历史，支持回滚）。
+--   3. 内容种子由应用启动时自动播种（从 classpath resources/prompt/*.st 读取），
+--      此处不硬编码大段文本，避免与 classpath 默认值双份维护。
+--   4. 读取策略：DB 快照优先（enabled=true），缺失/禁用时回退 classpath 默认值。
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS t_prompt_config (
+    id          VARCHAR(64)   PRIMARY KEY,
+    category    VARCHAR(32)   NOT NULL DEFAULT 'chat',
+    name        VARCHAR(128)  NOT NULL,
+    description VARCHAR(512),
+    content     TEXT          NOT NULL,
+    variables   VARCHAR(255),
+    version     INT           NOT NULL DEFAULT 1,
+    enabled     BOOLEAN       NOT NULL DEFAULT TRUE,
+    updated_by  VARCHAR(64),
+    update_time TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE  t_prompt_config IS '提示词统一管理（后管动态编辑，DB 优先、classpath 兜底）';
+COMMENT ON COLUMN t_prompt_config.id          IS '提示词语义化 key（如 react_system / query_rewrite）';
+COMMENT ON COLUMN t_prompt_config.category    IS '分类：chat 对话 / query 查询理解 / memory 记忆 / graph 图谱 / ingestion 文档处理 / tool 工具';
+COMMENT ON COLUMN t_prompt_config.name        IS '显示名称';
+COMMENT ON COLUMN t_prompt_config.description IS '用途说明（后管展示）';
+COMMENT ON COLUMN t_prompt_config.content     IS '提示词正文（含 section 的模板保存完整文件内容）';
+COMMENT ON COLUMN t_prompt_config.variables   IS '支持的占位符说明，如 {tool_definitions},{kb_context}';
+COMMENT ON COLUMN t_prompt_config.version     IS '版本号（每次编辑 +1）';
+COMMENT ON COLUMN t_prompt_config.enabled     IS '启用开关：false 时回退 classpath 默认值';
+COMMENT ON COLUMN t_prompt_config.updated_by  IS '最后修改人';
+COMMENT ON COLUMN t_prompt_config.update_time IS '最后修改时间';
+
+CREATE TABLE IF NOT EXISTS t_prompt_config_history (
+    id          BIGSERIAL     PRIMARY KEY,
+    prompt_id   VARCHAR(64)   NOT NULL,
+    version     INT           NOT NULL,
+    content     TEXT          NOT NULL,
+    updated_by  VARCHAR(64),
+    update_time TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE  t_prompt_config_history IS '提示词变更历史（支持查看 diff 与回滚）';
+COMMENT ON COLUMN t_prompt_config_history.id          IS '历史主键（自增）';
+COMMENT ON COLUMN t_prompt_config_history.prompt_id   IS '提示词 key（关联 t_prompt_config.id）';
+COMMENT ON COLUMN t_prompt_config_history.version     IS '该历史记录对应的版本号';
+COMMENT ON COLUMN t_prompt_config_history.content     IS '该版本的提示词内容';
+COMMENT ON COLUMN t_prompt_config_history.updated_by  IS '修改人';
+COMMENT ON COLUMN t_prompt_config_history.update_time IS '修改时间';
+
+CREATE INDEX IF NOT EXISTS idx_prompt_history_prompt
+    ON t_prompt_config_history (prompt_id, version);
 -- ============================================================================
 -- 第六部分：种子数据（全新部署初始化，全部 ON CONFLICT 幂等）
 -- ============================================================================

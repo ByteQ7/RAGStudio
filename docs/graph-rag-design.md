@@ -284,6 +284,12 @@ GraphExtractorNode.execute(context)
 参数：temperature=0.1（确定性优先），topP=0.3。输出经 `JsonResponseParser`（复用 EnricherNode 的解析器）解析，
 再经 `GraphSchemaValidator` 校验（缺失字段/非数组/自环/空名 → 修复重试一次，重试仍失败则废弃该 chunk 抽取）。
 
+结构化输出：抽取与查询实体请求携带 JSON Schema（`GraphSchemas.EXTRACTION / QUERY_ENTITIES`），
+实际下发格式由模型能力决定（`StructuredOutputs` 降级链）：支持 json_schema（约束解码强保证）→
+仅支持 json_object（DeepSeek 等，结构靠提示词）→ 都不支持则不下发 response_format（纯提示词）。
+能力标记在「模型管理」按模型维护（supports_json_output / supports_json_schema），误标时网关层
+对 400/422 参数错误自动去掉格式约束重试一次兜底。解析与校验逻辑不变，作为最后防线。
+
 ### 5.4 实体规范化与 KB 内去重（`GraphEntityNormalizer`）
 
 | 步骤 | 规则 |

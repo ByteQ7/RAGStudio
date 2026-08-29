@@ -4,8 +4,10 @@ import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.infra.config.DynamicModelConfig;
 import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
+import com.byteq.ai.ragstudio.infra.chat.StructuredOutputs;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.infra.reasoning.ReasoningRouter;
+import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Base64Source;
@@ -122,12 +124,22 @@ public class AgentScopeModelFactory {
                 .topP(request.getTopP())
                 .maxTokens(request.getMaxTokens());
 
-        // 响应格式约束（ReACT 循环依赖 json_object）
-        if (StringUtils.hasText(request.getResponseFormat())) {
-            if ("json_object".equals(request.getResponseFormat())) {
-                builder.responseFormat(ResponseFormat.jsonObject());
-            } else {
-                builder.responseFormat(ResponseFormat.text());
+        // 响应格式约束：按模型能力下发 json_schema / json_object，
+        // 未标记能力时不下发（AgentScope ReACT 循环可在模型管理中为模型开启 JSON Output）
+        StructuredOutputs.Spec spec = StructuredOutputs.resolve(request, target);
+        switch (spec.mode()) {
+            case JSON_SCHEMA -> builder.responseFormat(ResponseFormat.jsonSchema(
+                    JsonSchema.builder()
+                            .name(spec.name())
+                            .schema(spec.schema())
+                            .strict(spec.strict())
+                            .build()));
+            case JSON_OBJECT -> builder.responseFormat(ResponseFormat.jsonObject());
+            case NONE -> {
+                if (StringUtils.hasText(request.getResponseFormat())
+                        && !"json_object".equals(request.getResponseFormat())) {
+                    builder.responseFormat(ResponseFormat.text());
+                }
             }
         }
 

@@ -1,6 +1,9 @@
 package com.byteq.ai.ragstudio.ingestion.prompt;
 
 import com.byteq.ai.ragstudio.ingestion.domain.enums.EnhanceType;
+import com.byteq.ai.ragstudio.rag.prompt.config.PromptConfigService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -11,42 +14,25 @@ import java.util.Map;
  * 维护各增强类型（上下文增强、关键词提取、问题生成、元数据提取）的默认系统提示词，
  * 供 EnhancerNode 在调用大语言模型时使用。
  * </p>
+ * <p>
+ * 提示词内容纳入统一管理（DB 优先、classpath 默认兜底），
+ * 后管「提示词管理」页编辑后热重载生效。
+ * </p>
  */
-public final class EnhancerPromptManager {
+@Component
+@RequiredArgsConstructor
+public class EnhancerPromptManager {
 
-    private static final Map<EnhanceType, String> DEFAULT_SYSTEM_PROMPTS = new EnumMap<>(EnhanceType.class);
+    private static final Map<EnhanceType, String> PROMPT_KEYS = new EnumMap<>(EnhanceType.class);
 
     static {
-        DEFAULT_SYSTEM_PROMPTS.put(EnhanceType.CONTEXT_ENHANCE, """
-                你是文档整理专家。请对以下可能存在格式问题的文档内容进行整理：
-                1. 修复明显的格式错误（表格错位、段落混乱）
-                2. 保持原文核心信息完整
-                3. 保持专业术语准确性
-                4. 直接输出整理后的文本，不要添加任何解释
-                """);
-
-        DEFAULT_SYSTEM_PROMPTS.put(EnhanceType.KEYWORDS, """
-                从文本中提取 5-15 个最重要的关键词/短语。
-                优先选择：专业术语、核心概念、重要实体名称。
-                输出格式：JSON 数组，如 ["关键词1", "关键词2"]
-                只输出 JSON，不要其他内容。
-                """);
-
-        DEFAULT_SYSTEM_PROMPTS.put(EnhanceType.QUESTIONS, """
-                根据文本内容生成 3-5 个有价值的问题，帮助读者理解核心内容。
-                输出格式：JSON 数组，如 ["问题1", "问题2"]
-                只输出 JSON，不要其他内容。
-                """);
-
-        DEFAULT_SYSTEM_PROMPTS.put(EnhanceType.METADATA, """
-                从文本中提取重要的结构化信息，整理为 JSON 对象。
-                字段尽量使用英文键名，值类型使用 string/number/array/object。
-                只输出 JSON，不要其他内容。
-                """);
+        PROMPT_KEYS.put(EnhanceType.CONTEXT_ENHANCE, "enhancer_context");
+        PROMPT_KEYS.put(EnhanceType.KEYWORDS, "enhancer_keywords");
+        PROMPT_KEYS.put(EnhanceType.QUESTIONS, "enhancer_questions");
+        PROMPT_KEYS.put(EnhanceType.METADATA, "enhancer_metadata");
     }
 
-    private EnhancerPromptManager() {
-    }
+    private final PromptConfigService promptConfigService;
 
     /**
      * 获取指定增强类型的默认系统提示词
@@ -54,7 +40,8 @@ public final class EnhancerPromptManager {
      * @param type 增强类型枚举
      * @return 对应的默认系统提示词，如果类型未注册则返回 null
      */
-    public static String systemPrompt(EnhanceType type) {
-        return DEFAULT_SYSTEM_PROMPTS.get(type);
+    public String systemPrompt(EnhanceType type) {
+        String key = PROMPT_KEYS.get(type);
+        return key == null ? null : promptConfigService.getEffectiveContent(key);
     }
 }

@@ -253,6 +253,8 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                 .supportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0)
                 .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
+                .supportsJsonOutput(request.getSupportsJsonOutput() != null ? request.getSupportsJsonOutput() : 0)
+                .supportsJsonSchema(request.getSupportsJsonSchema() != null ? request.getSupportsJsonSchema() : 0)
                 .dimension(serializeDimension(request.getDimension()))
                 .customUrl(request.getCustomUrl())
                 .apiProtocol(request.getApiProtocol())
@@ -316,6 +318,12 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
         if (request.getSupportsMultimodal() != null) {
             wrapper.set(AiModelDO::getSupportsMultimodal, request.getSupportsMultimodal());
+        }
+        if (request.getSupportsJsonOutput() != null) {
+            wrapper.set(AiModelDO::getSupportsJsonOutput, request.getSupportsJsonOutput());
+        }
+        if (request.getSupportsJsonSchema() != null) {
+            wrapper.set(AiModelDO::getSupportsJsonSchema, request.getSupportsJsonSchema());
         }
         if (request.getDimension() != null) {
             wrapper.set(AiModelDO::getDimension, serializeDimension(request.getDimension()));
@@ -980,6 +988,8 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 update.setPriority(request.getPriority() != null ? request.getPriority() : 100);
                 update.setSupportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0);
                 update.setSupportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0);
+                update.setSupportsJsonOutput(request.getSupportsJsonOutput() != null ? request.getSupportsJsonOutput() : 0);
+                update.setSupportsJsonSchema(request.getSupportsJsonSchema() != null ? request.getSupportsJsonSchema() : 0);
                 update.setDimension(serializeDimension(request.getDimension()));
                 if (request.getCustomUrl() != null) {
                     update.setCustomUrl(request.getCustomUrl());
@@ -1011,6 +1021,8 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                         .enabled(request.getEnabled() != null ? request.getEnabled() : 1)
                         .supportsThinking(request.getSupportsThinking() != null ? request.getSupportsThinking() : 0)
                         .supportsMultimodal(request.getSupportsMultimodal() != null ? request.getSupportsMultimodal() : 0)
+                        .supportsJsonOutput(request.getSupportsJsonOutput() != null ? request.getSupportsJsonOutput() : 0)
+                        .supportsJsonSchema(request.getSupportsJsonSchema() != null ? request.getSupportsJsonSchema() : 0)
                         .dimension(serializeDimension(request.getDimension()))
                         .customUrl(request.getCustomUrl())
                         .apiProtocol(StrUtil.isNotBlank(request.getApiProtocol())

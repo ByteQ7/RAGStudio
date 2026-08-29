@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static com.byteq.ai.ragstudio.rag.constant.RAGConstant.QUERY_REWRITE_AND_SPLIT_PROMPT_PATH;
@@ -267,8 +268,22 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
                 .temperature(0.4D)
                 .topP(0.3D)
                 .thinkingLevel(0)
+                .jsonSchema(REWRITE_SCHEMA)
                 .build();
     }
+
+    /** 查询改写结构化输出 Schema（与 parseRewriteAndSplit 的解析字段对应） */
+    private static final ChatRequest.JsonSchemaSpec REWRITE_SCHEMA = ChatRequest.JsonSchemaSpec.strict(
+            "query_rewrite",
+            Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                            "rewrite", Map.of("type", "string"),
+                            "sub_questions", Map.of(
+                                    "type", "array",
+                                    "items", Map.of("type", "string"))),
+                    "required", List.of("rewrite", "sub_questions"),
+                    "additionalProperties", false));
 
 
     // 解析 LLM 返回的 JSON 结果，提取改写后的问题和子问题列表

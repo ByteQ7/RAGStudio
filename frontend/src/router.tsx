@@ -29,6 +29,7 @@ const McpServerPage = lazyPage(() => import("@/pages/admin/mcp/McpServerPage"), 
 const AiModelConfigPage = lazyPage(() => import("@/pages/admin/ai-models/AiModelConfigPage"), "AiModelConfigPage");
 const DefaultModelConfigPage = lazyPage(() => import("@/pages/admin/defaults/DefaultModelConfigPage"), "DefaultModelConfigPage");
 const SkillListPage = lazyPage(() => import("@/pages/admin/skills/SkillListPage"), "SkillListPage");
+const PromptsPage = lazyPage(() => import("@/pages/admin/prompts/PromptsPage"), "PromptsPage");
 
 function SuspenseFallback() {
   return (
@@ -194,6 +195,10 @@ export const router = createBrowserRouter([
       {
         path: "skills",
         element: <LazyPage Component={SkillListPage} />
+      },
+      {
+        path: "prompts",
+        element: <LazyPage Component={PromptsPage} />
       }
     ]
   },

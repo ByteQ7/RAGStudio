@@ -114,6 +114,12 @@ public class DynamicModelConfig {
         private Boolean supportsThinking = false;
         @Builder.Default
         private Boolean supportsMultimodal = false;
+        /** 是否支持 JSON Output（response_format=json_object，输出合法 JSON 但不约束结构） */
+        @Builder.Default
+        private Boolean supportsJsonOutput = false;
+        /** 是否支持 JSON Schema 结构化输出（response_format=json_schema，约束解码强保证） */
+        @Builder.Default
+        private Boolean supportsJsonSchema = false;
         private Boolean isDefault;
         private String capability;
         /** API 协议类型覆盖（可选，覆盖供应商的 protocol）：openai / dashscope / anthropic */

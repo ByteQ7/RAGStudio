@@ -32,6 +32,7 @@ import com.byteq.ai.ragstudio.framework.convention.ChatRequest;
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
 import com.byteq.ai.ragstudio.infra.chat.StreamCallback;
 import com.byteq.ai.ragstudio.infra.chat.StreamCancellationHandle;
+import com.byteq.ai.ragstudio.infra.chat.StructuredOutputs;
 import com.byteq.ai.ragstudio.infra.http.HttpModelFactory;
 import com.byteq.ai.ragstudio.infra.http.ModelClientErrorType;
 import com.byteq.ai.ragstudio.infra.http.ModelClientException;
@@ -128,6 +129,22 @@ public class DashScopeGateway implements ProviderGateway {
                     .call(param);
             return extractText(result);
         } catch (Exception e) {
+            // 结构化输出能力误标的安全网：400/422 时去掉格式约束重试一次
+            if (StringUtils.hasText(param.getResultFormat()) && SdkGatewaySupport.isParamError(e)) {
+                log.warn("result_format={} 被拒绝，去掉约束重试: model={}, err={}",
+                        param.getResultFormat(), dashScopeModelName(target), e.getMessage());
+                GenerationParam plain = buildGenerationParam(request, target, false);
+                plain.setResultFormat(null);
+                try {
+                    GenerationResult result = new Generation(
+                            Protocol.HTTP.getValue(),
+                            SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)))
+                            .call(plain);
+                    return extractText(result);
+                } catch (Exception retryError) {
+                    throw SdkGatewaySupport.translateError(provider(), retryError);
+                }
+            }
             throw SdkGatewaySupport.translateError(provider(), e);
         }
     }
@@ -487,11 +504,12 @@ public class DashScopeGateway implements ProviderGateway {
             builder.maxTokens(request.getMaxTokens());
         }
 
-        // 响应格式约束
-        if (StringUtils.hasText(request.getResponseFormat())) {
-            if ("json_object".equals(request.getResponseFormat())) {
-                builder.resultFormat("json_object");
-            }
+        // 响应格式约束：DashScope 原生协议仅支持 result_format=json_object，
+        // 请求 json_schema 时降级为 json_object（结构约束退回提示词描述）
+        StructuredOutputs.Spec spec = StructuredOutputs.resolve(request, target);
+        if (spec.mode() == StructuredOutputs.Mode.JSON_OBJECT
+                || spec.mode() == StructuredOutputs.Mode.JSON_SCHEMA) {
+            builder.resultFormat("json_object");
         }
 
         // 推理深度：ReasoningRouter 产物映射到 DashScope 原生 thinking 参数

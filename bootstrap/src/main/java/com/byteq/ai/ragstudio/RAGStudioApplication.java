@@ -34,6 +34,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @MapperScan(basePackages = {
         "com.byteq.ai.ragstudio.rag.dao.mapper",
+        "com.byteq.ai.ragstudio.rag.prompt.dao.mapper",
         "com.byteq.ai.ragstudio.ingestion.dao.mapper",
         "com.byteq.ai.ragstudio.knowledge.dao.mapper",
         "com.byteq.ai.ragstudio.user.dao.mapper",

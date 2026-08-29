@@ -205,6 +205,8 @@ public class AiModelConfigCache implements ModelConfigProvider {
                             .enabled(true)
                             .supportsThinking(m.getSupportsThinking() != null && m.getSupportsThinking() == 1)
                             .supportsMultimodal(m.getSupportsMultimodal() != null && m.getSupportsMultimodal() == 1)
+                            .supportsJsonOutput(m.getSupportsJsonOutput() != null && m.getSupportsJsonOutput() == 1)
+                            .supportsJsonSchema(m.getSupportsJsonSchema() != null && m.getSupportsJsonSchema() == 1)
                             .isDefault(m.getIsDefault() != null && m.getIsDefault() == 1)
                             .capability(m.getCapability())
                             .protocol(StrUtil.isNotBlank(m.getApiProtocol()) ? m.getApiProtocol() : null)

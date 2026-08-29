@@ -81,6 +81,7 @@ public class LLMMcpParameterExtractor implements McpParameterExtractor {
                     .temperature(0.4D)
                     .topP(0.3D)
                     .thinkingLevel(0)
+                    .jsonSchema(buildSchemaSpec(tool))
                     .build();
             raw = llmService.chat(request);
             log.info("MCP 参数提取 LLM 响应: {}", raw);
@@ -109,6 +110,23 @@ public class LLMMcpParameterExtractor implements McpParameterExtractor {
         Map<String, Object> defaultParams = new HashMap<>();
         fillDefaults(defaultParams, tool);
         return defaultParams;
+    }
+
+    /**
+     * 由 MCP 工具的 inputSchema 构建结构化输出 Schema（保持工具声明的属性/必填约束）。
+     * additionalProperties 不收紧（工具 schema 形态各异），按引导模式下发。
+     */
+    private ChatRequest.JsonSchemaSpec buildSchemaSpec(Tool tool) {
+        JsonSchema schema = tool.inputSchema();
+        Map<String, Object> schemaMap = new LinkedHashMap<>();
+        schemaMap.put("type", "object");
+        if (schema.properties() != null && !schema.properties().isEmpty()) {
+            schemaMap.put("properties", schema.properties());
+        }
+        if (schema.required() != null && !schema.required().isEmpty()) {
+            schemaMap.put("required", schema.required());
+        }
+        return ChatRequest.JsonSchemaSpec.of("mcp_tool_arguments", schemaMap);
     }
 
     /**

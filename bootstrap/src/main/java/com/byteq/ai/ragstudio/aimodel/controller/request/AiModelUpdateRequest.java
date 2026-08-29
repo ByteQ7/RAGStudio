@@ -31,6 +31,12 @@ public class AiModelUpdateRequest {
     /** 是否支持多模态（图片识别） */
     private Integer supportsMultimodal;
 
+    /** 是否支持 JSON Output（response_format=json_object） */
+    private Integer supportsJsonOutput;
+
+    /** 是否支持 JSON Schema 结构化输出（response_format=json_schema） */
+    private Integer supportsJsonSchema;
+
     /** 向量维度列表（如 [1024, 1536, 4096]），仅 embedding */
     private List<Integer> dimension;
 

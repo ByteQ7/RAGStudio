@@ -22,6 +22,7 @@ import com.byteq.ai.ragstudio.graph.dao.mapper.GraphExtractionMapper;
 import com.byteq.ai.ragstudio.graph.dao.mapper.GraphRelationMapper;
 import com.byteq.ai.ragstudio.graph.extract.GraphEntityNormalizer;
 import com.byteq.ai.ragstudio.graph.extract.GraphExtractionResult;
+import com.byteq.ai.ragstudio.graph.extract.GraphSchemas;
 import com.byteq.ai.ragstudio.graph.extract.GraphSchemaValidator;
 import com.byteq.ai.ragstudio.graph.prompt.GraphExtractionPromptManager;
 import com.byteq.ai.ragstudio.graph.service.GraphExtractionService;
@@ -79,6 +80,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final GraphExtractionPromptManager graphExtractionPromptManager;
 
     /** 图谱抽取专用线程池：隔离 LLM 调用，避免打满业务线程池 */
     private final ExecutorService graphExecutor;
@@ -103,7 +105,8 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                                       KnowledgeChunkMapper knowledgeChunkMapper,
                                       KnowledgeDocumentMapper knowledgeDocumentMapper,
                                       JdbcTemplate jdbcTemplate,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper,
+                                      GraphExtractionPromptManager graphExtractionPromptManager) {
         this.properties = properties;
         this.graphConfigService = graphConfigService;
         this.llmService = llmService;
@@ -117,6 +120,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
         this.knowledgeDocumentMapper = knowledgeDocumentMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.graphExtractionPromptManager = graphExtractionPromptManager;
         int core = Math.max(1, Math.min(properties.getExtract().getParallelLimit(), 8));
         this.graphExecutor = Executors.newFixedThreadPool(core, new NamedThreadFactory("graph-extract"));
     }
@@ -413,7 +417,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                                                     String modelId, AtomicBoolean aborted,
                                                     AtomicInteger consecutiveFailures) {
         long start = System.currentTimeMillis();
-        String systemPrompt = GraphExtractionPromptManager.extractionSystemPrompt(config);
+        String systemPrompt = graphExtractionPromptManager.extractionSystemPrompt(config);
         String content = unit.content();
 
         String raw;
@@ -424,6 +428,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                             ChatMessage.user(content)
                     ))
                     .temperature(config.getTemperature())
+                    .jsonSchema(GraphSchemas.EXTRACTION)
                     .build();
             raw = llmService.chat(request, modelId);
         } catch (Exception e) {
@@ -449,6 +454,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                                         + "\n\n文本片段：\n" + content)
                         ))
                         .temperature(config.getTemperature())
+                        .jsonSchema(GraphSchemas.EXTRACTION)
                         .build();
                 raw = llmService.chat(retry, modelId);
                 result = GraphSchemaValidator.parse(raw, config.getMaxEntitiesPerChunk(),

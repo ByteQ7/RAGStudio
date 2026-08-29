@@ -51,6 +51,10 @@ import java.util.Map;
 @Slf4j
 public class EnhancerNode implements IngestionNode {
 
+    /** METADATA 任务的结构化输出 Schema：开放对象（键值不定），仅引导不收紧 */
+    private static final ChatRequest.JsonSchemaSpec METADATA_SCHEMA =
+            ChatRequest.JsonSchemaSpec.of("doc_metadata", Map.of("type", "object"));
+
     /**
      * Jackson JSON 对象映射器，用于解析节点配置
      */
@@ -61,9 +65,15 @@ public class EnhancerNode implements IngestionNode {
      */
     private final LLMService llmService;
 
-    public EnhancerNode(ObjectMapper objectMapper, LLMService llmService) {
+    /**
+     * 文档增强默认提示词管理器（DB 优先、classpath 兜底，热重载）
+     */
+    private final EnhancerPromptManager enhancerPromptManager;
+
+    public EnhancerNode(ObjectMapper objectMapper, LLMService llmService, EnhancerPromptManager enhancerPromptManager) {
         this.objectMapper = objectMapper;
         this.llmService = llmService;
+        this.enhancerPromptManager = enhancerPromptManager;
     }
 
     @Override
@@ -100,16 +110,20 @@ public class EnhancerNode implements IngestionNode {
 
             String systemPrompt = StringUtils.hasText(task.getSystemPrompt())
                     ? task.getSystemPrompt()
-                    : EnhancerPromptManager.systemPrompt(type);
+                    : enhancerPromptManager.systemPrompt(type);
             String userPrompt = buildUserPrompt(task.getUserPromptTemplate(), input, context);
 
-            ChatRequest request = ChatRequest.builder()
+            ChatRequest.ChatRequestBuilder requestBuilder = ChatRequest.builder()
                     .messages(List.of(
                             ChatMessage.system(systemPrompt == null ? "" : systemPrompt),
                             ChatMessage.user(userPrompt)
-                    ))
-                    .build();
-            String response = chat(request, settings.getModelId());
+                    ));
+            // METADATA 输出为任意键值 JSON 对象，用开放 schema 引导；KEYWORDS/QUESTIONS
+            // 为顶层 JSON 数组，多数供应商的 response_format 要求对象根节点，保持纯提示词
+            if (type == EnhanceType.METADATA) {
+                requestBuilder.jsonSchema(METADATA_SCHEMA);
+            }
+            String response = chat(requestBuilder.build(), settings.getModelId());
             applyTaskResult(context, type, response);
         }
 

@@ -118,4 +118,34 @@ public class ChatRequest {
      * </p>
      */
     private String responseFormat;
+
+    /**
+     * 结构化输出 JSON Schema（可选，优先级高于 responseFormat）
+     * <p>
+     * 非空时请求 JSON Schema 约束输出。实际下发格式由模型能力决定（见各网关降级链）：
+     * 模型支持 json_schema 则下发 schema（强约束）；仅支持 JSON Output 则降级为
+     * json_object（弱约束，此时仍依赖提示词描述结构）；两者都不支持则不下发任何
+     * response_format，完全依赖提示词约束，保持旧行为。
+     * </p>
+     */
+    private JsonSchemaSpec jsonSchema;
+
+    /**
+     * JSON Schema 定义
+     *
+     * @param name   schema 名称（OpenAI json_schema 必填，如 "graph_extraction"）
+     * @param schema JSON Schema 内容（type/properties/required 等）
+     * @param strict 是否启用严格模式（true 时 schema 需满足所有字段 required 且
+     *               additionalProperties=false 的供应商强约束；null 视为 false）
+     */
+    public record JsonSchemaSpec(String name, Map<String, Object> schema, Boolean strict) {
+
+        public static JsonSchemaSpec of(String name, Map<String, Object> schema) {
+            return new JsonSchemaSpec(name, schema, Boolean.FALSE);
+        }
+
+        public static JsonSchemaSpec strict(String name, Map<String, Object> schema) {
+            return new JsonSchemaSpec(name, schema, Boolean.TRUE);
+        }
+    }
 }
