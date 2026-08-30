@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """RAGStudio AI 供应商图标上传工具
 
-从 lobehub (github.com/lobehub/lobe-icons) 下载的彩色图标位于
-resources/provider-icons/ 目录，本脚本负责将其幂等上传到 S3 (RustFS/MinIO)。
+供应商图标位于 resources/provider-icons/ 目录，本脚本负责将其幂等上传到 S3 (RustFS/MinIO)。
+
+图标来源（需为 .svg，新增图标放入目录后运行本脚本即可，无需改代码）：
+  - 主体下载自 lobehub 图标库 @lobehub/icons-static-svg，优先取 -color 彩色版，
+    无彩色变体的品牌用单色版（openai/groq/moonshot/xai）
+  - xiaomi 为 simple-icons 官方轮廓注入品牌色 #FF6900（lobehub 无小米图标）
 
 S3 配置从项目根目录 .env 读取（与后端 application.yaml 一致）：
   RUSTFS_URL / RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY
