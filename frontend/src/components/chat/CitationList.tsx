@@ -243,7 +243,7 @@ export function CitationList({ message }: CitationListProps) {
               </div>
 
               {isExpanded && (
-                <div className="mt-1 ml-6 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--color-border-secondary)', background: 'var(--color-bg-container-secondary)' }}>
+                <div className="mt-1 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--color-border-secondary)', background: 'var(--color-bg-container-secondary)' }}>
                   {isWeb ? (
                     <div className="space-y-2">
                       <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-text-secondary)' }}>

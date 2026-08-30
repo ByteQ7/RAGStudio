@@ -204,7 +204,7 @@ export function ChatInput() {
           onChange={(event) => setValue(event.target.value)}
           onPaste={handlePaste}
           placeholder={"输入你的问题..."}
-          className="max-h-40 min-h-[40px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[18px] shadow-none focus-visible:ring-0"
+          className="max-h-40 min-h-[80px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[16px] shadow-none focus-visible:ring-0"
           style={{ color: 'var(--color-text)' }}
           rows={1}
           onFocus={() => setIsFocused(true)}

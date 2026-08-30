@@ -225,12 +225,12 @@ body {
 .user-message {
   background: hsl(var(--chat-user-bg));
   color: hsl(var(--chat-user-text));
-  padding: 12px 18px;
+  padding: 8px 14px;
   border-radius: 18px 18px 4px 18px;
   max-width: 78%;
   width: fit-content;
   margin-left: auto;
-  font-size: 19px;
+  font-size: 16px;
   line-height: 1.65;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -239,7 +239,7 @@ body {
 
 .user-message .prose {
   color: inherit;
-  font-size: 19px;
+  font-size: 16px;
 }
 
 .user-message .prose > :first-child { margin-top: 0; }
