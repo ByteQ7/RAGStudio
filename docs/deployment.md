@@ -120,7 +120,7 @@ psql -U postgres -d ragstudio -f resources/database/schema_all.sql
 
 ### 3. 上传 AI 供应商图标（S3）
 
-初始化数据中 17 家供应商的 `icon_url` 指向 `s3://ragstudio/provider-icons/<name>.svg`，
+初始化数据中 22 家供应商的 `icon_url` 指向 `s3://ragstudio/provider-icons/<name>.svg`，
 首次部署需将图标上传到 S3（配置读取 `.env` 的 `RUSTFS_URL / RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY`，
 需先完成第 4 步环境变量配置后再执行）：
 

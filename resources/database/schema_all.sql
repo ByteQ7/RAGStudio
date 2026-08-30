@@ -1248,7 +1248,7 @@ INSERT INTO t_user (id, username, password, avatar, role, deleted, create_time, 
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================
--- AI Provider（18 家）
+-- AI Provider（22 家）
 -- 全部默认禁用（api_key 均为 NULL，需在管理后台配置密钥后手动启用）
 -- ============================================
 
@@ -1271,11 +1271,15 @@ INSERT INTO t_ai_provider (id, name, display_name, base_url, api_key, endpoints,
 ('1821609200904568832', 'tencent', '腾讯混元', 'https://api.hunyuan.cloud.tencent.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/tencent.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('1821609200908763136', 'zeroone', '零一万物 (Yi)', 'https://api.lingyiwanwu.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/zeroone.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('1821609200912957440', 'deepseek', 'DeepSeek', 'https://api.deepseek.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models", "embedding": "/v1/embeddings"}'::jsonb, 0, 's3://ragstudio/provider-icons/deepseek.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-('1821609200917151744', 'anthropic', 'Anthropic (Claude)', 'https://api.anthropic.com', NULL, '{"chat": "/v1/messages", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/anthropic.svg', 0, 'anthropic', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+('1821609200917151744', 'anthropic', 'Anthropic (Claude)', 'https://api.anthropic.com', NULL, '{"chat": "/v1/messages", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/anthropic.svg', 0, 'anthropic', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200921346048', 'xiaomi', '小米 (MiMo)', 'https://api.xiaomimimo.com', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/xiaomi.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200925540352', 'spark', '讯飞星火', 'https://spark-api-open.xf-yun.com', NULL, '{"chat": "/v1/chat/completions"}'::jsonb, 0, 's3://ragstudio/provider-icons/spark.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200929734656', 'ai360', '360智脑', 'https://api.360.cn', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/ai360.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1821609200933928960', 'xai', 'xAI (Grok)', 'https://api.x.ai', NULL, '{"chat": "/v1/chat/completions", "models": "/v1/models"}'::jsonb, 0, 's3://ragstudio/provider-icons/xai.svg', 0, 'openai', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================
--- AI Model（47 条）
+-- AI Model（54 条）
 -- 全部默认禁用（供应商均未配置 API Key，启用前不可用）；is_default 统一置 0
 -- ============================================
 
@@ -1328,7 +1332,14 @@ INSERT INTO t_ai_model (id, provider_id, model_id, model_name, capability, is_de
 ('2083045145763516416', '1821609200891985920', 'Qwen/Qwen3-VL-Reranker-8B', 'Qwen/Qwen3-VL-Reranker-8B', 'RERANK', 0, 2, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('2083210690620817408', '1821609200896180224', 'qwen3-vl-rerank', 'Qwen3-VL-Rerank', 'RERANK', 0, 100, 0, 0, 1, NULL, NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('1831609201722392640', '1821609200917151744', 'claude-sonnet-4-5', 'claude-sonnet-4-5', 'CHAT', 0, 1, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-('1831609201722392641', '1821609200917151744', 'claude-opus-4-1', 'claude-opus-4-1', 'CHAT', 0, 2, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+('1831609201722392641', '1821609200917151744', 'claude-opus-4-1', 'claude-opus-4-1', 'CHAT', 0, 2, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392642', '1821609200921346048', 'mimo-v2.5', 'mimo-v2.5', 'CHAT', 0, 1, 0, 1, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392643', '1821609200921346048', 'mimo-v2.5-pro', 'mimo-v2.5-pro', 'CHAT', 0, 2, 0, 1, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392644', '1821609200925540352', '4.0Ultra', '4.0Ultra', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392645', '1821609200925540352', 'generalv3.5', 'generalv3.5 (Max)', 'CHAT', 0, 2, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392646', '1821609200929734656', '360gpt-pro', '360gpt-pro', 'CHAT', 0, 1, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392647', '1821609200933928960', 'grok-4', 'grok-4', 'CHAT', 0, 1, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('1831609201722392648', '1821609200933928960', 'grok-3', 'grok-3', 'CHAT', 0, 2, 0, 0, 0, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================

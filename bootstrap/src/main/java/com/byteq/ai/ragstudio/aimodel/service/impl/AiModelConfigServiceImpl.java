@@ -91,7 +91,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
                 ? UrlSafetyValidator.validateHttpUrl(request.getBaseUrl(), "API 基础地址") : null;
 
         Map<String, String> mergedEndpoints = fillDefaultEndpoints(
-                request.getName(), request.getEndpoints());
+                request.getName(), request.getEndpoints(), protocol);
 
         AiProviderDO provider = AiProviderDO.builder()
                 .name(request.getName().trim())
@@ -140,7 +140,7 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
         }
         if (request.getEndpoints() != null) {
             Map<String, String> mergedEndpoints = fillDefaultEndpoints(
-                    existing.getName(), request.getEndpoints());
+                    existing.getName(), request.getEndpoints(), existing.getApiProtocol());
             existing.setEndpoints(serializeEndpoints(mergedEndpoints));
         }
         if (request.getEnabled() != null) {
@@ -565,9 +565,10 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
     }
 
     /**
-     * 为已知供应商补充默认 endpoint（仅在用户未设置时填充）
+     * 为供应商补充默认 endpoint（仅在用户未设置时填充）：
+     * 已知供应商（百炼/硅基流动/DeepSeek/智谱）用其专属路径，其余 openai 协议供应商按 /v1 标准路径兜底
      */
-    private Map<String, String> fillDefaultEndpoints(String providerName, Map<String, String> endpoints) {
+    private Map<String, String> fillDefaultEndpoints(String providerName, Map<String, String> endpoints, String protocol) {
         Map<String, String> result = endpoints != null ? new HashMap<>(endpoints) : new HashMap<>();
         String name = providerName.toLowerCase();
         if (name.contains("bailian") || name.contains("百炼")) {
@@ -585,6 +586,10 @@ public class AiModelConfigServiceImpl implements AiModelConfigService {
             result.putIfAbsent("chat", "/api/paas/v4/chat/completions");
             result.putIfAbsent("embedding", "/api/paas/v4/embeddings");
             result.putIfAbsent("models", "/api/paas/v4/models");
+        } else if (protocol == null || "openai".equalsIgnoreCase(protocol)) {
+            result.putIfAbsent("chat", "/v1/chat/completions");
+            result.putIfAbsent("embedding", "/v1/embeddings");
+            result.putIfAbsent("models", "/v1/models");
         }
         return result;
     }
