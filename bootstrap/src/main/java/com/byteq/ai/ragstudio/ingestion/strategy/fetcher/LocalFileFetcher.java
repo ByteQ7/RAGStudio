@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.ingestion.strategy.fetcher;
 
 import com.byteq.ai.ragstudio.framework.exception.ServiceException;
+import com.byteq.ai.ragstudio.infra.data.DataDirs;
 import com.byteq.ai.ragstudio.ingestion.domain.context.DocumentSource;
 import com.byteq.ai.ragstudio.ingestion.domain.enums.SourceType;
 import com.byteq.ai.ragstudio.ingestion.enums.IngestionErrorCode;
@@ -48,8 +49,8 @@ public class LocalFileFetcher implements DocumentFetcher {
 
     /**
      * 允许访问的本地文件基目录列表（逗号分隔）。
-     * 为空时默认限制为应用工作目录（user.dir），防止任意文件读取；
-     * 如需访问其他目录请显式配置。示例: "/data/docs,/opt/uploads"
+     * 为空时默认允许应用工作目录（user.dir）与数据目录的 uploads/（RAGStudioData/uploads），
+     * 防止任意文件读取；如需访问其他目录请显式配置。示例: "/data/docs,/opt/uploads"
      */
     @Value("${ragstudio.fetcher.local.allowed-base-dirs:}")
     private String allowedBaseDirsConfig;
@@ -159,14 +160,16 @@ public class LocalFileFetcher implements DocumentFetcher {
     /**
      * 解析配置的允许基目录列表
      * <p>
-     * 未配置时返回应用工作目录（user.dir）作为默认基目录，确保默认拒绝读取任意路径。
+     * 未配置时默认允许应用工作目录（user.dir，保持历史行为）与数据目录 uploads/（JAR 部署下的规范摄取位置），
+     * 确保默认拒绝读取任意路径。
      * </p>
      *
      * @return 基目录列表
      */
     private List<String> parseAllowedBaseDirs() {
         if (!StringUtils.hasText(allowedBaseDirsConfig)) {
-            return List.of(System.getProperty("user.dir"));
+            return List.of(System.getProperty("user.dir"),
+                    DataDirs.getDataDir().resolve("uploads").toString());
         }
         return Arrays.stream(allowedBaseDirsConfig.split(","))
                 .map(String::trim)

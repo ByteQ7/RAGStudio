@@ -103,3 +103,8 @@ resources/database/quick-test.sql
 ### 开发笔记 ###
 Notes/
 /RAG简历.json
+
+# SKILL 工作区（DB 版本内容的物化目录，不入库）
+/data/
+# mvn spring-boot:run 从 bootstrap/ 启动时 SKILLS_DIR 默认相对 cwd
+bootstrap/data/

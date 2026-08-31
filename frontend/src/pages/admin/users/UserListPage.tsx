@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { PageResult, UserItem, UserCreatePayload, UserUpdatePayload } from "@/services/userService";
 import { createUser, deleteUser, getUsersPage, updateUser } from "@/services/userService";
 import { getErrorMessage } from "@/utils/error";
+import { formatDateTime as formatDate } from "@/utils/datetime";
 
 const PAGE_SIZE = 10;
 
@@ -42,6 +43,7 @@ export function UserListPage() {
     user: null
   });
   const [form, setForm] = useState(buildEmptyForm());
+  const [saving, setSaving] = useState(false);
 
   const users = pageData?.records || [];
 
@@ -112,6 +114,7 @@ export function UserListPage() {
     }
 
     try {
+      setSaving(true);
       if (dialogState.mode === "create") {
         if (!trimmedPassword) {
           toast.error("请输入初始密码");
@@ -142,12 +145,9 @@ export function UserListPage() {
     } catch (error) {
       toast.error(getErrorMessage(error, "保存失败"));
       console.error(error);
+    } finally {
+      setSaving(false);
     }
-  };
-
-  const formatDate = (dateStr?: string | null) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleString("zh-CN");
   };
 
   const isProtectedAdmin = (user: UserItem) => user.username === "admin";
@@ -326,16 +326,16 @@ export function UserListPage() {
             <Button variant="outline" onClick={() => setDialogState({ open: false, mode: "create", user: null })}>
               取消
             </Button>
-            <Button onClick={handleSave}>
+            <Button onClick={handleSave} disabled={saving}>
               {dialogState.mode === "create" ? (
                 <>
                   <Plus className="mr-2 h-4 w-4" />
-                  创建
+                  {saving ? "创建中..." : "创建"}
                 </>
               ) : (
                 <>
                   <Pencil className="mr-2 h-4 w-4" />
-                  保存
+                  {saving ? "保存中..." : "保存"}
                 </>
               )}
             </Button>

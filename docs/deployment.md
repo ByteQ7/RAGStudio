@@ -298,3 +298,26 @@ DEMO_MODE=false
 
 ### Q: 前端页面空白
 检查 Vite 开发服务器是否启动在 5173 端口，后端是否在 9090 端口。
+
+---
+
+## 运行时数据目录（RAGStudioData）
+
+所有运行时可变数据统一存放在 **RAGStudioData** 目录（默认与项目同级；JAR 部署时默认在 JAR 所在目录旁），消除"IDEA 运行 / `cd bootstrap` 启动 / JAR 启动因工作目录不同导致落盘位置漂移"的问题：
+
+```
+RAGStudioData/
+├── skills/              # SKILL 工作区（DB 版本物化目标 + 沙箱挂载源）
+├── logs/rag-search/     # 检索审计日志（RAG_SEARCH_AUDIT_LOG 开启时）
+├── AILog/               # AI 对话日志（SAVE_AI_LOG 开启时）
+├── models/bge-small-zh-v1.5/  # 语义裁剪本地模型（RAG_CROP_ENABLED 开启时）
+├── uploads/             # 本地文件摄取的默认允许目录
+└── .env                 # 可选：JAR 部署的推荐配置位置（自动加载，OS 环境变量优先）
+```
+
+- 位置可用 `RAGSTUDIO_DATA_DIR` 显式指定（OS 环境变量 / 系统属性 / .env），未配置时自动定位；
+- **自动迁移（幂等）**：启动时检测旧位置——`data/skills`、`bootstrap/data/skills`、`logs/rag-search`、`AILog/`、项目内 `resources/models/bge-small-zh-v1.5`——非空且新位置为空则整体搬移，失败保留原目录仅告警；
+- 项目根旧 `skills/` 目录不直接搬移：由 SKILL 存储的"自动收编"入 DB 后物化到新位置，确认无误后可手工归档；
+- 容器部署：把 `RAGSTUDIO_DATA_DIR` 指向挂载的持久卷目录即可。
+
+**JAR 部署**：`java -jar ragstudio.jar` 从任意目录启动均可；`.env` 建议放在 `RAGStudioData/.env`（启动自动加载），或继续用 OS 环境变量。

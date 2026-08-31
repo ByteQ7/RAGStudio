@@ -33,6 +33,7 @@ import {
   updateSampleQuestion
 } from "@/services/sampleQuestionService";
 import { getErrorMessage } from "@/utils/error";
+import { formatDateTime as formatDate } from "@/utils/datetime";
 
 const PAGE_SIZE = 10;
 
@@ -88,11 +89,6 @@ export function SampleQuestionPage() {
     }
     setForm(emptyForm);
   }, [dialogState]);
-
-  const formatDate = (dateStr?: string | null) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleString("zh-CN");
-  };
 
   const handleSearch = () => {
     setPageNo(1);

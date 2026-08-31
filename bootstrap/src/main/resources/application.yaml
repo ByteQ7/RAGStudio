@@ -52,7 +52,12 @@ rag:
     max-iterations: 10        # Agent 循环最大迭代次数
     timeout-ms: 120000        # Agent 总执行超时（毫秒），超时强制中断 Agent
   skills:
-    dir: skills              # SKILL 目录（相对于项目根目录）
+    # SKILL 工作区（默认在数据目录下：项目内运行=项目同级 RAGStudioData/skills，JAR 运行=JAR 旁 RAGStudioData/skills）；
+    # 存量项目 skills/ 目录与旧 data/skills 在启动时自动迁移/收编
+    dir: ${SKILLS_DIR:${ragstudio.data-dir}/skills}
+    max-file-size: ${SKILL_MAX_FILE_SIZE:20MB}   # 单文件大小上限（入库校验）
+    max-total-size: ${SKILL_MAX_TOTAL_SIZE:64MB} # 单版本总大小上限（入库校验）
+    max-versions: ${SKILL_MAX_VERSIONS:0}        # 版本保留上限（0 = 不限制；超限时从最旧的非当前版本清理）
     allowed-commands: ""     # 允许执行的命令前缀白名单，空表示禁用 command 类型
     script-timeout-ms: 30000 # 脚本执行超时（毫秒）
     sandbox:
@@ -186,7 +191,7 @@ rag:
     # - cache-enabled：裁剪结果 Redis 缓存（(问题, chunk) 幂等，追问/重复提问直接命中）
     crop:
       enabled: ${RAG_CROP_ENABLED:false}
-      model-path: ${RAG_CROP_MODEL_PATH:./resources/models/bge-small-zh-v1.5}
+      model-path: ${RAG_CROP_MODEL_PATH:${ragstudio.data-dir}/models/bge-small-zh-v1.5}
       threshold: ${RAG_CROP_THRESHOLD:0.35}
       min-chars: 800
       max-sentences-per-chunk: 20
@@ -203,7 +208,7 @@ rag:
       enabled: ${RAG_SEARCH_AUDIT_LOG:false}
       include-chunk-text: true
       record-rrf-candidates: true
-      log-dir: ${RAG_SEARCH_AUDIT_LOG_DIR:./logs/rag-search}
+      log-dir: ${RAG_SEARCH_AUDIT_LOG_DIR:${ragstudio.data-dir}/logs/rag-search}
 
     channels:
       # 向量全局检索（当前已禁用：VectorGlobalSearchChannel.isEnabled() 返回 false）

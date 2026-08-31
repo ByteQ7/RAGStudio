@@ -41,6 +41,7 @@ import {
 } from "@/services/queryTermMappingService";
 import { getKnowledgeBases, type KnowledgeBase } from "@/services/knowledgeService";
 import { getErrorMessage } from "@/utils/error";
+import { formatDateTime as formatDate } from "@/utils/datetime";
 
 const PAGE_SIZE = 10;
 
@@ -262,11 +263,6 @@ export function QueryTermMappingPage() {
     }
     setForm(emptyForm);
   }, [dialogState]);
-
-  const formatDate = (dateStr?: string | null) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleString("zh-CN");
-  };
 
   const getKbNames = (ids?: string[] | null) => {
     if (!ids || ids.length === 0) return [];

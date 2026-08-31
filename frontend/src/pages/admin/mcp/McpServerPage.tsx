@@ -74,14 +74,14 @@ const statusBadge = (status?: string | null) => {
   switch (status) {
     case "connected":
       return (
-        <Badge className="bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-50 whitespace-nowrap">
+        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 whitespace-nowrap">
           <CheckCircle2 className="mr-1 h-3 w-3" />
           已连接
         </Badge>
       );
     case "error":
       return (
-        <Badge className="bg-red-50 text-red-500 border-red-200 hover:bg-red-50 whitespace-nowrap">
+        <Badge className="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 whitespace-nowrap">
           <XCircle className="mr-1 h-3 w-3" />
           异常
         </Badge>
@@ -246,21 +246,21 @@ export function McpServerPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="admin-page">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="admin-page-header">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">MCP 服务管理</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="admin-page-title">MCP 服务管理</h1>
+          <p className="admin-page-subtitle">
             管理外部 MCP Server 连接，支持运行时动态增删改
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="admin-page-actions">
           <Button variant="outline" size="sm" onClick={loadServers} disabled={loading}>
             <RefreshCw className={cn("mr-1.5 h-4 w-4", loading && "animate-spin")} />
             刷新
           </Button>
-          <Button size="sm" onClick={openCreate}>
+          <Button size="sm" className="admin-primary-gradient" onClick={openCreate}>
             <Plus className="mr-1.5 h-4 w-4" />
             新增 MCP Server
           </Button>

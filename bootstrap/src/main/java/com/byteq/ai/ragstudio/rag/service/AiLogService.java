@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.rag.service;
 
+import com.byteq.ai.ragstudio.infra.data.DataDirs;
 import com.byteq.ai.ragstudio.rag.config.AiLogProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +10,6 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -17,7 +17,7 @@ import java.time.format.DateTimeFormatter;
 /**
  * AI 对话日志服务
  * <p>
- * 当 save-ai-log=true 时，将每次对话记录写入 AILog/YYYYMMDD/taskId.log。
+ * 当 save-ai-log=true 时，将每次对话记录写入 {@code <数据目录>/AILog/YYYYMMDD/taskId.log}。
  * </p>
  */
 @Slf4j
@@ -27,13 +27,12 @@ public class AiLogService {
 
     private final AiLogProperties properties;
 
-    private static final String LOG_DIR = "AILog";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     @PostConstruct
     public void init() {
         if (properties.isSaveEnabled()) {
-            log.info("AI 对话日志已启用，保存路径: {}", Paths.get(LOG_DIR).toAbsolutePath());
+            log.info("AI 对话日志已启用，保存路径: {}", logDir());
         }
     }
 
@@ -46,7 +45,7 @@ public class AiLogService {
     public void write(String taskId, String content) {
         if (!properties.isSaveEnabled()) return;
         try {
-            Path dir = Paths.get(LOG_DIR, LocalDate.now().format(DATE_FMT));
+            Path dir = logDir().resolve(LocalDate.now().format(DATE_FMT));
             Files.createDirectories(dir);
             Path file = dir.resolve(taskId + ".log");
             Files.writeString(file, content, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -60,5 +59,9 @@ public class AiLogService {
      */
     public void writeln(String taskId, String line) {
         write(taskId, line + "\n");
+    }
+
+    private static Path logDir() {
+        return DataDirs.getDataDir().resolve("AILog");
     }
 }

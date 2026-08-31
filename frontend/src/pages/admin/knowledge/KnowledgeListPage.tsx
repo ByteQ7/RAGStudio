@@ -32,6 +32,7 @@ import type { KnowledgeBase, PageResult } from "@/services/knowledgeService";
 import { deleteKnowledgeBase, getKnowledgeBasesPage, updateKnowledgeBase } from "@/services/knowledgeService";
 import { CreateKnowledgeBaseDialog } from "@/components/admin/CreateKnowledgeBaseDialog";
 import { getErrorMessage } from "@/utils/error";
+import { formatDateTime as formatDate } from "@/utils/datetime";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
@@ -193,11 +194,6 @@ export function KnowledgeListPage() {
     } finally {
       setDeleteTarget(null);
     }
-  };
-
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleString("zh-CN");
   };
 
   const formatStatValue = (value: number) => {

@@ -316,6 +316,28 @@ select:focus:not(:focus-visible),
   .admin-page-actions {
     @apply flex flex-1 flex-wrap items-center justify-end gap-2;
   }
+  /* 主操作按钮统一渐变（各页面 admin-primary-gradient 类的实际定义） */
+  .admin-primary-gradient {
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--primary)) 0%,
+      hsl(var(--primary) / 0.82) 100%
+    );
+    color: hsl(var(--primary-foreground));
+    border: none;
+    box-shadow: 0 1px 2px hsl(var(--primary) / 0.25);
+    transition: filter 0.15s ease;
+  }
+  .admin-primary-gradient:hover {
+    filter: brightness(1.06);
+  }
+  .admin-primary-gradient:active {
+    filter: brightness(0.97);
+  }
+  .admin-primary-gradient:disabled {
+    filter: none;
+    opacity: 0.5;
+  }
   .admin-stat-grid {
     @apply grid gap-3 md:grid-cols-2 xl:grid-cols-4;
   }
@@ -410,6 +432,9 @@ textarea { field-sizing: content; }
   .bg-white\/80 { background: var(--color-bg-elevated) !important; }
   .bg-white\/90 { background: var(--color-bg-elevated) !important; }
   .bg-white\/75 { background: var(--color-bg-elevated) !important; }
+  .bg-white { background: var(--color-bg-container) !important; }
+  .hover\:bg-white:hover { background: var(--color-bg-container) !important; }
+  .data-\[state\=active\]\:bg-white[data-state="active"] { background: var(--color-bg-container) !important; }
   .border-gray-100 { border-color: var(--color-border-secondary) !important; }
   .border-gray-200 { border-color: var(--color-border) !important; }
   .border-gray-200\/50 { border-color: var(--color-border) !important; }

@@ -43,7 +43,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.byteq.ai.ragstudio.alert.dao.mapper",
         "com.byteq.ai.ragstudio.graph.dao.mapper",
         "com.byteq.ai.ragstudio.graph.config",
-        "com.byteq.ai.ragstudio.core.parser.mineru"
+        "com.byteq.ai.ragstudio.core.parser.mineru",
+        "com.byteq.ai.ragstudio.rag.skillstore.dao.mapper"
 })
 public class RAGStudioApplication {
 

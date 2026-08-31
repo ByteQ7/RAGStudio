@@ -62,27 +62,14 @@ public class SkillLoader {
             @Value("${rag.skills.dir:skills}") String skillsDirPath) {
         this.redisson = redisson;
         this.objectMapper = objectMapper;
-        this.skillsDir = resolveSkillsDir(skillsDirPath);
+        this.skillsDir = SkillDirs.resolve(skillsDirPath);
     }
 
     /**
-     * 解析 SKILL 目录路径
-     * <p>
-     * 优先使用配置的路径；如果不存在，尝试从当前工作目录的父目录查找
-     * （适配 mvn spring-boot:run 在 bootstrap/ 下运行的情况）。
+     * 解析 SKILL 目录路径（兼容保留方法，逻辑移至 {@link SkillDirs#resolve(String)}）
      */
     private static Path resolveSkillsDir(String configured) {
-        Path path = Path.of(configured);
-        if (Files.exists(path) && Files.isDirectory(path)) {
-            return path.toAbsolutePath().normalize();
-        }
-        // 尝试从 user.dir 的父目录查找（适配 bootstrap/ 子模块运行）
-        Path parentPath = Path.of(System.getProperty("user.dir")).getParent().resolve(configured);
-        if (Files.exists(parentPath) && Files.isDirectory(parentPath)) {
-            return parentPath.normalize();
-        }
-        // 回退到配置路径
-        return path;
+        return SkillDirs.resolve(configured);
     }
 
     @PostConstruct
@@ -112,10 +99,13 @@ public class SkillLoader {
             return;
         }
 
-        // 扫描子目录
+        // 扫描子目录（跳过 . 开头的保留目录：物化临时区 .staging/ 与回收站 .trash/）
         List<Path> skillDirs;
         try (var dirs = Files.list(skillsDir)) {
-            skillDirs = dirs.filter(Files::isDirectory).toList();
+            skillDirs = dirs
+                    .filter(Files::isDirectory)
+                    .filter(p -> !p.getFileName().toString().startsWith("."))
+                    .toList();
         } catch (IOException e) {
             log.error("扫描 SKILL 目录失败", e);
             return;
