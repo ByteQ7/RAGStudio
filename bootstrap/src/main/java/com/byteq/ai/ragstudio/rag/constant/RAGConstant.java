@@ -31,12 +31,6 @@ public class RAGConstant {
     public static final String MULTI_CHANNEL_KEY = "multi_channel";
 
     /**
-     * 系统对话提示词模板路径
-     * 定义企业知识助手「小码」的角色设定和对话规则，包括打招呼、自我介绍、问题分类处理等场景。模板通过 {@code {question}} 占位符接收用户问题。
-     */
-    public static final String CHAT_SYSTEM_PROMPT_PATH = "prompt/answer-chat-system.st";
-
-    /**
      * 查询改写 + 多问句拆分提示词模板路径
      * 要求同时返回改写后的单条查询和子问题列表
      */

@@ -64,6 +64,7 @@ public class ConversationServiceImpl implements ConversationService {
                 .map(item -> ConversationVO.builder()
                         .conversationId(item.getConversationId())
                         .title(item.getTitle())
+                        .groupId(item.getGroupId())
                         .lastTime(item.getLastTime())
                         .build())
                 .collect(Collectors.toList());

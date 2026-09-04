@@ -27,6 +27,11 @@ public class ConversationVO {
     private String title;
 
     /**
+     * 所属对话分组 ID（NULL 表示未分组）
+     */
+    private String groupId;
+
+    /**
      * 最后活动时间
      */
     private Date lastTime;

@@ -36,9 +36,12 @@ public interface RAGChatService {
      * @param conversationId  会话 ID（可选，为空时创建新会话）
      * @param deepThinking    是否开启深度思考模式，开启后模型会展示推理过程
      * @param knowledgeBaseIds 用户选定的知识库 ID 列表（可选，为空时不检索知识库）
+     * @param imageUrls       图片 S3 URL 列表（可选，用于多模态识别）
+     * @param groupId         对话分组 ID（可选，组内新建对话时由前端携带，用于会话归组与分组指令注入）
      * @param emitter         SSE 发射器，用于向客户端推送流式响应
      */
-    void streamChat(String question, String conversationId, Integer deepThinkingLevel, List<String> knowledgeBaseIds, List<String> imageUrls, SseEmitter emitter);
+    void streamChat(String question, String conversationId, Integer deepThinkingLevel,
+                    List<String> knowledgeBaseIds, List<String> imageUrls, String groupId, SseEmitter emitter);
 
     /**
      * 停止指定任务 ID 的流式会话

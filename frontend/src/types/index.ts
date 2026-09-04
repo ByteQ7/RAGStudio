@@ -26,6 +26,21 @@ export interface Session {
   id: string;
   title: string;
   lastTime?: string;
+  /** 所属对话分组 ID，null/undefined 表示未分组 */
+  groupId?: string | null;
+}
+
+/** 对话分组（元宝式：可设置分组专属指令与默认知识库，组内新对话自动套用） */
+export interface ConversationGroup {
+  id: string;
+  name: string;
+  instruction?: string | null;
+  /** 是否置顶 */
+  pinned?: boolean;
+  /** 分组默认知识库 ID 列表（组内对话默认选中，可手动增删） */
+  knowledgeBaseIds?: string[];
+  conversationCount?: number;
+  createTime?: string;
 }
 
 /** 引用来源类型：KB=知识库文档，WEB=网络搜索 */

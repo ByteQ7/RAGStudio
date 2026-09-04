@@ -100,6 +100,11 @@ resources/database/quick-test.sql
 /tika-cp.txt
 /bootstrap/test.pdf
 
+# 亮点讲解文档（个人面试资料，不入库）
+/RAGStudio项目亮点详解.md
+/docs/agentscope-react-agent-loop.md
+/docs/graph-rag-explained.md
+
 ### 开发笔记 ###
 Notes/
 /RAG简历.json

@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RAGStudio</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // 防闪烁：渲染前根据 localStorage / 系统偏好同步挂载 dark class（与 themeStore 逻辑一致）
+      (function () {
+        try {
+          var stored = localStorage.getItem("ragstudio_theme");
+          var dark = stored === "dark" || stored === "light"
+            ? stored === "dark"
+            : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {}
+      })();
+    </script>
     <!-- KaTeX styles for LaTeX math rendering -->
     <link
       rel="stylesheet"

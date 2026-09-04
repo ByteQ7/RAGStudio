@@ -1,8 +1,10 @@
 import { api } from "@/services/api";
+import type { ConversationGroup } from "@/types";
 
 export interface ConversationVO {
   conversationId: string;
   title: string;
+  groupId?: string | null;
   lastTime?: string;
 }
 
@@ -48,4 +50,45 @@ export async function renameSession(conversationId: string, title: string) {
 
 export async function listMessages(conversationId: string) {
   return api.get<ConversationMessageVO[], ConversationMessageVO[]>(`/conversations/${conversationId}/messages`);
+}
+
+// ==================== 对话分组（元宝式） ====================
+
+export async function listConversationGroups() {
+  return api.get<ConversationGroup[], ConversationGroup[]>("/conversation-groups");
+}
+
+export async function createConversationGroup(name: string) {
+  return api.post<ConversationGroup, ConversationGroup>("/conversation-groups", { name });
+}
+
+/**
+ * 更新分组（部分更新语义）
+ * - 字段缺省（undefined）= 不修改
+ * - instruction 传 "" = 清除指令
+ * - knowledgeBaseIds 传 [] = 清除默认知识库
+ */
+export interface ConversationGroupUpdatePayload {
+  name?: string;
+  instruction?: string;
+  pinned?: boolean;
+  knowledgeBaseIds?: string[];
+}
+
+export async function updateConversationGroup(groupId: string, payload: ConversationGroupUpdatePayload) {
+  return api.put<void>(`/conversation-groups/${groupId}`, payload);
+}
+
+export async function deleteConversationGroup(groupId: string) {
+  return api.delete<void>(`/conversation-groups/${groupId}`);
+}
+
+/**
+ * 批量移动会话到分组；groupId 传 null 表示移出分组
+ */
+export async function moveSessionsToGroup(conversationIds: string[], groupId: string | null) {
+  return api.put<void>("/conversations/group", {
+    conversationIds,
+    groupId: groupId ?? undefined
+  });
 }

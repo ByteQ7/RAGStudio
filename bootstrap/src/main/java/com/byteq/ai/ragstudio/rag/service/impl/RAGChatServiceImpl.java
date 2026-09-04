@@ -42,7 +42,8 @@ public class RAGChatServiceImpl implements RAGChatService {
     // 2. 创建 SSE 回调处理器
     // 3. 通过限流器入队，在链路追踪中构建上下文并执行对话管线
     @Override
-    public void streamChat(String question, String conversationId, Integer deepThinkingLevel, List<String> knowledgeBaseIds, List<String> imageUrls, SseEmitter emitter) {
+    public void streamChat(String question, String conversationId, Integer deepThinkingLevel,
+                           List<String> knowledgeBaseIds, List<String> imageUrls, String groupId, SseEmitter emitter) {
         String actualConversationId = StrUtil.isBlank(conversationId) ? IdUtil.getSnowflakeNextIdStr() : conversationId;
         String taskId = IdUtil.getSnowflakeNextIdStr();
         // 在入队前捕获用户 ID（异步线程中 UserContext 可能不可用），供会话并发门闸与重复提交防护使用
@@ -81,16 +82,17 @@ public class RAGChatServiceImpl implements RAGChatService {
                     }
                     try {
                         traceRunner.run(question, actualConversationId, taskId, callback, traceAware -> {
-                            StreamChatContext ctx = StreamChatContext.builder()
-                                    .question(question)
-                                    .conversationId(actualConversationId)
-                                    .taskId(taskId)
-                                    .deepThinkingLevel(finalDeepThinkingLevel)
-                                    .userId(userId)
-                                    .callback(traceAware)
-                                    .knowledgeBaseIds(CollUtil.isEmpty(knowledgeBaseIds) ? List.of() : knowledgeBaseIds)
-                                    .imageUrls(CollUtil.isEmpty(imageUrls) ? List.of() : imageUrls)
-                                    .build();
+                    StreamChatContext ctx = StreamChatContext.builder()
+                            .question(question)
+                            .conversationId(actualConversationId)
+                            .taskId(taskId)
+                            .deepThinkingLevel(finalDeepThinkingLevel)
+                            .userId(userId)
+                            .groupId(StrUtil.blankToDefault(groupId, null))
+                            .callback(traceAware)
+                            .knowledgeBaseIds(CollUtil.isEmpty(knowledgeBaseIds) ? List.of() : knowledgeBaseIds)
+                            .imageUrls(CollUtil.isEmpty(imageUrls) ? List.of() : imageUrls)
+                            .build();
                             chatPipeline.execute(ctx);
                         });
                     } finally {

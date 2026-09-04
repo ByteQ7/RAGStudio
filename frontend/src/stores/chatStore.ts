@@ -1,12 +1,18 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import type { AgentStep, AgentStepPayload, Citation, CompletionPayload, FeedbackValue, McpCallPayload, Message, MessageDeltaPayload, Session } from "@/types";
+import type { AgentStep, AgentStepPayload, Citation, CompletionPayload, ConversationGroup, FeedbackValue, McpCallPayload, Message, MessageDeltaPayload, Session } from "@/types";
 import {
   listMessages,
   listSessions,
   deleteSession as deleteSessionRequest,
-  renameSession as renameSessionRequest
+  renameSession as renameSessionRequest,
+  listConversationGroups,
+  createConversationGroup,
+  updateConversationGroup as updateConversationGroupRequest,
+  deleteConversationGroup as deleteConversationGroupRequest,
+  moveSessionsToGroup as moveSessionsToGroupRequest,
+  type ConversationGroupUpdatePayload
 } from "@/services/sessionService";
 import { stopTask, submitFeedback } from "@/services/chatService";
 import { createStreamResponse } from "@/hooks/useStreamResponse";
@@ -19,6 +25,11 @@ interface ChatState {
   messages: Message[];
   isLoading: boolean;
   sessionsLoaded: boolean;
+  /** 对话分组列表（元宝式） */
+  groups: ConversationGroup[];
+  groupsLoaded: boolean;
+  /** 组内新建对话时记录的目标分组，首条消息发送后自动归组 */
+  pendingGroupId: string | null;
   inputFocusKey: number;
   isStreaming: boolean;
   isStopping: boolean;
@@ -31,7 +42,12 @@ interface ChatState {
   streamingMessageId: string | null;
   cancelRequested: boolean;
   fetchSessions: () => Promise<void>;
-  createSession: () => Promise<string>;
+  fetchGroups: () => Promise<void>;
+  createGroup: (name: string) => Promise<ConversationGroup | null>;
+  updateGroup: (groupId: string, payload: ConversationGroupUpdatePayload) => Promise<void>;
+  deleteGroup: (groupId: string) => Promise<boolean>;
+  moveSessionsToGroup: (sessionIds: string[], groupId: string | null) => Promise<void>;
+  createSession: (groupId?: string | null) => Promise<string>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
@@ -166,12 +182,20 @@ function safeJsonParse(raw: unknown): unknown {
   }
 }
 
+// 分组排序：置顶优先，其余保持原相对顺序（后端已按置顶+创建时间排序，本地同步语义）
+function sortGroups(groups: ConversationGroup[]): ConversationGroup[] {
+  return [...groups].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   currentSessionId: null,
   messages: [],
   isLoading: false,
   sessionsLoaded: false,
+  groups: [],
+  groupsLoaded: false,
+  pendingGroupId: null,
   inputFocusKey: 0,
   isStreaming: false,
   isStopping: false,
@@ -191,6 +215,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .map((item) => ({
         id: item.conversationId,
         title: item.title || "新对话",
+        groupId: item.groupId ?? null,
         lastTime: item.lastTime
         }))
         .sort((a, b) => {
@@ -205,12 +230,122 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ isLoading: false, sessionsLoaded: true });
     }
   },
-  createSession: async () => {
+  fetchGroups: async () => {
+    try {
+      const data = await listConversationGroups();
+      set({
+        groups: (data || []).map((item) => ({
+          id: item.groupId ?? item.id,
+          name: item.name,
+          instruction: item.instruction ?? null,
+          pinned: item.pinned ?? false,
+          knowledgeBaseIds: item.knowledgeBaseIds ?? [],
+          conversationCount: item.conversationCount
+        })),
+        groupsLoaded: true
+      });
+    } catch (error) {
+      toast.error((error as Error).message || "加载分组失败");
+      set({ groupsLoaded: true });
+    }
+  },
+  createGroup: async (name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    try {
+      const created = await createConversationGroup(trimmed);
+      const group: ConversationGroup = {
+        id: created.groupId ?? created.id,
+        name: created.name || trimmed,
+        instruction: null,
+        pinned: false,
+        knowledgeBaseIds: [],
+        conversationCount: 0
+      };
+      set((state) => ({ groups: [...state.groups, group] }));
+      toast.success("分组创建成功");
+      return group;
+    } catch (error) {
+      toast.error((error as Error).message || "创建分组失败");
+      return null;
+    }
+  },
+  updateGroup: async (groupId, payload) => {
+    try {
+      await updateConversationGroupRequest(groupId, payload);
+      const patch: Partial<ConversationGroup> = {};
+      if (payload.name !== undefined) patch.name = payload.name.trim();
+      if (payload.instruction !== undefined) patch.instruction = payload.instruction.trim() || null;
+      if (payload.pinned !== undefined) patch.pinned = payload.pinned;
+      if (payload.knowledgeBaseIds !== undefined) patch.knowledgeBaseIds = [...payload.knowledgeBaseIds];
+      set((state) => ({
+        groups: sortGroups(
+          state.groups.map((group) => (group.id === groupId ? { ...group, ...patch } : group))
+        )
+      }));
+      toast.success("分组已更新");
+    } catch (error) {
+      toast.error((error as Error).message || "更新分组失败");
+    }
+  },
+  deleteGroup: async (groupId) => {
+    try {
+      await deleteConversationGroupRequest(groupId);
+      let removedCurrent = false;
+      set((state) => {
+        // 后端级联删除组内全部会话，本地同步移除
+        const removedIds = new Set(
+          state.sessions.filter((session) => session.groupId === groupId).map((session) => session.id)
+        );
+        removedCurrent = Boolean(state.currentSessionId && removedIds.has(state.currentSessionId));
+        return {
+          groups: state.groups.filter((group) => group.id !== groupId),
+          sessions: state.sessions.filter((session) => session.groupId !== groupId),
+          messages: removedCurrent ? [] : state.messages,
+          currentSessionId: removedCurrent ? null : state.currentSessionId,
+          pendingGroupId: state.pendingGroupId === groupId ? null : state.pendingGroupId
+        };
+      });
+      toast.success("分组及组内对话已删除");
+      return removedCurrent;
+    } catch (error) {
+      toast.error((error as Error).message || "删除分组失败");
+      return false;
+    }
+  },
+  moveSessionsToGroup: async (sessionIds, groupId) => {
+    if (sessionIds.length === 0) return;
+    try {
+      await moveSessionsToGroupRequest(sessionIds, groupId);
+      const targetGroup = groupId ? get().groups.find((group) => group.id === groupId) : null;
+      // 被移动的会话包含当前会话时同步 pendingGroupId：
+      // 防止"组内新对话 → 首条消息已发（pendingGroupId 残留）→ 移出分组 → 继续对话"被残留值错误重新归组
+      const currentSessionId = get().currentSessionId;
+      const movedCurrent = currentSessionId ? sessionIds.includes(currentSessionId) : false;
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          sessionIds.includes(session.id) ? { ...session, groupId: groupId ?? null } : session
+        ),
+        pendingGroupId: movedCurrent ? groupId ?? null : state.pendingGroupId
+      }));
+      toast.success(targetGroup ? `已移动到「${targetGroup.name}」` : "已移出分组");
+    } catch (error) {
+      toast.error((error as Error).message || "移动失败");
+    }
+  },
+  createSession: async (groupId) => {
     const state = get();
+    const nextGroupId = groupId ?? null;
+    // 组内新建对话：默认预选该分组配置的知识库（用户可在对话中手动增删）
+    const group = nextGroupId ? state.groups.find((item) => item.id === nextGroupId) : null;
+    const groupKbIds =
+      group?.knowledgeBaseIds && group.knowledgeBaseIds.length > 0 ? [...group.knowledgeBaseIds] : [];
     if (state.messages.length === 0 && !state.currentSessionId) {
       set({
         isCreatingNew: true,
-        isLoading: false
+        isLoading: false,
+        pendingGroupId: nextGroupId,
+        knowledgeBaseIds: groupKbIds
       });
       return "";
     }
@@ -224,11 +359,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStopping: false,
       isLoading: false,
       isCreatingNew: true,
-      knowledgeBaseIds: [],
+      knowledgeBaseIds: groupKbIds,
       streamTaskId: null,
       streamAbort: null,
       streamingMessageId: null,
-      cancelRequested: false
+      cancelRequested: false,
+      pendingGroupId: nextGroupId
     });
     return "";
   },
@@ -270,7 +406,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isLoading: true,
       currentSessionId: sessionId,
       isCreatingNew: false,
-      knowledgeBaseIds: []
+      knowledgeBaseIds: [],
+      pendingGroupId: null
     });
     try {
       const data = await listMessages(sessionId);
@@ -293,6 +430,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         thinkingLevel: item.thinkingLevel ?? undefined
       }));
       set({ messages: mapped });
+
+      // 组内会话默认预选分组配置的知识库（用户可在对话中手动增删）
+      const currentSession = get().sessions.find((item) => item.id === sessionId);
+      const currentGroup = currentSession?.groupId
+        ? get().groups.find((item) => item.id === currentSession.groupId)
+        : null;
+      if (currentGroup?.knowledgeBaseIds && currentGroup.knowledgeBaseIds.length > 0) {
+        set({ knowledgeBaseIds: [...currentGroup.knowledgeBaseIds] });
+      }
 
     } catch (error) {
       toast.error((error as Error).message || "加载消息失败");
@@ -372,12 +518,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const conversationId = get().currentSessionId;
     const url = `${API_BASE_URL}/rag/v3/chat`;
     const token = storage.getToken();
+    // 组内新建对话：首条消息携带分组 ID，后端据此归组并注入分组指令
+    const pendingGroupId = get().pendingGroupId;
 
     const handlers = {
       onMeta: (payload: { conversationId: string; taskId: string }) => {
         if (get().streamingMessageId !== assistantId) return;
         const nextId = payload.conversationId || get().currentSessionId || `temp-${Date.now()}`;
         const lastTime = new Date().toISOString();
+        const pendingGroupId = get().pendingGroupId;
         const existing = get().sessions.find((session) => session.id === nextId);
         set((state) => ({
           currentSessionId: nextId,
@@ -386,6 +535,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           sessions: upsertSession(state.sessions, {
             id: nextId,
             title: existing?.title || "新对话",
+            groupId: existing?.groupId ?? pendingGroupId ?? null,
             lastTime
           })
         }));
@@ -466,13 +616,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const currentId = get().currentSessionId;
         if (currentId) {
           const lastTime = new Date().toISOString();
-          const existingTitle =
-            get().sessions.find((session) => session.id === currentId)?.title || "新对话";
+          const existing = get().sessions.find((session) => session.id === currentId);
+          const existingTitle = existing?.title || "新对话";
           const nextTitle = payload.title || existingTitle;
           set((state) => ({
             sessions: upsertSession(state.sessions, {
               id: currentId,
               title: nextTitle,
+              groupId: existing?.groupId ?? get().pendingGroupId ?? null,
               lastTime
             })
           }));
@@ -586,6 +737,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         body: {
           question: questionText,
           conversationId: conversationId || undefined,
+          // 组内新建对话始终携带 pendingGroupId（首条消息被拒后重发仍能归组）；
+          // 后端以 group_id IS NULL 条件更新，重复携带幂等无害
+          groupId: pendingGroupId || undefined,
           knowledgeBaseIds:
             knowledgeBaseIds && knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined,
           deepThinkingLevel: get().deepThinkingLevel || undefined,

@@ -53,6 +53,9 @@ public class StreamChatPipeline {
     /** 对话记忆服务，负责加载和管理对话历史 */
     private final ConversationMemoryService memoryService;
 
+    /** 对话分组管理服务，负责组内新会话归组与分组指令解析 */
+    private final com.byteq.ai.ragstudio.rag.service.ConversationGroupManager conversationGroupManager;
+
     /** 查询改写服务，负责对用户问题进行语义改写和拆分 */
     private final QueryRewriteService queryRewriteService;
 
@@ -119,6 +122,10 @@ public class StreamChatPipeline {
 
     /** Agent 模式标识 */
 
+
+    /** 分组指令注入前缀（元宝式分组：组内对话自动延续该指令风格） */
+    private static final String GROUP_INSTRUCTION_PREFIX =
+            "【对话分组指令】请在本次会话的所有回复中遵循以下用户设定：\n";
 
     /** 取消异常前缀标识，用于在 catch 中区分用户取消 vs 其他 IllegalStateException */
     private static final String CANCEL_MARKER = "任务已被用户取消";
@@ -330,7 +337,10 @@ public class StreamChatPipeline {
                 .toList();
     }
 
-    // 加载对话历史记忆并将当前用户问题（含图片 URL）追加到上下文中
+    // 加载对话历史记忆并将当前用户问题（含图片 URL）追加到上下文中；
+    // 若请求携带分组 ID（组内新建对话），新会话落库后自动归组；
+    // 会话所属分组配置了专属指令时，以 SYSTEM 消息注入历史头部
+    // （buildSystemPrompt 会将历史中的 SYSTEM 消息合并进系统提示词，与会话摘要 SYSTEM 消息同一机制）
     private void loadMemory(StreamChatContext ctx) {
         ChatMessage userMsg = ChatMessage.user(ctx.getQuestion());
         if (CollUtil.isNotEmpty(ctx.getImageUrls())) {
@@ -341,6 +351,25 @@ public class StreamChatPipeline {
                 ctx.getUserId(),
                 userMsg
         );
+
+        // 组内新建对话：首条消息创建会话后归组（已有会话行 group_id 非空时条件更新自动跳过）
+        if (StrUtil.isNotBlank(ctx.getGroupId())) {
+            conversationGroupManager.assignGroupToConversation(ctx.getConversationId(), ctx.getUserId(), ctx.getGroupId());
+        }
+
+        // 分组专属指令注入：按会话行 group_id 解析（移动分组后即时生效），静默失败不影响对话
+        try {
+            String groupInstruction = conversationGroupManager.resolveGroupInstruction(ctx.getConversationId(), ctx.getUserId());
+            if (StrUtil.isNotBlank(groupInstruction)) {
+                List<ChatMessage> withInstruction = new ArrayList<>(history.size() + 1);
+                withInstruction.add(ChatMessage.system(GROUP_INSTRUCTION_PREFIX + groupInstruction.trim()));
+                withInstruction.addAll(history);
+                history = withInstruction;
+            }
+        } catch (Exception e) {
+            log.warn("分组指令注入失败，跳过 - conversationId: {}", ctx.getConversationId(), e);
+        }
+
         ctx.setHistory(history);
     }
 

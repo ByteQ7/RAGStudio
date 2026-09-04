@@ -52,6 +52,7 @@ CREATE TABLE t_conversation (
     conversation_id VARCHAR(64) NOT NULL,
     user_id         VARCHAR(64) NOT NULL,
     title           VARCHAR(128) NOT NULL,
+    group_id        VARCHAR(64),
     last_time       TIMESTAMP,
     create_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -64,10 +65,35 @@ COMMENT ON COLUMN t_conversation.id IS '主键ID';
 COMMENT ON COLUMN t_conversation.conversation_id IS '会话ID';
 COMMENT ON COLUMN t_conversation.user_id IS '用户ID';
 COMMENT ON COLUMN t_conversation.title IS '会话名称';
+COMMENT ON COLUMN t_conversation.group_id IS '所属对话分组ID，NULL 表示未分组';
 COMMENT ON COLUMN t_conversation.last_time IS '最近消息时间';
 COMMENT ON COLUMN t_conversation.create_time IS '创建时间';
 COMMENT ON COLUMN t_conversation.update_time IS '更新时间';
 COMMENT ON COLUMN t_conversation.deleted IS '是否删除 0：正常 1：删除';
+
+-- Entity: ConversationGroupDO (@TableName="t_conversation_group", @TableId=ASSIGN_ID, @TableLogic)
+CREATE TABLE IF NOT EXISTS t_conversation_group (
+    id                 VARCHAR(64) NOT NULL PRIMARY KEY,
+    user_id            VARCHAR(64) NOT NULL,
+    name               VARCHAR(64) NOT NULL,
+    instruction        TEXT,
+    pinned             BOOLEAN DEFAULT FALSE,
+    knowledge_base_ids TEXT,
+    create_time        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted            SMALLINT    DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_group_user ON t_conversation_group (user_id);
+COMMENT ON TABLE t_conversation_group IS '对话分组表（元宝式对话分组，可设置分组专属指令与默认知识库）';
+COMMENT ON COLUMN t_conversation_group.id                 IS '分组ID';
+COMMENT ON COLUMN t_conversation_group.user_id            IS '用户ID';
+COMMENT ON COLUMN t_conversation_group.name               IS '分组名称';
+COMMENT ON COLUMN t_conversation_group.instruction        IS '分组专属指令（组内新对话自动注入系统提示）';
+COMMENT ON COLUMN t_conversation_group.pinned             IS '是否置顶';
+COMMENT ON COLUMN t_conversation_group.knowledge_base_ids IS '分组默认知识库ID JSON 数组（组内对话默认选中，可手动增删）';
+COMMENT ON COLUMN t_conversation_group.create_time        IS '创建时间';
+COMMENT ON COLUMN t_conversation_group.update_time        IS '更新时间';
+COMMENT ON COLUMN t_conversation_group.deleted            IS '是否删除 0：正常 1：删除';
 
 -- Entity: ConversationSummaryDO (@TableName="t_conversation_summary", @TableId=ASSIGN_ID, @TableLogic)
 CREATE TABLE t_conversation_summary (

@@ -80,7 +80,7 @@ export function ChatPage() {
 
   return (
     <MainLayout>
-      <div className="flex h-full flex-col" style={{ background: 'linear-gradient(180deg, #f8f9fc 0%, #f0f1ff 50%, #f8f9fc 100%)' }}>
+      <div className="flex h-full flex-col" style={{ background: "var(--chat-bg-gradient)" }}>
         <div className="flex-1 min-h-0">
           <MessageList
             messages={messages}
@@ -91,7 +91,10 @@ export function ChatPage() {
         </div>
         {(messages.length > 0 || isLoading) && (
           <div className="relative z-20">
-            <div className="absolute inset-0 bg-gradient-to-t from-[#f8f9fc] via-[#f8f9fc]/80 to-transparent h-6 -top-6 pointer-events-none" />
+            <div
+              className="absolute inset-0 h-6 -top-6 pointer-events-none"
+              style={{ background: "linear-gradient(to top, var(--chat-bg-base), transparent)" }}
+            />
             <div className="mx-auto w-[70%] px-6 pt-2 pb-4">
               <div className="mb-2">
                 <KnowledgeBaseSelector

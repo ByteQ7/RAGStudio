@@ -145,7 +145,11 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
         if (!Boolean.TRUE.equals(ragConfigProperties.getQueryRewriteSkipSimple())) {
             return false;
         }
-        if (history != null && !history.isEmpty()) {
+        // 仅 USER/ASSISTANT 历史视为"有多轮上下文"：
+        // SYSTEM 消息（会话摘要、对话分组指令）会常驻历史头部，若计入判空，
+        // 首轮简单问题将永远无法命中跳过改写快路径，多付一次 LLM 调用
+        if (history != null && history.stream()
+                .anyMatch(msg -> msg.getRole() != ChatMessage.Role.SYSTEM)) {
             return false;
         }
         if (StrUtil.isBlank(userQuestion) || userQuestion.length() > SIMPLE_QUESTION_MAX_LEN) {

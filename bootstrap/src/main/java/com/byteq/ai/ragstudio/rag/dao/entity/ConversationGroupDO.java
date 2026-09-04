@@ -14,31 +14,40 @@ import lombok.NoArgsConstructor;
 import java.util.Date;
 
 /**
- * 会话实体类
- * 用于存储用户会话的基本信息，包括会话标题、所属用户及最后活跃时间等
+ * 对话分组实体类
+ * <p>
+ * 元宝式对话分组：用户可创建多个分组（类似文件夹），将会话移入分组归类管理，
+ * 并可为每个分组设置专属指令（instruction），组内新对话自动注入系统提示。
+ * </p>
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@TableName("t_conversation")
-public class ConversationDO {
+@TableName("t_conversation_group")
+public class ConversationGroupDO {
 
     @TableId(type = IdType.ASSIGN_ID)
     private String id;
 
-    private String conversationId;
-
     private String userId;
 
-    private String title;
+    private String name;
 
     /**
-     * 所属对话分组 ID（NULL 表示未分组）
+     * 分组专属指令（组内新对话自动注入系统提示）
      */
-    private String groupId;
+    private String instruction;
 
-    private Date lastTime;
+    /**
+     * 是否置顶
+     */
+    private Boolean pinned;
+
+    /**
+     * 分组默认知识库 ID JSON 数组（组内对话默认选中，可手动增删）
+     */
+    private String knowledgeBaseIds;
 
     @TableField(fill = FieldFill.INSERT)
     private Date createTime;

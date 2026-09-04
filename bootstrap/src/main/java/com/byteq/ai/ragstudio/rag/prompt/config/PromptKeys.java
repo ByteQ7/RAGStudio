@@ -33,11 +33,6 @@ public enum PromptKeys {
             "prompt/answer-chat.st",
             ""),
 
-    ANSWER_CHAT_SYSTEM("answer_chat_system", "chat", "旧版助手问答系统提示词（预留）",
-            "旧版企业助手「小码」问答 system，当前无调用方，预留保留。",
-            "prompt/answer-chat-system.st",
-            ""),
-
     CONTEXT_FORMAT("context_format", "chat", "上下文格式 section 模板",
             "检索上下文拼装格式，含 kb-section / snippet-rules / mcp-section / sub-question / evidence / summary 等多段 section。",
             "prompt/context-format.st",
@@ -134,13 +129,6 @@ public enum PromptKeys {
     DOC_IMAGE_EXTRACT_DESCRIBE("doc_image_extract_describe", "ingestion", "图片转 Markdown（含图表描述）",
             "多模态模型把图片/PDF 页面文字转为 Markdown，图表/流程图追加文字描述（单页/嵌入图场景）。",
             "prompt/doc-image-extract-describe.st",
-            ""),
-
-    // ==================== tool 工具类 ====================
-
-    PDF_FORMAT_GUARD("pdf_format_guard", "tool", "PDF 文本排版修复（预留）",
-            "PDF 文本排版修复提示词，当前无调用方，预留保留。",
-            "prompt/pdf-format-guard.st",
             "");
 
     private final String key;

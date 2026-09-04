@@ -42,6 +42,12 @@ public class StreamChatContext {
     /** 当前用户 ID */
     private final String userId;
 
+    /**
+     * 对话分组 ID（可选）：组内新建对话时由前端携带，
+     * 新会话首条消息落库后自动归组；分组指令按会话行 group_id 在记忆加载阶段注入
+     */
+    private final String groupId;
+
     /** SSE 流式回调，用于向客户端推送结果 */
     private final StreamCallback callback;
 
