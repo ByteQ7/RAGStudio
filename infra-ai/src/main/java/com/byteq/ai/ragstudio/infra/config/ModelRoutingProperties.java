@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Configuration;
  *     selection:
  *       failure-threshold: 2
  *       open-duration-ms: 30000
+ *       max-open-duration-ms: 600000
  *     stream:
  *       message-chunk-size: 5
  * </pre>
@@ -59,9 +60,16 @@ public class ModelRoutingProperties {
         private Integer failureThreshold = 2;
 
         /**
-         * 熔断器打开持续时间（毫秒）：熔断触发后在此时间内不再尝试失败模型，默认 30000
+         * 熔断冷却基础时长（毫秒）：指数退避的基准值——第 1 轮熔断冷却即该值，
+         * 之后每轮翻倍（30s → 60s → 120s → …），默认 30000
          */
         private Long openDurationMs = 30000L;
+
+        /**
+         * 熔断冷却时长上限（毫秒）：指数退避的封顶值，冷却 = min(base × 2^(轮数-1), 上限)，默认 600000（10 分钟）。
+         * 模型恢复（markSuccess）后轮数清零，下次熔断重新从 base 起步
+         */
+        private Long maxOpenDurationMs = 600000L;
     }
 
     /**

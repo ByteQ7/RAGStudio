@@ -182,6 +182,7 @@ public class RAGSettingsController {
                 .selection(AISettings.Selection.builder()
                           .failureThreshold(routingProperties.getSelection().getFailureThreshold())
                           .openDurationMs(routingProperties.getSelection().getOpenDurationMs())
+                          .maxOpenDurationMs(routingProperties.getSelection().getMaxOpenDurationMs())
                           .toolRoutingModel(toolRetriever.getEnabledModel())
                           .build())
                 .stream(AISettings.Stream.builder()

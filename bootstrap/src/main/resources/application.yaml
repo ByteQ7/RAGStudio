@@ -239,7 +239,11 @@ rag:
   model-routing:
     selection:
       failure-threshold: 2
+      # 指数退避基础冷却：第 1 轮熔断冷却 30s，探测失败重熔断后逐轮翻倍（30s→60s→120s→…）
       open-duration-ms: 30000
+      # 退避封顶：冷却 = min(open-duration-ms × 2^(轮数-1), 上限)；
+      # 模型恢复（markSuccess）后轮数清零，重新从 30s 起步
+      max-open-duration-ms: 600000
     stream:
       # SSE 消息分块大小（字符）：过小会导致事件数/flush 次数线性膨胀，
       # 1 字符/事件在长回答下产生数千个 SSE 事件与 servlet flush，徒增 CPU 与网络开销

@@ -24,10 +24,12 @@ import java.util.function.BiConsumer;
  * 允许少量请求通过以探测服务是否恢复。
  * </p>
  * <p>
- * <b>状态流转：</b>
+ * <b>状态流转（冷却时长指数退避）：</b>
  * <ul>
  *   <li><b>CLOSED（闭合）</b>：正常工作状态，请求正常通过</li>
- *   <li><b>OPEN（断开）</b>：连续失败达到阈值，请求被直接拒绝，等待冷却时间</li>
+ *   <li><b>OPEN（断开）</b>：连续失败达到阈值，请求被直接拒绝，等待冷却时间；
+ *       冷却 = min(base × 2^(连续熔断轮数-1), 上限)——持续故障的模型探测频率越来越低，
+ *       恢复过的模型（markSuccess）轮数清零，下次熔断从 base 重新起步</li>
  *   <li><b>HALF_OPEN（半开）</b>：冷却时间结束，允许一个探测请求通过</li>
  * </ul>
  * </p>
@@ -80,18 +82,32 @@ public class ModelHealthStore {
     }
 
     /**
-     * 订阅其他实例的熔断广播，收到后立即将本地状态置为 OPEN
+     * 订阅其他实例的熔断广播，收到后立即将本地状态置为 OPEN。
+     * <p>
+     * 负载格式为 {@code modelId|openRounds}（轮数随指数退避同步），远端按同一轮数计算退避冷却；
+     * 兼容旧格式（仅 modelId，滚动升级窗口内旧实例发出）：按第 1 轮处理。
+     * </p>
      */
     private void subscribe() {
         try {
             RTopic topic = redisson.getTopic(BREAKER_OPEN_TOPIC);
-            listenerId = topic.addListener(String.class, (channel, modelId) -> {
-                if (modelId == null || modelId.isBlank()) {
+            listenerId = topic.addListener(String.class, (channel, payload) -> {
+                if (payload == null || payload.isBlank()) {
                     return;
                 }
-                log.warn("收到其他实例熔断广播，模型 {} 置为断开状态（冷却 {}ms）",
-                        modelId, routingProperties.getSelection().getOpenDurationMs());
-                markOpenFromRemote(modelId);
+                int idx = payload.indexOf('|');
+                String modelId = idx >= 0 ? payload.substring(0, idx) : payload;
+                int rounds = 1;
+                if (idx >= 0) {
+                    try {
+                        rounds = Math.max(1, Integer.parseInt(payload.substring(idx + 1)));
+                    } catch (NumberFormatException e) {
+                        rounds = 1;
+                    }
+                }
+                log.warn("收到其他实例熔断广播，模型 {} 置为断开状态（第 {} 轮，冷却 {}ms）",
+                        modelId, rounds, computeCooldownMs(rounds));
+                markOpenFromRemote(modelId, rounds);
             });
             log.info("模型熔断事件跨实例广播订阅成功");
         } catch (Exception e) {
@@ -100,16 +116,18 @@ public class ModelHealthStore {
     }
 
     /**
-     * 根据远程熔断广播将本地状态置为 OPEN（冷却时间按本实例配置独立计算）
+     * 根据远程熔断广播将本地状态置为 OPEN（轮数与退避冷却随广播同步，
+     * 冷却时间按本实例配置独立计算）
      */
-    private void markOpenFromRemote(String id) {
+    private void markOpenFromRemote(String id, int openRounds) {
         long now = System.currentTimeMillis();
         healthById.compute(id, (k, v) -> {
             if (v == null) {
                 v = new ModelHealth();
             }
             v.state = State.OPEN;
-            v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
+            v.openRounds = Math.max(1, openRounds);
+            v.openUntil = now + computeCooldownMs(v.openRounds);
             v.consecutiveFailures = 0;
             v.halfOpenInFlight = false;
             return v;
@@ -117,11 +135,11 @@ public class ModelHealthStore {
     }
 
     /**
-     * 广播本实例熔断事件（Redis 不可用时静默降级）
+     * 广播本实例熔断事件（负载 = modelId|openRounds，Redis 不可用时静默降级）
      */
-    private void publishOpen(String modelId) {
+    private void publishOpen(String modelId, int openRounds) {
         try {
-            redisson.getTopic(BREAKER_OPEN_TOPIC).publish(modelId);
+            redisson.getTopic(BREAKER_OPEN_TOPIC).publish(modelId + "|" + openRounds);
         } catch (Exception e) {
             if (!publishWarned) {
                 publishWarned = true;
@@ -159,13 +177,36 @@ public class ModelHealthStore {
                 && !isHalfOpenTimedOut(health);
     }
 
-    // 判断半开状态下的探测请求是否已超时（超过冷却时间视为探测失效）
+    // 判断半开状态下的探测请求是否已超时（超过冷却时间视为探测失效）。
+    // 刻意使用 base 时长而不随退避放大：探测只是单个请求，不应因失败轮数增多
+    // 而允许更长的挂起时间，否则封顶轮次下一个 hang 住的探测会拖满封顶时长才被替换
     private boolean isHalfOpenTimedOut(ModelHealth health) {
         if (!health.halfOpenInFlight || health.halfOpenStartedAt == 0) {
             return false;
         }
         long timeoutMs = routingProperties.getSelection().getOpenDurationMs();
         return System.currentTimeMillis() - health.halfOpenStartedAt > timeoutMs;
+    }
+
+    /**
+     * 当前轮次的指数退避冷却时长
+     */
+    private long computeCooldownMs(int rounds) {
+        return computeBackoffMs(routingProperties.getSelection().getOpenDurationMs(),
+                routingProperties.getSelection().getMaxOpenDurationMs(), rounds);
+    }
+
+    /**
+     * 指数退避冷却计算（纯函数）：冷却 = min(base × 2^(rounds-1), max)。
+     * 上限误配（≤ base）时退化为固定 base，与旧固定冷却行为等价
+     */
+    static long computeBackoffMs(long base, long max, int rounds) {
+        long cap = Math.max(base, max);
+        long cooldown = base;
+        for (int i = 1; i < Math.max(1, rounds) && cooldown < cap; i++) {
+            cooldown <<= 1;
+        }
+        return Math.min(cooldown, cap);
     }
 
     /**
@@ -228,8 +269,8 @@ public class ModelHealthStore {
     /**
      * 标记模型调用成功
      * <p>
-     * 将模型状态重置为 CLOSED，清零连续失败计数和冷却时间。
-     * 这表示模型已恢复正常工作。
+     * 将模型状态重置为 CLOSED，清零连续失败计数、退避轮数和冷却时间。
+     * 这表示模型已恢复正常工作，下次熔断将从基础冷却时长重新起步。
      * </p>
      *
      * @param id 模型 ID
@@ -244,6 +285,7 @@ public class ModelHealthStore {
             }
             v.state = State.CLOSED;
             v.consecutiveFailures = 0;
+            v.openRounds = 0;
             v.openUntil = 0L;
             v.halfOpenInFlight = false;
             return v;
@@ -251,16 +293,7 @@ public class ModelHealthStore {
     }
 
     /**
-     * 标记模型调用失败
-     * <p>
-     * 累加连续失败计数。在 HALF_OPEN 状态下失败会直接回到 OPEN 状态（重新开始冷却）；
-     * 在 CLOSED 状态下，当连续失败次数达到阈值时也会切换到 OPEN 状态并开始冷却。
-     * </p>
-     *
-     * @param id 模型 ID
-     */
-    /**
-     * 设置 OPEN 状态回调
+     * 设置 OPEN 状态回调
      */
     public void setOnOpenCallback(BiConsumer<String, Integer> callback) {
         this.onOpenCallback = callback;
@@ -277,6 +310,12 @@ public class ModelHealthStore {
 
     /**
      * 标记模型调用失败
+     * <p>
+     * 累加连续失败计数。在 HALF_OPEN 状态下失败会直接回到 OPEN 状态（轮数 +1，冷却指数退避）；
+     * 在 CLOSED 状态下，当连续失败次数达到阈值时也会切换到 OPEN 状态并开始退避冷却。
+     * </p>
+     *
+     * @param id 模型 ID
      */
     public void markFailure(String id) {
         if (id == null) {
@@ -285,42 +324,57 @@ public class ModelHealthStore {
         long now = System.currentTimeMillis();
         java.util.concurrent.atomic.AtomicBoolean changedToOpen = new java.util.concurrent.atomic.AtomicBoolean(false);
         java.util.concurrent.atomic.AtomicInteger failureCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger openRounds = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicLong cooldownMs = new java.util.concurrent.atomic.AtomicLong(0);
         healthById.compute(id, (k, v) -> {
             if (v == null) {
                 v = new ModelHealth();
             }
             if (v.state == State.HALF_OPEN) {
+                // 探测失败重新熔断：轮数累加，冷却按退避翻倍
+                v.openRounds++;
                 v.state = State.OPEN;
-                v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
+                long cooldown = computeCooldownMs(v.openRounds);
+                v.openUntil = now + cooldown;
                 v.consecutiveFailures = 0;
                 v.halfOpenInFlight = false;
                 changedToOpen.set(true);
                 failureCount.set(routingProperties.getSelection().getFailureThreshold());
+                openRounds.set(v.openRounds);
+                cooldownMs.set(cooldown);
                 return v;
             }
             v.consecutiveFailures++;
             if (v.consecutiveFailures >= routingProperties.getSelection().getFailureThreshold()) {
                 failureCount.set(v.consecutiveFailures);
+                v.openRounds++;
                 v.state = State.OPEN;
-                v.openUntil = now + routingProperties.getSelection().getOpenDurationMs();
+                long cooldown = computeCooldownMs(v.openRounds);
+                v.openUntil = now + cooldown;
                 v.consecutiveFailures = 0;
                 v.halfOpenInFlight = false;
                 changedToOpen.set(true);
+                openRounds.set(v.openRounds);
+                cooldownMs.set(cooldown);
             }
             return v;
         });
+        if (changedToOpen.get()) {
+            log.warn("模型 {} 熔断（第 {} 轮），冷却 {}ms（指数退避，上限 {}ms）",
+                    id, openRounds.get(), cooldownMs.get(), routingProperties.getSelection().getMaxOpenDurationMs());
+        }
         if (changedToOpen.get() && onOpenCallback != null) {
             onOpenCallback.accept(id, failureCount.get());
         }
         if (changedToOpen.get()) {
-            publishOpen(id);
+            publishOpen(id, openRounds.get());
         }
     }
 
     /**
      * 模型健康状态内部类
      * <p>
-     * 追踪单个模型的连续失败次数、断路器状态和冷却时间。
+     * 追踪单个模型的连续失败次数、断路器状态、退避轮数和冷却时间。
      * 所有字段使用 {@code volatile} 保证多线程可见性。
      * </p>
      */
@@ -330,6 +384,9 @@ public class ModelHealthStore {
 
         // 熔断截至时间戳
         private volatile long openUntil;
+
+        // 连续熔断轮数（指数退避用）：每次进入 OPEN 时 +1，markSuccess 恢复后清零
+        private volatile int openRounds;
 
         // 是否有探测请求正在探测
         private volatile boolean halfOpenInFlight;
@@ -343,6 +400,7 @@ public class ModelHealthStore {
         private ModelHealth() {
             this.consecutiveFailures = 0;
             this.openUntil = 0L;
+            this.openRounds = 0;
             this.halfOpenInFlight = false;
             this.halfOpenStartedAt = 0L;
             this.state = State.CLOSED;

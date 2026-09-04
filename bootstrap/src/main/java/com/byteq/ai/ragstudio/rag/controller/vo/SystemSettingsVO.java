@@ -109,6 +109,7 @@ public class SystemSettingsVO {
         public static class Selection {
             private Integer failureThreshold;
             private Long openDurationMs;
+            private Long maxOpenDurationMs;
             private String toolRoutingModel;
         }
 

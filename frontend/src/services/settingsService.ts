@@ -43,6 +43,7 @@ export interface SystemSettings {
     selection: {
       failureThreshold: number;
       openDurationMs: number;
+      maxOpenDurationMs?: number | null;
       toolRoutingModel?: string | null;
     };
     stream: {

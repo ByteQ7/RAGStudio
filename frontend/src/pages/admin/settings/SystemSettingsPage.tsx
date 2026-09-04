@@ -346,6 +346,7 @@ export function SystemSettingsPage() {
         <CardContent className="grid gap-4 md:grid-cols-2">
           <InfoItem label="Failure Threshold" value={ai.selection.failureThreshold} />
           <InfoItem label="Open Duration (ms)" value={ai.selection.openDurationMs} />
+          <InfoItem label="Max Open Duration (ms)" value={ai.selection.maxOpenDurationMs ?? '—'} />
         </CardContent>
       </Card>
 
