@@ -97,6 +97,9 @@ public class ModelHealthStore {
                 }
                 int idx = payload.indexOf('|');
                 String modelId = idx >= 0 ? payload.substring(0, idx) : payload;
+                if (modelId.isBlank()) {
+                    return;
+                }
                 int rounds = 1;
                 if (idx >= 0) {
                     try {
@@ -198,12 +201,17 @@ public class ModelHealthStore {
 
     /**
      * 指数退避冷却计算（纯函数）：冷却 = min(base × 2^(rounds-1), max)。
-     * 上限误配（≤ base）时退化为固定 base，与旧固定冷却行为等价
+     * 上限误配（≤ base）时退化为固定 base，与旧固定冷却行为等价；
+     * 翻倍前做饱和判断，上限被误配为超大值时不会整型溢出为负（否则冷却为负 = 熔断立即失效）
      */
     static long computeBackoffMs(long base, long max, int rounds) {
         long cap = Math.max(base, max);
         long cooldown = base;
         for (int i = 1; i < Math.max(1, rounds) && cooldown < cap; i++) {
+            if (cooldown > cap - cooldown) {
+                cooldown = cap;
+                break;
+            }
             cooldown <<= 1;
         }
         return Math.min(cooldown, cap);

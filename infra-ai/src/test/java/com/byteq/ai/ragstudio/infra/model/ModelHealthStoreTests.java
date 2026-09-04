@@ -54,6 +54,8 @@ class ModelHealthStoreTests {
         assertEquals(30000L, ModelHealthStore.computeBackoffMs(30000, 10000, 5));
         // 轮数非法值兜底为第 1 轮
         assertEquals(30000L, ModelHealthStore.computeBackoffMs(30000, 600000, 0));
+        // 上限误配为超大值：饱和处理返回 cap 本身，不整型溢出为负（否则冷却为负 = 熔断立即失效）
+        assertEquals(Long.MAX_VALUE, ModelHealthStore.computeBackoffMs(1, Long.MAX_VALUE, 100));
     }
 
     // ==================== 行为：状态机退避流转 ====================
@@ -126,5 +128,30 @@ class ModelHealthStoreTests {
         // 兼容旧格式（无轮数后缀）按第 1 轮处理
         listener.onMessage("channel", "m4");
         assertTrue(store.isUnavailable("m4"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void malformedBroadcastShouldBeIgnoredSafely() throws InterruptedException {
+        RedissonClient redisson = mock(RedissonClient.class);
+        RTopic topic = mock(RTopic.class);
+        when(redisson.getTopic(anyString())).thenReturn(topic);
+        ModelHealthStore store = new ModelHealthStore(props(200, 100000), redisson);
+        store.init();
+
+        ArgumentCaptor<MessageListener> captor = ArgumentCaptor.forClass(MessageListener.class);
+        verify(topic).addListener(eq(String.class), captor.capture());
+        MessageListener<String> listener = captor.getValue();
+
+        // 畸形负载：空 modelId / 空白 modelId / 非法轮数 → 不抛异常、不创建垃圾状态条目
+        listener.onMessage("channel", "|3");
+        listener.onMessage("channel", " |3");
+        listener.onMessage("channel", "mX|abc");
+        assertFalse(store.isUnavailable(""));
+        assertFalse(store.isUnavailable(" "));
+
+        // 非法轮数回退第 1 轮：mX 按 base 200ms 冷却，350ms 后可探测
+        Thread.sleep(350);
+        assertTrue(store.allowCall("mX"));
     }
 }
