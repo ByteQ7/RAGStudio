@@ -108,3 +108,15 @@ Notes/
 /data/
 # mvn spring-boot:run 从 bootstrap/ 启动时 SKILLS_DIR 默认相对 cwd
 bootstrap/data/
+/AI应用开发工程师.md
+
+# vite 配置的 tsc 编译产物（Vite 实际加载 .js 优先于 .ts，产物存在会导致 vite.config.ts 失效）
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/vite.config.*.js
+
+# AI 协作约定（仅本地维护，不入库）
+/AGENTS.md
+
+# ZCode 本地工作区
+.zcode/
