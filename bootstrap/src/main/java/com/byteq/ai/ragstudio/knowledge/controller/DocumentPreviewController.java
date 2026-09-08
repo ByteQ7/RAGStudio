@@ -141,6 +141,7 @@ public class DocumentPreviewController {
     private String resolveContentType(String fileType) {
         if (fileType == null) return "application/octet-stream";
         return switch (fileType) {
+            case "markdown", "md" -> "text/plain; charset=utf-8";
             case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
             case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";

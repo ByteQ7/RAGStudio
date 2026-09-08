@@ -2,13 +2,21 @@ import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  /** 出错时渲染的兜底 UI；不传则使用默认的整页错误卡片 */
+  fallback?: React.ReactNode;
+  /** 出错时额外通知调用方（如父组件据此切换到降级视图），不影响默认兜底渲染 */
+  onError?: (error: Error, info: React.ErrorInfo) => void;
+}
+
 interface ErrorBoundaryState {
   hasError: boolean;
   message?: string;
 }
 
-export class ErrorBoundary extends React.Component<React.PropsWithChildren, ErrorBoundaryState> {
-  constructor(props: React.PropsWithChildren) {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false };
   }
@@ -19,6 +27,7 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error("App error", error, info);
+    this.props.onError?.(error, info);
   }
 
   handleReload = () => {
@@ -28,6 +37,10 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
   render() {
     if (!this.state.hasError) {
       return this.props.children;
+    }
+
+    if (this.props.fallback !== undefined) {
+      return <>{this.props.fallback}</>;
     }
 
     return (
