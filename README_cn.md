@@ -46,6 +46,36 @@
 
 ## 架构
 
+### 系统总览
+
+```
+┌──────────────────┐       HTTP / SSE       ┌──────────────────────────────────────────────┐
+│  前端            │ ◄────────────────────► │  bootstrap (Spring Boot, :9090)              │
+│  React 18 + TS   │                        │                                              │
+│  Vite / Zustand  │                        │  Controllers ──► StreamChatPipeline          │
+└──────────────────┘                        │                      │                       │
+                                            │                      ▼                       │
+                                            │  AgentScope ReActAgent 循环                  │
+                                            │   ├─ rag_search ──► 混合检索（RRF 融合）      │
+                                            │   ├─ tool_reader ─► MCP / SKILL 注册表       │
+                                            │   └─ FINISH ──────► 流式回答 + [^N] 引用     │
+                                            └────────┬─────────────────────┬───────────────┘
+                                                     │                     │
+                                           ┌─────────▼─────────┐  ┌────────▼─────────────────┐
+                                           │ infra-ai          │  │ framework                │
+                                           │ LLM SDK 网关、    │  │ 缓存 / 安全 / MQ /       │
+                                           │ Embedding、Rerank、│  │ 数据库 / 分布式ID /      │
+                                           │ 模型路由          │  │ 链路追踪                 │
+                                           └─────────┬─────────┘  └──────────────────────────┘
+                                                     │
+                        ┌───────────────────┬────────┴────────┬──────────────┬──────────────┐
+                        ▼                   ▼                 ▼              ▼              ▼
+                  LLM 厂商（22 家）   PostgreSQL          Redis        RocketMQ       S3 (MinIO)
+                                     + pgvector                                     Docker 沙箱
+```
+
+### 请求处理流程
+
 ```
 用户提问
   │
@@ -73,12 +103,30 @@ StreamChatPipeline
 
 ### 模块结构
 
+Maven 多模块工程，依赖方向为 **bootstrap → infra-ai / framework**（禁止反向依赖）。
+
 ```
 ragstudio
 ├── bootstrap/     — 业务代码（控制器、服务、Agent 循环、检索、图谱）
 ├── framework/     — 基础框架（缓存、数据库、安全、异常、MQ、分布式ID）
 └── infra-ai/      — AI 基础设施（LLM 客户端与 SDK 网关、路由、推理、Embedding）
 ```
+
+`bootstrap` 内关键包（`com.byteq.ai.ragstudio`）：
+
+| 包 | 职责 |
+|----|------|
+| `rag/service/pipeline` | `StreamChatPipeline` 编排（记忆 → 改写 → 选库 → Agent 循环） |
+| `rag/core/agent` | AgentScope ReActAgent 集成，工具注册（`rag_search`、`tool_reader`） |
+| `rag/core/retrieve` | 检索通道（pgvector + pg_trgm）经 RRF 融合；`postprocessor/` Rerank + 动态 TopK |
+| `rag/core/memory` / `core/rewrite` | 会话记忆（历史/摘要/压缩）；多轮查询改写 |
+| `knowledge/` | 知识库与文档管理、MQ 消费、定时同步 |
+| `ingestion/` | 文档摄入流水线：fetch → parse → chunk → enhance → index |
+| `graph/` | Graph RAG：LLM 实体/关系抽取 + 局部子图检索通道 |
+| `aimodel/` | 模型配置、多模型路由与故障转移 |
+| `mcp/` / `skillstore/` | MCP 服务注册；数据库版本化 SKILL 存储与沙箱执行 |
+
+`infra-ai` 提供厂商官方 SDK 网关层（OpenAI / DashScope / Anthropic / 智谱 / 火山方舟官方 SDK，其余厂商走 OpenAI/Anthropic 兼容策略兜底），以及 Embedding、Rerank、模型路由、结构化输出降级链与进程内 Chunk 裁剪（`crop/`）。
 
 ---
 
