@@ -46,6 +46,36 @@
 
 ## Architecture
 
+### System Overview
+
+```
+┌──────────────────┐       HTTP / SSE       ┌──────────────────────────────────────────────┐
+│  Frontend        │ ◄────────────────────► │  bootstrap (Spring Boot, :9090)              │
+│  React 18 + TS   │                        │                                              │
+│  Vite / Zustand  │                        │  Controllers ──► StreamChatPipeline          │
+└──────────────────┘                        │                      │                       │
+                                            │                      ▼                       │
+                                            │  AgentScope ReActAgent loop                  │
+                                            │   ├─ rag_search ──► Hybrid Retrieval (RRF)   │
+                                            │   ├─ tool_reader ─► MCP / SKILL registries   │
+                                            │   └─ FINISH ──────► streamed answer + [^N]   │
+                                            └────────┬─────────────────────┬───────────────┘
+                                                     │                     │
+                                           ┌─────────▼─────────┐  ┌────────▼─────────────────┐
+                                           │ infra-ai          │  │ framework                │
+                                           │ LLM SDK gateways, │  │ cache / security / MQ /  │
+                                           │ embedding, rerank,│  │ DB / distributed ID /    │
+                                           │ model routing     │  │ trace                    │
+                                           └─────────┬─────────┘  └──────────────────────────┘
+                                                     │
+                        ┌───────────────────┬────────┴────────┬──────────────┬──────────────┐
+                        ▼                   ▼                 ▼              ▼              ▼
+                  LLM providers      PostgreSQL          Redis        RocketMQ       S3 (MinIO)
+                  (22 vendors)       + pgvector                                     Docker sandbox
+```
+
+### Request Flow
+
 ```
 User Question
   │
@@ -73,12 +103,30 @@ StreamChatPipeline
 
 ### Module Structure
 
+Maven multi-module project; dependency direction is **bootstrap → infra-ai / framework** (never the reverse).
+
 ```
 ragstudio
 ├── bootstrap/     — All business code (controllers, services, agent loop, retrieval, graph)
 ├── framework/     — Cache, DB, security, exceptions, MQ, distributed IDs
 └── infra-ai/      — LLM clients & SDK gateways, embedding, rerank, model routing, reasoning
 ```
+
+Key packages inside `bootstrap` (`com.byteq.ai.ragstudio`):
+
+| Package | Responsibility |
+|---------|----------------|
+| `rag/service/pipeline` | `StreamChatPipeline` orchestration (memory → rewrite → KB selection → agent loop) |
+| `rag/core/agent` | AgentScope ReActAgent integration, tool registration (`rag_search`, `tool_reader`) |
+| `rag/core/retrieve` | Retrieval channels (pgvector + pg_trgm) fused via RRF; `postprocessor/` Rerank + dynamic TopK |
+| `rag/core/memory` / `core/rewrite` | Conversation memory (history/summary/compression); multi-turn query rewriting |
+| `knowledge/` | Knowledge base & document management, MQ consumers, scheduled sync |
+| `ingestion/` | Document pipeline: fetch → parse → chunk → enhance → index |
+| `graph/` | Graph RAG: LLM entity/relation extraction + local subgraph retrieval channel |
+| `aimodel/` | Model config, multi-model routing and failover |
+| `mcp/` / `skillstore/` | MCP server registry; DB-versioned SKILL storage & sandbox execution |
+
+`infra-ai` provides the vendor SDK gateway layer (official SDKs for OpenAI / DashScope / Anthropic / Zhipu / VolcEngine, OpenAI/Anthropic-compatible fallback for the rest), plus embedding, rerank, model routing, structured-output fallback and in-process chunk cropping (`crop/`).
 
 ---
 
