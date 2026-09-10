@@ -44,6 +44,10 @@ public class ChatQueueLimiter {
     private final ConversationGroupService conversationGroupService;
     private final MemoryProperties memoryProperties;
     private final StreamTaskManager taskManager;
+    private final ConversationConcurrencyGate conversationGate;
+
+    /** 拒绝记录等待会话门闸的最大时长：拿不到说明同会话真实请求正在执行中，跳过落库避免与真实回答交错 */
+    private static final long REJECT_RECORD_GATE_WAIT_SECONDS = 3;
 
     /**
      * 将对话请求入队到全局并发限流器
@@ -163,20 +167,30 @@ public class ChatQueueLimiter {
             isNewConversation = conversationGroupService.findConversation(actualConversationId, userId) == null;
         }
 
-        memoryService.append(actualConversationId, userId, ChatMessage.user(question));
-        String messageId = memoryService.append(actualConversationId, userId, ChatMessage.assistant(REJECT_MESSAGE));
-
-        String title = Strings.EMPTY;
-        if (isNewConversation) {
-            // append(USER) 内部会触发 conversationService.createOrUpdate（含 LLM 生成标题），此处回查拿到生成结果
-            var conversation = conversationGroupService.findConversation(actualConversationId, userId);
-            title = conversation != null ? conversation.getTitle() : Strings.EMPTY;
-            if (StrUtil.isBlank(title)) {
-                title = buildFallbackTitle(question);
-            }
+        // 同会话并发保护：限流超时拒绝可能发生在同会话另一请求执行中，
+        // 直接落库会与真实回答交错污染历史；拿不到门闸（3s 内）则跳过历史记录，仅返回拒绝事件
+        if (!conversationGate.tryAcquireWait(userId, actualConversationId, REJECT_RECORD_GATE_WAIT_SECONDS)) {
+            log.info("会话正在执行其他请求，跳过拒绝记录落库: conversationId={}", actualConversationId);
+            return null;
         }
-        String taskId = IdUtil.getSnowflakeNextIdStr();
-        return new RejectedContext(actualConversationId, taskId, messageId, title);
+        try {
+            memoryService.append(actualConversationId, userId, ChatMessage.user(question));
+            String messageId = memoryService.append(actualConversationId, userId, ChatMessage.assistant(REJECT_MESSAGE));
+
+            String title = Strings.EMPTY;
+            if (isNewConversation) {
+                // append(USER) 内部会触发 conversationService.createOrUpdate（含 LLM 生成标题），此处回查拿到生成结果
+                var conversation = conversationGroupService.findConversation(actualConversationId, userId);
+                title = conversation != null ? conversation.getTitle() : Strings.EMPTY;
+                if (StrUtil.isBlank(title)) {
+                    title = buildFallbackTitle(question);
+                }
+            }
+            String taskId = IdUtil.getSnowflakeNextIdStr();
+            return new RejectedContext(actualConversationId, taskId, messageId, title);
+        } finally {
+            conversationGate.release(userId, actualConversationId);
+        }
     }
 
     // 根据用户问题截取生成兜底标题

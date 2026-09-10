@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +29,9 @@ public class PgVectorStoreService implements VectorStoreService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final VectorStoreAdmin vectorStoreAdmin;
+
+    /** 单批向量写入行数：超大文档不再一次性整批提交，控制单条语句与事务规模 */
+    private static final int VECTOR_BATCH_SIZE = 500;
 
     @Override
     public void indexDocumentChunks(String collectionName, String docId, int dimension, List<VectorChunk> chunks) {
@@ -53,18 +57,58 @@ public class PgVectorStoreService implements VectorStoreService {
             }
         }
 
-        // noinspection SqlDialectInspection,SqlNoDataSourceInspection
-        jdbcTemplate.batchUpdate(
-                "INSERT INTO " + table + " (id, content, metadata, embedding, content_type) VALUES (?, ?, ?::jsonb, ?::vector, ?)",
-                chunks, chunks.size(), (ps, chunk) -> {
+        String insertSql = "INSERT INTO " + table
+                + " (id, content, metadata, embedding, content_type) VALUES (?, ?, ?::jsonb, ?::vector, ?)";
+        // 已写入的 chunkId（含失败批次内的），失败时精确清理本次调用写入的行，
+        // 避免 JdbcTemplate 自动提交下的半批残留被检索命中
+        List<String> writtenIds = new ArrayList<>(chunks.size());
+        try {
+            for (int from = 0; from < chunks.size(); from += VECTOR_BATCH_SIZE) {
+                List<VectorChunk> slice = chunks.subList(from, Math.min(from + VECTOR_BATCH_SIZE, chunks.size()));
+                slice.forEach(c -> writtenIds.add(c.getChunkId()));
+                // noinspection SqlDialectInspection,SqlNoDataSourceInspection
+                jdbcTemplate.batchUpdate(insertSql, slice, slice.size(), (ps, chunk) -> {
                     ps.setString(1, chunk.getChunkId());
                     ps.setString(2, chunk.getContent());
                     ps.setString(3, buildMetadataJson(collectionName, docId, chunk));
                     ps.setString(4, toVectorLiteral(chunk.getEmbedding()));
                     ps.setString(5, chunk.getContentType() != null ? chunk.getContentType() : "TEXT");
                 });
+            }
+        } catch (Exception e) {
+            cleanupPartialWrites(table, writtenIds, collectionName, docId);
+            throw e;
+        }
 
         log.info("批量写入向量到 {}，collectionName={}, docId={}, count={}", table, collectionName, docId, chunks.size());
+    }
+
+    // 清理本次 indexDocumentChunks 已写入的行（仅限本调用产生的 chunkId，幂等安全）
+    private void cleanupPartialWrites(String table, List<String> writtenIds, String collectionName, String docId) {
+        if (writtenIds == null || writtenIds.isEmpty()) {
+            return;
+        }
+        try {
+            // noinspection SqlDialectInspection,SqlNoDataSourceInspection
+            int deleted = jdbcTemplate.update(
+                    "DELETE FROM " + table + " WHERE metadata->>'doc_id' = ? AND id IN ("
+                            + writtenIds.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(", ")) + ")",
+                    prependedDocId(collectionName, docId, writtenIds));
+            log.warn("向量批量写入失败，已清理本次写入的 {} 行残留, collectionName={}, docId={}, cleaned={}",
+                    writtenIds.size(), collectionName, docId, deleted);
+        } catch (Exception cleanupEx) {
+            log.error("向量批量写入失败后清理残留失败，可能存在半批数据, collectionName={}, docId={}",
+                    collectionName, docId, cleanupEx);
+        }
+    }
+
+    private Object[] prependedDocId(String collectionName, String docId, List<String> ids) {
+        Object[] args = new Object[ids.size() + 1];
+        args[0] = docId;
+        for (int i = 0; i < ids.size(); i++) {
+            args[i + 1] = ids.get(i);
+        }
+        return args;
     }
 
     @Override

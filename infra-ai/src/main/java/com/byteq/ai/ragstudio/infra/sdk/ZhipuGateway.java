@@ -71,17 +71,13 @@ public class ZhipuGateway implements ProviderGateway {
     @Override
     public String chat(ChatRequest request, ModelTarget target) {
         ZhipuAiClient client = buildClient(target);
-        try {
-            ChatCompletionCreateParams params = buildParams(request, target, false);
-            ChatCompletionResponse response = client.chat().createChatCompletion(params);
-            if (!response.isSuccess()) {
-                throw new ModelClientException("zhipu chat 失败: " + response.getMsg(),
-                        ModelClientErrorType.PROVIDER_ERROR, null);
-            }
-            return extractText(response.getData());
-        } finally {
-            client.close();
+        ChatCompletionCreateParams params = buildParams(request, target, false);
+        ChatCompletionResponse response = client.chat().createChatCompletion(params);
+        if (!response.isSuccess()) {
+            throw new ModelClientException("zhipu chat 失败: " + response.getMsg(),
+                    ModelClientErrorType.PROVIDER_ERROR, null);
         }
+        return extractText(response.getData());
     }
 
     @Override
@@ -148,10 +144,8 @@ public class ZhipuGateway implements ProviderGateway {
                 }
             };
         } catch (ModelClientException e) {
-            client.close();
             throw e;
         } catch (Exception e) {
-            client.close();
             throw SdkGatewaySupport.translateError(provider(), e);
         }
     }
@@ -164,23 +158,19 @@ public class ZhipuGateway implements ProviderGateway {
             return List.of();
         }
         ZhipuAiClient client = buildClient(target);
-        try {
-            EmbeddingCreateParams.EmbeddingCreateParamsBuilder pb = EmbeddingCreateParams.builder()
-                    .model(SdkGatewaySupport.requireModelName(target))
-                    .input(texts);
-            Integer dim = target.candidate() != null ? target.candidate().getDimension() : null;
-            if (dim != null && dim > 0) {
-                pb.dimensions(dim);
-            }
-            EmbeddingResponse response = client.embeddings().createEmbeddings(pb.build());
-            if (!response.isSuccess()) {
-                throw new ModelClientException("zhipu embedding 失败: " + response.getMsg(),
-                        ModelClientErrorType.PROVIDER_ERROR, null);
-            }
-            return extractEmbeddings(response.getData(), texts.size());
-        } finally {
-            client.close();
+        EmbeddingCreateParams.EmbeddingCreateParamsBuilder pb = EmbeddingCreateParams.builder()
+                .model(SdkGatewaySupport.requireModelName(target))
+                .input(texts);
+        Integer dim = target.candidate() != null ? target.candidate().getDimension() : null;
+        if (dim != null && dim > 0) {
+            pb.dimensions(dim);
         }
+        EmbeddingResponse response = client.embeddings().createEmbeddings(pb.build());
+        if (!response.isSuccess()) {
+            throw new ModelClientException("zhipu embedding 失败: " + response.getMsg(),
+                    ModelClientErrorType.PROVIDER_ERROR, null);
+        }
+        return extractEmbeddings(response.getData(), texts.size());
     }
 
     @Override
@@ -189,6 +179,10 @@ public class ZhipuGateway implements ProviderGateway {
     }
 
     // ==================== 内部工具 ====================
+
+    /** 客户端缓存（key=apiKey@baseUrl）：每次调用新建客户端且 close 后丢弃，造成连接池/线程反复创建 */
+    private static final java.util.concurrent.ConcurrentHashMap<String, ZhipuAiClient> CLIENT_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     private ZhipuAiClient buildClient(ModelTarget target) {
         ZhipuAiClient.Builder builder = ZhipuAiClient.builder().ofZHIPU();
@@ -200,7 +194,12 @@ public class ZhipuGateway implements ProviderGateway {
         if (StringUtils.hasText(apiKey)) {
             builder.apiKey(apiKey);
         }
-        return builder.build();
+        String cacheKey = apiKey + "@" + (StringUtils.hasText(baseUrl) ? baseUrl : "zhipu-default");
+        return CLIENT_CACHE.computeIfAbsent(cacheKey, k -> builder
+                // networkConfig(callTimeout=0 不限总时长, connect, read, write)：
+                // 读超时按字节间隔生效，同时覆盖同步生成耗时与流式 chunk 间隔
+                .networkConfig(0, 10, 120, 30, TimeUnit.SECONDS)
+                .build());
     }
 
     private ChatCompletionCreateParams buildParams(ChatRequest request, ModelTarget target, boolean stream) {

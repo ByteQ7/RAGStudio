@@ -12,7 +12,10 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 关键词检索通道
@@ -24,6 +27,9 @@ import java.util.concurrent.Executor;
 @Slf4j
 @Component
 public class KeywordSearchChannel implements SearchChannel {
+
+    /** 单个 collection 检索超时（与 RrfHybridChannel.PER_KB_TIMEOUT_MS 一致），防止 DB 挂起无限占用对话名额 */
+    private static final long PER_COLLECTION_TIMEOUT_MS = 25_000;
 
     private final RetrieverService retrieverService;
     private final SearchChannelProperties properties;
@@ -86,8 +92,19 @@ public class KeywordSearchChannel implements SearchChannel {
             }
 
             List<RetrievedChunk> allChunks = new ArrayList<>();
+            // 与 RrfHybridChannel 的 25s 兜底一致：DB 挂起（锁等待/连接池耗尽）时不再无限阻塞占用对话并发名额
             for (CompletableFuture<List<RetrievedChunk>> future : futures) {
-                allChunks.addAll(future.join());
+                try {
+                    allChunks.addAll(future.get(PER_COLLECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS));
+                } catch (java.util.concurrent.TimeoutException e) {
+                    future.cancel(true);
+                    log.warn("关键词检索单集合超时({}ms)，跳过该集合结果", PER_COLLECTION_TIMEOUT_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("关键词检索被中断", e);
+                } catch (ExecutionException e) {
+                    log.warn("关键词检索单集合异常: {}", e.getCause() == null ? e.getMessage() : e.getCause().getMessage());
+                }
             }
 
             long latency = System.currentTimeMillis() - startTime;

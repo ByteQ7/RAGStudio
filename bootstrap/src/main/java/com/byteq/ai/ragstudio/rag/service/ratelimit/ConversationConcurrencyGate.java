@@ -32,6 +32,10 @@ public class ConversationConcurrencyGate {
 
     private final RedissonClient redissonClient;
 
+    /** Redis 故障降级用的本实例内存门闸：单实例部署下 Redis 故障期间同会话仍互斥，防记忆乱序污染 */
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> LOCAL_FALLBACK_GATE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     /**
      * 尝试获取会话执行标记（不等待）
      *
@@ -44,9 +48,46 @@ public class ConversationConcurrencyGate {
             RBucket<String> bucket = redissonClient.getBucket(key(userId, conversationId));
             return bucket.trySet("busy", MARK_TTL_MINUTES, TimeUnit.MINUTES);
         } catch (Exception e) {
-            // Redis 不可用时放行（fail-open），避免门闸引入新的故障点
-            log.warn("会话并发门闸获取失败，放行请求: conversationId={}", conversationId, e);
-            return true;
+            // Redis 不可用时降级为本实例内存门闸（fail-open 仅跨实例，本实例仍互斥），
+            // 避免 Redis 故障期间同会话并发请求互相读到不完整历史并乱序落库
+            log.warn("会话并发门闸获取失败，降级为本地内存门闸: conversationId={}", conversationId, e);
+            return LOCAL_FALLBACK_GATE.putIfAbsent(key(userId, conversationId), new Object()) == null;
+        }
+    }
+
+    /**
+     * 尝试获取会话执行标记（限时等待）
+     * <p>用于低频辅助写路径（如限流拒绝记录）：拿不到说明同会话真实请求正在执行中，
+     * 调用方应跳过本次写入避免与真实回答交错。</p>
+     *
+     * @param userId         用户 ID
+     * @param conversationId 会话 ID
+     * @param waitSeconds    最长等待秒数
+     * @return true-获取成功；false-等待期内门闸仍被占用
+     */
+    public boolean tryAcquireWait(String userId, String conversationId, long waitSeconds) {
+        try {
+            RBucket<String> bucket = redissonClient.getBucket(key(userId, conversationId));
+            // 先检查是否已被占用，避免无谓等待
+            if (bucket.isExists()) {
+                return false;
+            }
+            long deadline = System.currentTimeMillis() + Math.max(0, waitSeconds) * 1000;
+            do {
+                if (bucket.trySet("busy", MARK_TTL_MINUTES, TimeUnit.MINUTES)) {
+                    return true;
+                }
+                if (System.currentTimeMillis() >= deadline) {
+                    return false;
+                }
+                Thread.sleep(100);
+            } while (true);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            log.warn("会话并发门闸限时获取失败，降级为本地内存门闸: conversationId={}", conversationId, e);
+            return LOCAL_FALLBACK_GATE.putIfAbsent(key(userId, conversationId), new Object()) == null;
         }
     }
 
@@ -68,6 +109,8 @@ public class ConversationConcurrencyGate {
             // 释放失败仅记录日志，标记会随 TTL 自动过期
             log.warn("会话并发门闸释放失败: conversationId={}", conversationId, e);
         }
+        // 清理可能存在的本地降级门闸条目（无论释放路径走 Redis 还是内存，幂等安全）
+        LOCAL_FALLBACK_GATE.remove(key(userId, conversationId));
     }
 
     private String key(String userId, String conversationId) {

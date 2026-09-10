@@ -33,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.util.StringUtils;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyExistsException;
@@ -57,6 +58,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final VectorStoreAdmin vectorStoreAdmin;
+    private final TransactionOperations transactionOperations;
     private final S3Client s3Client;
     private final AiModelMapper aiModelMapper;
     private final AiProviderMapper aiProviderMapper;
@@ -68,12 +70,10 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
      * <p>
      * 处理流程：
      * 1. 名称重复校验
-     * 2. 创建 S3 存储桶
-     * 3. 插入数据库记录并初始化向量空间
-     * 4. 若 DB 或向量空间创建失败，补偿删除 S3 桶
+     * 2. 发送真实向量化探测校验 Embedding 模型可用（远程 HTTP，事务外执行）
+     * 3. 事务内插入数据库记录并初始化向量空间
      * </p>
      */
-    @Transactional(rollbackFor = Exception.class)
     @Override
     public String create(KnowledgeBaseCreateRequest requestParam) {
         // 名称重复校验
@@ -95,7 +95,8 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             provider = resolveEmbeddingProvider(requestParam.getEmbeddingModel());
         }
 
-        // 发送真实向量化探测，校验 Embedding 模型可用
+        // 发送真实向量化探测，校验 Embedding 模型可用；
+        // 远程 HTTP 调用放在事务外，避免探测超时拉长事务占用连接
         if (StringUtils.hasText(requestParam.getEmbeddingModel())) {
             try {
                 embeddingService.embedDirect("你好", requestParam.getEmbeddingModel());
@@ -123,8 +124,6 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .updatedBy(UserContext.getUsername())
                 .build();
 
-        knowledgeBaseMapper.insert(kbDO);
-
         VectorSpaceSpec spaceSpec = VectorSpaceSpec.builder()
                 .spaceId(VectorSpaceId.builder()
                         .logicalName(requestParam.getCollectionName())
@@ -132,7 +131,11 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .dimension(dimension)
                 .remark(requestParam.getName())
                 .build();
-        vectorStoreAdmin.ensureVectorSpace(spaceSpec);
+
+        transactionOperations.executeWithoutResult(status -> {
+            knowledgeBaseMapper.insert(kbDO);
+            vectorStoreAdmin.ensureVectorSpace(spaceSpec);
+        });
 
         return String.valueOf(kbDO.getId());
     }

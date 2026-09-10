@@ -111,6 +111,9 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
             // 发送 RocketMQ 事务消息
             sendResult = rocketMQTemplate.sendMessageInTransaction(topic, message, null);
         } catch (Throwable ex) {
+            // half 消息发送失败时 executeLocalTransaction 回调不会执行，
+            // 已注册的本地事务逻辑需在此清理，否则条目连同业务闭包永久滞留
+            transactionListener.unregisterLocalTransaction(txId);
             log.error("[生产者] {} - 事务消息发送失败，topic: {}, keys: {}", bizDesc, topic, keys, ex);
             throw ex;
         }

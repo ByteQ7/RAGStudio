@@ -38,7 +38,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -108,14 +107,12 @@ public class OpenAiGateway implements ProviderGateway {
                 return extractContent(completion);
             }
             throw e;
-        } finally {
-            client.close();
         }
     }
 
     @Override
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
-        OpenAIClient client = buildClient(target);
+        OpenAIClient client = buildStreamClient(target);
         StructuredOutputs.Spec spec = StructuredOutputs.resolve(request, target);
 
         AtomicBoolean finished = new AtomicBoolean(false);
@@ -184,63 +181,73 @@ public class OpenAiGateway implements ProviderGateway {
                 }
             };
         } catch (ModelClientException e) {
-            client.close();
             throw e;
         } catch (Exception e) {
-            client.close();
             throw SdkGatewaySupport.translateError(provider(), e);
         }
     }
 
     // ==================== Embedding ====================
 
+    /** OpenAI 兼容嵌入接口单请求输入条数上限：部分厂商（硅基流动 bge 系列等）对单请求条数有上限 */
+    private static final int EMBEDDING_REQUEST_BATCH_SIZE = 10;
+
     @Override
     public List<List<Float>> embedBatch(List<String> texts, ModelTarget target) {
         if (texts == null || texts.isEmpty()) {
             return List.of();
         }
+        if (texts.size() <= EMBEDDING_REQUEST_BATCH_SIZE) {
+            return embedBatchOnce(texts, target);
+        }
+        // 拆批请求：超供应商单请求上限时整批必然失败，分批保证长文档入库可用
+        List<List<Float>> result = new ArrayList<>(texts.size());
+        for (int from = 0; from < texts.size(); from += EMBEDDING_REQUEST_BATCH_SIZE) {
+            List<String> slice = texts.subList(from, Math.min(from + EMBEDDING_REQUEST_BATCH_SIZE, texts.size()));
+            result.addAll(embedBatchOnce(slice, target));
+        }
+        return result;
+    }
+
+    private List<List<Float>> embedBatchOnce(List<String> texts, ModelTarget target) {
         OpenAIClient client = buildClient(target);
+        Integer dim = target.candidate() != null ? target.candidate().getDimension() : null;
+        boolean withDimensions = dim != null && dim > 0;
+        EmbeddingCreateParams.Builder pb = EmbeddingCreateParams.builder()
+                .model(SdkGatewaySupport.requireModelName(target))
+                .inputOfArrayOfStrings(List.copyOf(texts));
+        if (withDimensions) {
+            pb.dimensions((long) dim);
+        }
         try {
-            Integer dim = target.candidate() != null ? target.candidate().getDimension() : null;
-            boolean withDimensions = dim != null && dim > 0;
-            EmbeddingCreateParams.Builder pb = EmbeddingCreateParams.builder()
+            CreateEmbeddingResponse response = client.embeddings().create(pb.build());
+            return extractEmbeddings(response, texts.size());
+        } catch (Exception e) {
+            // 部分 OpenAI 兼容厂商（如硅基流动 bge 系列）不支持 dimensions 参数，
+            // 带 dimensions 请求会返回 400/422；去掉后按模型默认维度重试一次
+            if (!withDimensions || !SdkGatewaySupport.isParamError(e)) {
+                throw SdkGatewaySupport.translateError(provider(), e);
+            }
+            log.warn("embedding 请求携带 dimensions={} 被拒，去掉 dimensions 重试: {}", dim, e.getMessage());
+            EmbeddingCreateParams retry = EmbeddingCreateParams.builder()
                     .model(SdkGatewaySupport.requireModelName(target))
-                    .inputOfArrayOfStrings(List.copyOf(texts));
-            if (withDimensions) {
-                pb.dimensions((long) dim);
-            }
+                    .inputOfArrayOfStrings(List.copyOf(texts))
+                    .build();
             try {
-                CreateEmbeddingResponse response = client.embeddings().create(pb.build());
-                return extractEmbeddings(response, texts.size());
-            } catch (Exception e) {
-                // 部分 OpenAI 兼容厂商（如硅基流动 bge 系列）不支持 dimensions 参数，
-                // 带 dimensions 请求会返回 400/422；去掉后按模型默认维度重试一次
-                if (!withDimensions || !SdkGatewaySupport.isParamError(e)) {
-                    throw SdkGatewaySupport.translateError(provider(), e);
+                CreateEmbeddingResponse response = client.embeddings().create(retry);
+                List<List<Float>> vectors = extractEmbeddings(response, texts.size());
+                // 降级后服务端按模型默认维度返回，可能与配置维度不一致（如配置 1536 但模型仅支持 1024），
+                // 告警提示，避免向量维度不匹配问题在入库后才暴露
+                if (dim != null && dim > 0 && !vectors.isEmpty() && !vectors.get(0).isEmpty()
+                        && vectors.get(0).size() != dim) {
+                    log.warn("embedding 降级后实际维度 {} 与配置维度 {} 不一致（model={}），"
+                                    + "请改用支持该维度的模型或调整模型维度配置",
+                            vectors.get(0).size(), dim, SdkGatewaySupport.requireModelName(target));
                 }
-                log.warn("embedding 请求携带 dimensions={} 被拒，去掉 dimensions 重试: {}", dim, e.getMessage());
-                EmbeddingCreateParams retry = EmbeddingCreateParams.builder()
-                        .model(SdkGatewaySupport.requireModelName(target))
-                        .inputOfArrayOfStrings(List.copyOf(texts))
-                        .build();
-                try {
-                    CreateEmbeddingResponse response = client.embeddings().create(retry);
-                    List<List<Float>> vectors = extractEmbeddings(response, texts.size());
-                    // 降级后服务端按模型默认维度返回，可能与配置维度不一致（如配置 1536 但模型仅支持 1024），
-                    // 告警提示，避免向量维度不匹配问题在入库后才暴露
-                    if (dim != null && dim > 0 && !vectors.isEmpty() && !vectors.get(0).isEmpty()
-                            && vectors.get(0).size() != dim) {
-                        log.warn("embedding 降级后实际维度 {} 与配置维度 {} 不一致（model={}），"
-                                        + "请改用支持该维度的模型或调整模型维度配置",
-                                vectors.get(0).size(), dim, SdkGatewaySupport.requireModelName(target));
-                    }
-                    return vectors;
-                } catch (Exception retryError) {
-                    throw SdkGatewaySupport.translateError(provider(), retryError);
-                }
+                return vectors;
+            } catch (Exception retryError) {
+                throw SdkGatewaySupport.translateError(provider(), retryError);
             }
-        } finally {
-            client.close();
         }
     }
 
@@ -328,16 +335,45 @@ public class OpenAiGateway implements ProviderGateway {
 
     // ==================== 内部工具 ====================
 
+    /** 同步客户端缓存（key=apiKey@baseUrl）：每次调用新建 OkHttp 客户端会造成连接池/线程泄漏 */
+    private static final java.util.concurrent.ConcurrentHashMap<String, OpenAIClient> SYNC_CLIENT_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** 流式客户端缓存：独立于同步客户端，使用更长的总超时 */
+    private static final java.util.concurrent.ConcurrentHashMap<String, OpenAIClient> STREAM_CLIENT_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** 同步调用总超时（callTimeout 覆盖整个请求，含响应体读取） */
+    private static final java.time.Duration SYNC_CALL_TIMEOUT = java.time.Duration.ofSeconds(120);
+    /** 流式调用总超时：长回答（推理链/慢速厂商）可能远超 60s，放长到 15 分钟避免生成中途被强制截断 */
+    private static final java.time.Duration STREAM_CALL_TIMEOUT = java.time.Duration.ofMinutes(15);
+
     private OpenAIClient buildClient(ModelTarget target) {
-        String baseUrl = SdkGatewaySupport.resolveSdkBaseUrl(target, "chat");
-        if (!StringUtils.hasText(baseUrl)) {
-            baseUrl = "https://api.openai.com/v1";
-        }
-        return OpenAIOkHttpClient.builder()
-                .apiKey(SdkGatewaySupport.resolveApiKey(target))
+        final String baseUrl = resolveOpenAiBaseUrl(target);
+        final String apiKey = SdkGatewaySupport.resolveApiKey(target);
+        final String cacheKey = apiKey + "@" + baseUrl;
+        return SYNC_CLIENT_CACHE.computeIfAbsent(cacheKey, k -> OpenAIOkHttpClient.builder()
+                .apiKey(apiKey)
                 .baseUrl(baseUrl)
-                .timeout(Duration.ofSeconds(60))
-                .build();
+                .timeout(SYNC_CALL_TIMEOUT)
+                // SDK 自带默认 2 次重试（408/429/5xx）会叠加在自研故障转移之上放大延迟与配额压力，关闭
+                .maxRetries(0)
+                .build());
+    }
+
+    private OpenAIClient buildStreamClient(ModelTarget target) {
+        final String baseUrl = resolveOpenAiBaseUrl(target);
+        final String apiKey = SdkGatewaySupport.resolveApiKey(target);
+        final String cacheKey = apiKey + "@" + baseUrl;
+        return STREAM_CLIENT_CACHE.computeIfAbsent(cacheKey, k -> OpenAIOkHttpClient.builder()
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .timeout(STREAM_CALL_TIMEOUT)
+                .maxRetries(0)
+                .build());
+    }
+
+    private String resolveOpenAiBaseUrl(ModelTarget target) {
+        String baseUrl = SdkGatewaySupport.resolveSdkBaseUrl(target, "chat");
+        return StringUtils.hasText(baseUrl) ? baseUrl : "https://api.openai.com/v1";
     }
 
     private ChatCompletionCreateParams buildParams(ChatRequest request, ModelTarget target, boolean stream,

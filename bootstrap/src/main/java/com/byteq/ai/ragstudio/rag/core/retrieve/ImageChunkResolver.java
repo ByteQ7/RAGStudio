@@ -164,13 +164,19 @@ public class ImageChunkResolver {
         return result;
     }
 
+    /** 写入 Redis 缓存的 data URI 最大长度：MB 级大图缓存进 Redis 会拖垮内存与带宽 */
+    private static final int MAX_CACHED_DATA_URI_CHARS = 3_000_000;
+
     private String downloadAndEncode(String s3Url) {
         try (InputStream is = fileStorageService.openStream(s3Url)) {
             byte[] bytes = is.readAllBytes();
             String mime = detectMime(s3Url);
             String base64 = Base64.getEncoder().encodeToString(bytes);
             String dataUri = "data:" + mime + ";base64," + base64;
-            writeCache(s3Url, dataUri);
+            // 超大图片不写入 Redis（约 >2MB 原图），避免 MB 级 value 长期占用
+            if (dataUri.length() <= MAX_CACHED_DATA_URI_CHARS) {
+                writeCache(s3Url, dataUri);
+            }
             return dataUri;
         } catch (Exception e) {
             log.warn("从 S3 下载图片失败: {}", s3Url, e);

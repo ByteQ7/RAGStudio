@@ -32,6 +32,8 @@ spring:
       max-lifetime: 1800000
       maximum-pool-size: 10
       minimum-idle: 5
+      # 连接被占用超过 60s 打印泄漏告警栈，便于定位长事务/慢调用占连接问题
+      leak-detection-threshold: 60000
       pool-name: RAGStudioHikariPool
 
   data:

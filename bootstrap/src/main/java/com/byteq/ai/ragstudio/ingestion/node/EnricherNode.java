@@ -15,6 +15,7 @@ import com.byteq.ai.ragstudio.ingestion.prompt.EnricherPromptManager;
 import com.byteq.ai.ragstudio.ingestion.util.JsonResponseParser;
 import com.byteq.ai.ragstudio.ingestion.util.PromptTemplateRenderer;
 import com.byteq.ai.ragstudio.infra.chat.LLMService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -47,8 +48,14 @@ import java.util.Map;
  * </ul>
  * </p>
  */
+@Slf4j
 @Component
 public class EnricherNode implements IngestionNode {
+
+    /** 单文档逐块富化的 chunk 数量上限：串行同步 LLM 调用无上限会长时间占用消费线程 */
+    private static final int MAX_ENRICH_CHUNKS = 2000;
+    /** 单 chunk 参与富化的最大输入字符数：超长 chunk 截断，控制单次 LLM 请求规模 */
+    private static final int MAX_ENRICH_INPUT_CHARS = 8000;
 
     /**
      * Jackson JSON 对象映射器，用于解析节点配置
@@ -91,10 +98,18 @@ public class EnricherNode implements IngestionNode {
             return NodeResult.ok("未配置富化任务");
         }
         boolean attachMetadata = settings.getAttachDocumentMetadata() == null || settings.getAttachDocumentMetadata();
+        if (chunks.size() > MAX_ENRICH_CHUNKS) {
+            log.warn("分块数量 {} 超过富化上限 {}，仅富化前 {} 个 chunk", chunks.size(), MAX_ENRICH_CHUNKS, MAX_ENRICH_CHUNKS);
+        }
+        int processed = 0;
         for (VectorChunk chunk : chunks) {
+            if (processed >= MAX_ENRICH_CHUNKS) {
+                break;
+            }
             if (chunk == null || !StringUtils.hasText(chunk.getContent())) {
                 continue;
             }
+            processed++;
             if (chunk.getMetadata() == null) {
                 chunk.setMetadata(new HashMap<>());
             }
@@ -154,7 +169,7 @@ public class EnricherNode implements IngestionNode {
      * @return 构建后的用户提示词
      */
     private String buildUserPrompt(String template, VectorChunk chunk, IngestionContext context) {
-        String input = chunk.getContent();
+        String input = truncateForEnrichment(chunk.getContent());
         if (!StringUtils.hasText(template)) {
             return input;
         }
@@ -165,6 +180,14 @@ public class EnricherNode implements IngestionNode {
         vars.put("taskId", context.getTaskId());
         vars.put("pipelineId", context.getPipelineId());
         return PromptTemplateRenderer.render(template, vars);
+    }
+
+    // 超长 chunk 截断，防止单次富化请求内容过大导致 prompt 超限失败
+    private String truncateForEnrichment(String content) {
+        if (content == null || content.length() <= MAX_ENRICH_INPUT_CHARS) {
+            return content;
+        }
+        return content.substring(0, MAX_ENRICH_INPUT_CHARS);
     }
 
     /**

@@ -104,9 +104,12 @@ public class StreamTaskManager {
         }
         
         if (isTaskCancelledInRedis(taskId, taskInfo)) {
-            CompletionPayload payload = cancelSupplier.get();
-            sendCancelAndDone(taskSender, payload);
-            taskSender.complete();
+            // 终态互斥：只有抢先收尾的路径才发送 CANCEL/DONE，避免与后续回调重复
+            if (taskInfo.tryFinalize()) {
+                CompletionPayload payload = cancelSupplier.get();
+                sendCancelAndDone(taskSender, payload);
+                taskSender.complete();
+            }
         }
     }
 
@@ -133,6 +136,25 @@ public class StreamTaskManager {
     public boolean isCancelled(String taskId) {
         StreamTaskInfo info = tasks.getIfPresent(taskId);
         return info != null && info.cancelled.get();
+    }
+
+    /**
+     * 尝试原子抢占任务终态
+     * <p>
+     * 正常完成（onComplete）、错误（onError）、取消（cancelLocal）三条收尾路径共用此互斥门，
+     * 保证落库与终态事件只由其中一条路径执行，避免同一会话重复写入回答消息。
+     * 任务未注册（条目不存在）时默认允许当前路径收尾。
+     * </p>
+     *
+     * @param taskId 任务 ID
+     * @return true 表示抢占成功，由当前路径执行收尾
+     */
+    public boolean tryFinalize(String taskId) {
+        StreamTaskInfo taskInfo = tasks.getIfPresent(taskId);
+        if (taskInfo == null) {
+            return true;
+        }
+        return taskInfo.tryFinalize();
     }
 
     /**
@@ -173,7 +195,7 @@ public class StreamTaskManager {
         return false;
     }
 
-    // 本地取消任务: CAS 确保只执行一次 -> 中断 LLM 连接 -> 执行取消回调保存已有内容
+    // 本地取消任务: CAS 确保只执行一次 -> 中断 LLM 连接 -> 终态互斥 -> 执行取消回调保存已有内容
     private void cancelLocal(String taskId) {
         StreamTaskInfo taskInfo = tasks.getIfPresent(taskId);
         if (taskInfo == null) {
@@ -187,6 +209,11 @@ public class StreamTaskManager {
 
         if (taskInfo.handle != null) {
             taskInfo.handle.cancel();
+        }
+
+        // 终态互斥：onComplete/onError 已抢占收尾时跳过，避免重复落库与重复 DONE
+        if (!taskInfo.tryFinalize()) {
+            return;
         }
 
         // 在取消时执行回调，保存已累积的内容
@@ -230,8 +257,15 @@ public class StreamTaskManager {
 
     private static final class StreamTaskInfo {
         private final AtomicBoolean cancelled = new AtomicBoolean(false);
+        /** 终态标记：正常完成/错误/取消三条收尾路径互斥 */
+        private final AtomicBoolean finalized = new AtomicBoolean(false);
         private volatile StreamCancellationHandle handle;
         private volatile SseEmitterSender sender;
         private volatile Supplier<CompletionPayload> onCancelSupplier;
+
+        /** CAS 抢占终态，成功返回 true */
+        boolean tryFinalize() {
+            return finalized.compareAndSet(false, true);
+        }
     }
 }

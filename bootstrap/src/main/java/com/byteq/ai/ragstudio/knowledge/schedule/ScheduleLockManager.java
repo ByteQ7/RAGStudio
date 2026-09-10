@@ -106,13 +106,16 @@ public class ScheduleLockManager {
         if (lease == null) {
             return false;
         }
-        return scheduleMapper.update(
+        boolean released = scheduleMapper.update(
                 Wrappers.lambdaUpdate(KnowledgeDocumentScheduleDO.class)
                         .set(KnowledgeDocumentScheduleDO::getLockOwner, null)
                         .set(KnowledgeDocumentScheduleDO::getLockUntil, null)
                         .eq(KnowledgeDocumentScheduleDO::getId, lease.scheduleId())
                         .eq(KnowledgeDocumentScheduleDO::getLockOwner, lease.lockToken())
         ) > 0;
+        // 已释放的租约不再占用心跳条目（心跳遍历 activeLeases，滞留条目只会浪费心跳周期）
+        activeLeases.remove(lease.scheduleId());
+        return released;
     }
 
     /**

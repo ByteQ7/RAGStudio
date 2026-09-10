@@ -25,7 +25,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -68,18 +67,13 @@ public class AnthropicGateway implements ProviderGateway {
     @Override
     public String chat(ChatRequest request, ModelTarget target) {
         AnthropicClient client = buildClient(target);
-        try {
-            MessageCreateParams params = buildParams(request, target, false);
-            Message message = client.messages().create(params);
-            return extractText(message);
-        } finally {
-            client.close();
-        }
+        MessageCreateParams params = buildParams(request, target, false);
+        return extractText(client.messages().create(params));
     }
 
     @Override
     public StreamCancellationHandle streamChat(ChatRequest request, StreamCallback callback, ModelTarget target) {
-        AnthropicClient client = buildClient(target);
+        AnthropicClient client = buildStreamClient(target);
         MessageCreateParams params = buildParams(request, target, true);
 
         AtomicBoolean finished = new AtomicBoolean(false);
@@ -147,10 +141,8 @@ public class AnthropicGateway implements ProviderGateway {
                 }
             };
         } catch (ModelClientException e) {
-            client.close();
             throw e;
         } catch (Exception e) {
-            client.close();
             throw SdkGatewaySupport.translateError(provider(), e);
         }
     }
@@ -167,23 +159,52 @@ public class AnthropicGateway implements ProviderGateway {
 
     // ==================== 内部工具 ====================
 
+    /** 同步客户端缓存（key=apiKey@baseUrl）：每次调用新建 OkHttp 客户端会造成连接池/线程泄漏 */
+    private static final java.util.concurrent.ConcurrentHashMap<String, AnthropicClient> SYNC_CLIENT_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** 流式客户端缓存：独立于同步客户端，使用更长的总超时 */
+    private static final java.util.concurrent.ConcurrentHashMap<String, AnthropicClient> STREAM_CLIENT_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** 同步调用总超时（callTimeout 覆盖整个请求，含响应体读取） */
+    private static final java.time.Duration SYNC_CALL_TIMEOUT = java.time.Duration.ofSeconds(120);
+    /** 流式调用总超时：长回答可能远超 60s，放长到 15 分钟避免生成中途被强制截断 */
+    private static final java.time.Duration STREAM_CALL_TIMEOUT = java.time.Duration.ofMinutes(15);
+
     private AnthropicClient buildClient(ModelTarget target) {
-        String baseUrl = SdkGatewaySupport.resolveSdkBaseUrl(target, "chat");
-        if (!StringUtils.hasText(baseUrl)) {
-            baseUrl = "https://api.anthropic.com";
-        }
-        return AnthropicOkHttpClient.builder()
-                .apiKey(SdkGatewaySupport.resolveApiKey(target))
+        final String baseUrl = resolveAnthropicBaseUrl(target);
+        final String apiKey = SdkGatewaySupport.resolveApiKey(target);
+        final String cacheKey = apiKey + "@" + baseUrl;
+        return SYNC_CLIENT_CACHE.computeIfAbsent(cacheKey, k -> AnthropicOkHttpClient.builder()
+                .apiKey(apiKey)
                 .baseUrl(baseUrl)
-                .timeout(Duration.ofSeconds(60))
-                .build();
+                .timeout(SYNC_CALL_TIMEOUT)
+                // SDK 自带默认 2 次重试（408/429/5xx）会叠加在自研故障转移之上放大延迟与配额压力，关闭
+                .maxRetries(0)
+                .build());
+    }
+
+    private AnthropicClient buildStreamClient(ModelTarget target) {
+        final String baseUrl = resolveAnthropicBaseUrl(target);
+        final String apiKey = SdkGatewaySupport.resolveApiKey(target);
+        final String cacheKey = apiKey + "@" + baseUrl;
+        return STREAM_CLIENT_CACHE.computeIfAbsent(cacheKey, k -> AnthropicOkHttpClient.builder()
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .timeout(STREAM_CALL_TIMEOUT)
+                .maxRetries(0)
+                .build());
+    }
+
+    private String resolveAnthropicBaseUrl(ModelTarget target) {
+        String baseUrl = SdkGatewaySupport.resolveSdkBaseUrl(target, "chat");
+        return StringUtils.hasText(baseUrl) ? baseUrl : "https://api.anthropic.com";
     }
 
     private MessageCreateParams buildParams(ChatRequest request, ModelTarget target, boolean stream) {
         MessageCreateParams.Builder pb = MessageCreateParams.builder()
                 .model(SdkGatewaySupport.requireModelName(target))
                 .maxTokens(request.getMaxTokens() != null && request.getMaxTokens() > 0
-                        ? request.getMaxTokens() : 1024L);
+                        ? request.getMaxTokens() : 4096L);
         if (request.getTemperature() != null) {
             pb.temperature(request.getTemperature());
         }

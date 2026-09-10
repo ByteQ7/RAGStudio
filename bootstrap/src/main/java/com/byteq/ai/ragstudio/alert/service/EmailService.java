@@ -32,6 +32,18 @@ public class EmailService {
 
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /** 告警邮件线程序号 */
+    private static final java.util.concurrent.atomic.AtomicInteger MAIL_THREAD_SEQ =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** 告警邮件专用线程池：SMTP 阻塞 IO 不再落入 ForkJoinPool.commonPool，避免告警风暴饿死公共池 */
+    private static final java.util.concurrent.ExecutorService MAIL_EXECUTOR =
+            java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
+                Thread t = new Thread(r, "alert-mail-" + MAIL_THREAD_SEQ.incrementAndGet());
+                t.setDaemon(true);
+                return t;
+            });
+
     /**
      * 发送告警邮件（异步执行，异常只记录日志不抛出，不阻塞告警触发链路）
      */
@@ -42,7 +54,7 @@ public class EmailService {
             return;
         }
 
-        CompletableFuture.runAsync(() -> {
+        MAIL_EXECUTOR.execute(() -> {
             try {
                 JavaMailSender mailSender = createMailSender(config);
                 MimeMessage message = mailSender.createMimeMessage();
@@ -54,7 +66,7 @@ public class EmailService {
                 mailSender.send(message);
                 log.info("告警邮件已发送至 {}", config.getToAddress());
             } catch (Exception e) {
-                log.error("发送告警邮件失败: {}", e.getMessage());
+                log.error("发送告警邮件失败", e);
             }
         });
     }

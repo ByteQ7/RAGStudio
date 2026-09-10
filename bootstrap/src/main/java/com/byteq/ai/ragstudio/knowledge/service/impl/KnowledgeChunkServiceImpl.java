@@ -114,12 +114,11 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     /**
      * 新增分片
      * <p>
-     * 处理流程：校验文档状态 → 自动计算分片序号 → 创建分片记录 →
-     * 更新文档分片计数 → 同步写入向量库
+     * 处理流程：校验文档状态 → 自动计算分片序号 → 事务外生成 embedding（远程 HTTP，避免长事务）→
+     * 事务内创建分片记录 + 更新文档分片计数 + 同步写入向量库
      * </p>
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public KnowledgeChunkVO create(String docId, KnowledgeChunkCreateRequest requestParam) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
@@ -164,16 +163,19 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 .updatedBy(UserContext.getUsername())
                 .build();
 
-        chunkMapper.insert(chunkDO);
-        log.info("新增 Chunk 成功, kbId={}, docId={}, chunkId={}, chunkIndex={}", documentDO.getKbId(), docId, chunkDO.getId(), chunkIndex);
-
-        documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
-                .eq(KnowledgeDocumentDO::getId, docId)
-                .setSql("chunk_count = chunk_count + 1"));
-
-        // 同步写入向量库
+        // 远程 embedding 调用在事务外完成，事务内只做 DB + 向量写入（同库原子提交）
         Integer dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : null;
-        syncChunkToVector(collectionName, docId, chunkDO, embeddingModel, dimension);
+        List<Float> embedding = embedContent(content, embeddingModel, dimension);
+        transactionOperations.executeWithoutResult(status -> {
+            chunkMapper.insert(chunkDO);
+            log.info("新增 Chunk 成功, kbId={}, docId={}, chunkId={}, chunkIndex={}", documentDO.getKbId(), docId, chunkDO.getId(), chunkIndex);
+
+            documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                    .eq(KnowledgeDocumentDO::getId, docId)
+                    .setSql("chunk_count = chunk_count + 1"));
+
+            syncChunkToVector(collectionName, docId, chunkDO, dimension, embedding);
+        });
 
         return BeanUtil.toBean(chunkDO, KnowledgeChunkVO.class);
     }
@@ -187,12 +189,12 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     /**
      * 批量新增分片
      * <p>
-     * 处理流程：自动计算缺失的分片序号 → 逐条创建分片记录 →
-     * 批量写入数据库 → 更新文档分片计数 → 可选同步写入向量库
+     * 处理流程：自动计算缺失的分片序号 → 构建分片记录 →
+     * 可选：事务外生成 embedding（远程 HTTP）→
+     * 事务内批量写入数据库 + 更新文档分片计数 + 可选同步写入向量库
      * </p>
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void batchCreate(String docId, List<KnowledgeChunkCreateRequest> requestParams, boolean writeVector) {
         if (CollUtil.isEmpty(requestParams)) {
             return;
@@ -253,17 +255,10 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
             chunkDOList.add(chunkDO);
         }
 
-        // 批量写入数据库，向量索引由上层统一处理以避免重复计算
-        for (KnowledgeChunkDO chunkDO : chunkDOList) {
-            chunkMapper.insert(chunkDO);
-        }
-
-        documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
-                .eq(KnowledgeDocumentDO::getId, docId)
-                .setSql("chunk_count = chunk_count + " + chunkDOList.size()));
-
+        // 远程 embedding 在事务外完成（向量索引由本方法事务内统一写入）
+        List<VectorChunk> vectorChunks = List.of();
         if (writeVector) {
-            List<VectorChunk> vectorChunks = chunkDOList.stream()
+            vectorChunks = chunkDOList.stream()
                     .map(each -> VectorChunk.builder()
                             .chunkId(String.valueOf(each.getId()))
                             .content(each.getContent())
@@ -273,17 +268,31 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                     .toList();
             if (CollUtil.isNotEmpty(vectorChunks)) {
                 attachEmbeddings(vectorChunks, embeddingModel, dimension);
-                vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, vectorChunks);
             }
         }
+
+        List<VectorChunk> finalVectorChunks = vectorChunks;
+        transactionOperations.executeWithoutResult(status -> {
+            for (KnowledgeChunkDO chunkDO : chunkDOList) {
+                chunkMapper.insert(chunkDO);
+            }
+
+            documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                    .eq(KnowledgeDocumentDO::getId, docId)
+                    .setSql("chunk_count = chunk_count + " + chunkDOList.size()));
+
+            if (writeVector && CollUtil.isNotEmpty(finalVectorChunks)) {
+                vectorStoreService.indexDocumentChunks(collectionName, docId, dimension, finalVectorChunks);
+            }
+        });
     }
 
     /**
      * 更新分片内容
-     * <p>校验文档和分片存在性后更新内容、哈希值和 Token 计数，并同步到向量库。</p>
+     * <p>校验文档和分片存在性后更新内容、哈希值和 Token 计数，并同步到向量库。
+     * 远程 embedding 与图谱抽取均在事务外执行，避免长事务占用连接池。</p>
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void update(String docId, String chunkId, KnowledgeChunkUpdateRequest requestParam) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
@@ -306,29 +315,34 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         chunkDO.setContentHash(SecureUtil.sha256(newContent));
         chunkDO.setCharCount(newContent.length());
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
-        String embeddingModel = kbDO.getEmbeddingModel();
         String collectionName = kbDO.getCollectionName();
         chunkDO.setTokenCount(resolveTokenCount(newContent));
         chunkDO.setUpdatedBy(UserContext.getUsername());
 
-        chunkMapper.updateById(chunkDO);
-
-        log.info("更新 Chunk 成功, kbId={}, docId={}, chunkId={}", documentDO.getKbId(), docId, chunkId);
-
-        // 同步向量数据库
+        // 远程 embedding 在事务外完成
         Integer dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : null;
-        vectorStoreService.updateChunk(
-                collectionName,
-                docId,
-                VectorChunk.builder()
-                        .chunkId(chunkId)
-                        .content(newContent)
-                        .index(chunkDO.getChunkIndex())
-                        .embedding(toArray(embedContent(newContent, embeddingModel, dimension)))
-                        .build()
-        );
+        List<Float> embedding = embedContent(newContent, kbDO.getEmbeddingModel(), dimension);
 
-        // 图谱增量重抽：仅重抽该 chunk，文档其余 chunk 复用抽取缓存（零额外 LLM 成本）
+        transactionOperations.executeWithoutResult(status -> {
+            chunkMapper.updateById(chunkDO);
+
+            log.info("更新 Chunk 成功, kbId={}, docId={}, chunkId={}", documentDO.getKbId(), docId, chunkId);
+
+            // 同步向量数据库（与 DB 更新同事务原子提交）
+            vectorStoreService.updateChunk(
+                    collectionName,
+                    docId,
+                    VectorChunk.builder()
+                            .chunkId(chunkId)
+                            .content(newContent)
+                            .index(chunkDO.getChunkIndex())
+                            .embedding(toArray(embedding))
+                            .build()
+            );
+        });
+
+        // 图谱增量重抽：仅重抽该 chunk，文档其余 chunk 复用抽取缓存（零额外 LLM 成本）；
+        // LLM 同步调用较慢，放在事务提交后执行
         graphExtractionService.extractForChunk(documentDO.getKbId(), docId, chunkId, newContent);
     }
 
@@ -370,10 +384,10 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
 
     /**
      * 启用/禁用单个分片
-     * <p>启用时将分片重新写入向量库，禁用时从向量库移除。</p>
+     * <p>启用时将分片重新写入向量库，禁用时从向量库移除。
+     * 启用路径的远程 embedding 在事务外完成，图谱 LLM 联动在事务提交后执行。</p>
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void enableChunk(String docId, String chunkId, boolean enabled) {
         KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
         Assert.notNull(documentDO, () -> new ClientException("文档不存在", KnowledgeErrorCode.DOCUMENT_NOT_FOUND));
@@ -392,23 +406,28 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
             return;
         }
 
-        chunkDO.setEnabled(enabledValue);
-        chunkDO.setUpdatedBy(UserContext.getUsername());
-        chunkMapper.updateById(chunkDO);
-
         KnowledgeBaseDO kbDO = knowledgeBaseMapper.selectById(documentDO.getKbId());
         String collectionName = kbDO.getCollectionName();
         int dimension = kbDO.getDimension() != null && kbDO.getDimension() > 0 ? kbDO.getDimension() : 1536;
         log.info("{}Chunk 成功, kbId={}, docId={}, chunkId={}", enabled ? "启用" : "禁用", documentDO.getKbId(), docId, chunkId);
 
-        if (enabled) {
-            String embeddingModel = kbDO.getEmbeddingModel();
-            syncChunkToVector(collectionName, docId, chunkDO, embeddingModel, dimension);
-        } else {
-            deleteChunkFromVector(collectionName, dimension, chunkId);
-        }
+        // 启用：远程 embedding 在事务外完成，事务内做 DB + 向量写入
+        final List<Float> embedding = enabled
+                ? embedContent(chunkDO.getContent(), kbDO.getEmbeddingModel(), dimension)
+                : null;
 
-        // 图谱联动：禁用 → 清理该 chunk 派生关系；启用 → 增量重建（复用抽取缓存）
+        chunkDO.setEnabled(enabledValue);
+        chunkDO.setUpdatedBy(UserContext.getUsername());
+        transactionOperations.executeWithoutResult(status -> {
+            chunkMapper.updateById(chunkDO);
+            if (enabled) {
+                syncChunkToVector(collectionName, docId, chunkDO, dimension, embedding);
+            } else {
+                deleteChunkFromVector(collectionName, dimension, chunkId);
+            }
+        });
+
+        // 图谱联动：禁用 → 清理该 chunk 派生关系（纯 DB）；启用 → 增量重建（LLM，事务外执行）
         if (enabled) {
             graphExtractionService.extractForChunk(documentDO.getKbId(), docId, chunkId, chunkDO.getContent());
         } else {
@@ -586,11 +605,10 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     }
 
     /**
-     * 将单个 chunk 同步到向量库
+     * 将单个 chunk 同步到向量库（embedding 已在事务外生成，事务内调用）
      */
     private void syncChunkToVector(String collectionName, String docId, KnowledgeChunkDO chunkDO,
-                                   String embeddingModel, Integer dimension) {
-        List<Float> embedding = embedContent(chunkDO.getContent(), embeddingModel, dimension);
+                                   Integer dimension, List<Float> embedding) {
         float[] vector = toArray(embedding);
         int vectorDim = vector.length;
 

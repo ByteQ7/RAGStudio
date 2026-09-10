@@ -19,6 +19,8 @@ import java.net.URI;
 @Configuration
 public class RestFSS3Config {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RestFSS3Config.class);
+
     /**
      * 创建 S3 客户端 Bean
      * <p>
@@ -35,6 +37,11 @@ public class RestFSS3Config {
     public S3Client s3Client(@Value("${rustfs.url}") String rustfsUrl,
                              @Value("${rustfs.access-key-id}") String accessKeyId,
                              @Value("${rustfs.secret-access-key}") String secretAccessKey) {
+        // 缺省凭证为空字符串时启动不报错、首次上传才报鉴权错，启动期给出显式告警便于定位漏配
+        if (accessKeyId == null || accessKeyId.isBlank() || secretAccessKey == null || secretAccessKey.isBlank()) {
+            log.warn("RustFS 凭证未配置（RUSTFS_ACCESS_KEY/RUSTFS_SECRET_KEY 为空），"
+                    + "应用可启动但所有文件上传/预签名操作将失败，请检查 .env 配置");
+        }
         return S3Client.builder()
                 .endpointOverride(URI.create(rustfsUrl))
                 .region(Region.US_EAST_1)

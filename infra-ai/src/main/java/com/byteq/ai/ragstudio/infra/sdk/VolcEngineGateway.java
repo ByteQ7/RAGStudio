@@ -80,12 +80,9 @@ public class VolcEngineGateway implements ProviderGateway {
     @Override
     public String chat(ChatRequest request, ModelTarget target) {
         ArkService service = buildService(target);
-        try {
-            ChatCompletionRequest req = buildRequest(request, target, false);
-            ChatCompletionResult result = service.createChatCompletion(req);
-            return extractText(result);
-        } finally {
-        }
+        ChatCompletionRequest req = buildRequest(request, target, false);
+        ChatCompletionResult result = service.createChatCompletion(req);
+        return extractText(result);
     }
 
     @Override
@@ -162,14 +159,11 @@ public class VolcEngineGateway implements ProviderGateway {
             return List.of();
         }
         ArkService service = buildService(target);
-        try {
-            EmbeddingRequest req = new EmbeddingRequest();
-            req.setModel(SdkGatewaySupport.requireModelName(target));
-            req.setInput(texts);
-            EmbeddingResult result = service.createEmbeddings(req);
-            return extractEmbeddings(result, texts.size());
-        } finally {
-        }
+        EmbeddingRequest req = new EmbeddingRequest();
+        req.setModel(SdkGatewaySupport.requireModelName(target));
+        req.setInput(texts);
+        EmbeddingResult result = service.createEmbeddings(req);
+        return extractEmbeddings(result, texts.size());
     }
 
     @Override
@@ -205,24 +199,31 @@ public class VolcEngineGateway implements ProviderGateway {
 
     // ==================== 内部工具 ====================
 
+    /** ArkService 实例缓存（key=apiKey@baseUrl）：此前每次调用新建 OkHttpClient+Retrofit 且从不关闭，泄漏连接池 */
+    private static final java.util.concurrent.ConcurrentHashMap<String, ArkService> SERVICE_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private ArkService buildService(ModelTarget target) {
         String apiKey = SdkGatewaySupport.resolveApiKey(target);
-        String baseUrl = SdkGatewaySupport.resolveSdkBaseUrl(target, "chat");
-        if (!StringUtils.hasText(baseUrl)) {
-            baseUrl = DEFAULT_BASE_URL;
-        }
+        String resolved = SdkGatewaySupport.resolveSdkBaseUrl(target, "chat");
+        String baseUrl = StringUtils.hasText(resolved) ? resolved : DEFAULT_BASE_URL;
         baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
 
-        ObjectMapper mapper = ArkService.defaultObjectMapper();
-        OkHttpClient client = new OkHttpClient.Builder()
-                .addInterceptor(new AuthenticationInterceptor(apiKey))
-                .addInterceptor(new RequestIdInterceptor())
-                .connectTimeout(Duration.ofSeconds(10))
-                .readTimeout(Duration.ofSeconds(60))
-                .build();
-        Retrofit retrofit = ArkService.defaultRetrofit(client, mapper, baseUrl, null);
-        ArkApi api = retrofit.create(ArkApi.class);
-        return new ArkService(api);
+        final String normalizedBaseUrl = baseUrl;
+        String cacheKey = apiKey + "@" + baseUrl;
+        return SERVICE_CACHE.computeIfAbsent(cacheKey, k -> {
+            ObjectMapper mapper = ArkService.defaultObjectMapper();
+            OkHttpClient client = new OkHttpClient.Builder()
+                    .addInterceptor(new AuthenticationInterceptor(apiKey))
+                    .addInterceptor(new RequestIdInterceptor())
+                    .connectTimeout(Duration.ofSeconds(10))
+                    // 读超时按字节间隔生效：同步调用覆盖生成耗时，流式调用覆盖 chunk 间隔空闲
+                    .readTimeout(Duration.ofSeconds(120))
+                    .build();
+            Retrofit retrofit = ArkService.defaultRetrofit(client, mapper, normalizedBaseUrl, null);
+            ArkApi api = retrofit.create(ArkApi.class);
+            return new ArkService(api);
+        });
     }
 
     private ChatCompletionRequest buildRequest(ChatRequest request, ModelTarget target, boolean stream) {

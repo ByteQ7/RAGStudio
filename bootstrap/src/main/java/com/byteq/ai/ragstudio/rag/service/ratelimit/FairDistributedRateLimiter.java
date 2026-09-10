@@ -48,6 +48,9 @@ public final class FairDistributedRateLimiter {
      */
     private static final long ENTRY_TTL_BUFFER_MILLIS = 5_000L;
 
+    /** permit 租约续租周期与租期的比值（每 1/3 租期续租一次） */
+    private static final int LEASE_RENEW_INTERVAL_DIVISOR = 3;
+
     private final String name;
     private final RedissonClient redissonClient;
     private final IntSupplier maxPermitsSupplier;
@@ -159,6 +162,8 @@ public final class FairDistributedRateLimiter {
         final AtomicReference<State> state = new AtomicReference<>(State.PENDING);
         final AtomicReference<String> permitRef = new AtomicReference<>();
         volatile ScheduledFuture<?> future;
+        /** permit 租约续期任务：业务时长可能远超 permit 租期，不续租会导致实际并发超发 */
+        volatile ScheduledFuture<?> permitRenewalFuture;
 
         Ticket(AcquireRequest req) {
             this.req = req;
@@ -210,6 +215,7 @@ public final class FairDistributedRateLimiter {
             }
             unregisterFromNotifier();
             cancelFutureQuietly();
+            startPermitRenewal(permitId);
             Runnable wrapped = () -> {
                 try {
                     req.onAcquired().run();
@@ -235,8 +241,36 @@ public final class FairDistributedRateLimiter {
         void releaseHeldPermit() {
             String pid = permitRef.getAndSet(null);
             if (pid != null) {
+                stopPermitRenewal();
                 releasePermitQuietly(pid);
                 publishQueueNotify();
+            }
+        }
+
+        /**
+         * 启动 permit 租约续期：业务执行时长（Agent 最长 120s+）可能远超 permit 租期（默认 30s），
+         * 到期后 permit 会被信号量自动回收给新请求，导致实际活跃并发超过 max-concurrent。
+         * 续租周期 = 租期/3，允许偶尔一次续租失败（Redis 抖动）仍有两次重试机会
+         */
+        void startPermitRenewal(String permitId) {
+            int leaseSeconds = Math.max(10, leaseSecondsSupplier.getAsInt());
+            long renewInterval = Math.max(1, leaseSeconds / LEASE_RENEW_INTERVAL_DIVISOR);
+            permitRenewalFuture = scheduler.scheduleAtFixedRate(() -> {
+                try {
+                    redissonClient.getPermitExpirableSemaphore(semaphoreKey)
+                            .updateLeaseTime(permitId, leaseSeconds, TimeUnit.SECONDS);
+                } catch (Exception ex) {
+                    log.debug("[{}] permit 续租失败（可能已释放）：{}", name, ex.getMessage());
+                }
+            }, renewInterval, renewInterval, TimeUnit.SECONDS);
+        }
+
+        /** 停止续租任务（permit 归还后无需再续，续租失败的空转周期不再消耗 Redis 往返） */
+        void stopPermitRenewal() {
+            ScheduledFuture<?> future = permitRenewalFuture;
+            if (future != null) {
+                future.cancel(false);
+                permitRenewalFuture = null;
             }
         }
 

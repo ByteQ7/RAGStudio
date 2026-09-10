@@ -50,9 +50,20 @@ public class GraphQueryEntityExtractor {
 
     private static final Gson GSON = new Gson();
 
-    /** 查询文本 → LLM 抽取实体名缓存（同一查询多 KB 共享一次 LLM 调用） */
-    private final java.util.concurrent.ConcurrentHashMap<String, List<QueryEntityName>> nameCache =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    /** 查询文本 → LLM 抽取实体名缓存（同一查询多 KB 共享一次 LLM 调用）；有上限+过期，防止无界增长 */
+    private final com.google.common.cache.Cache<String, List<QueryEntityName>> nameCache =
+            com.google.common.cache.CacheBuilder.newBuilder()
+                    .maximumSize(1000)
+                    .expireAfterWrite(1, java.util.concurrent.TimeUnit.HOURS)
+                    .build();
+
+    /** 查询实体 LLM 调用线程：同步 chat 包一层超时控制，防止模型挂起拖长检索链路 */
+    private final java.util.concurrent.ExecutorService llmCallExecutor =
+            java.util.concurrent.Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "graph-query-entity-llm");
+                t.setDaemon(true);
+                return t;
+            });
 
     /**
      * LLM 抽取出的实体名（未落库匹配）
@@ -125,7 +136,7 @@ public class GraphQueryEntityExtractor {
 
     /** LLM 抽取实体名（按查询文本缓存） */
     private List<QueryEntityName> extractNamesCached(String question) {
-        List<QueryEntityName> cached = nameCache.get(question);
+        List<QueryEntityName> cached = nameCache.getIfPresent(question);
         if (cached != null) {
             return cached;
         }
@@ -241,11 +252,30 @@ public class GraphQueryEntityExtractor {
                     .temperature(0.1D)
                     .jsonSchema(GraphSchemas.QUERY_ENTITIES)
                     .build();
-            String raw = llmService.chat(request, modelId);
+            // 同步 chat 包超时：配置的 queryExtractTimeoutMs 此前未接线，模型变慢会把每次问答拖长分钟级
+            String raw = chatWithTimeout(request, modelId);
             return parseNames(raw);
         } catch (Exception e) {
             log.debug("查询实体 LLM 抽取失败，走关键词兜底: {}", e.getMessage());
             return List.of();
+        }
+    }
+
+    // 带超时的同步 LLM 调用：超时后取消底层任务（中断标志由 SDK 网关按块间检查消费）
+    private String chatWithTimeout(ChatRequest request, String modelId) {
+        long timeoutMs = Math.max(1000, properties.getRetrieval().getQueryExtractTimeoutMs());
+        java.util.concurrent.Future<String> future = llmCallExecutor.submit(() -> llmService.chat(request, modelId));
+        try {
+            return future.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            future.cancel(true);
+            throw new IllegalStateException("查询实体 LLM 抽取超时(" + timeoutMs + "ms)");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            throw new IllegalStateException("查询实体 LLM 抽取被中断");
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new IllegalStateException("查询实体 LLM 抽取失败: " + e.getCause().getMessage(), e.getCause());
         }
     }
 

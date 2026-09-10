@@ -70,6 +70,15 @@ public enum SSEEventType {
     AGENT_STEP("agent_step"),
 
     /**
+     * ERROR 事件：流式错误事件
+     * <p>
+     * 当流式生成中途出错（LLM 断流、模型异常等）时推送，
+     * 前端收到后将当前消息标记为失败状态，避免回答被静默截断而无任何提示。
+     * </p>
+     */
+    ERROR("error"),
+
+    /**
      * CITATION 事件：引用溯源事件
      * <p>
      * Agent 回答完成后，推送被引用的知识库 Chunk 列表 [{id, text, score}]。

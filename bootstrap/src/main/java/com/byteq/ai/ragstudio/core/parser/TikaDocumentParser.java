@@ -130,8 +130,13 @@ public class TikaDocumentParser implements DocumentParser {
             ParseContext parseContext = new ParseContext();
             parseContext.set(PDFParserConfig.class, PDF_CONFIG);
 
-            // 使用 Future 包裹解析，设置 60 秒超时，防止损坏/复杂文档卡死线程
-            ExecutorService executor = Executors.newSingleThreadExecutor();
+            // 使用 Future 包裹解析，设置 60 秒超时，防止损坏/复杂文档卡死线程；
+            // 线程用 daemon：解析卡死不响应中断时线程随 JVM 退出，不再残留阻塞优雅停机
+            ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "tika-parse-timeout");
+                t.setDaemon(true);
+                return t;
+            });
             try {
                 Future<Void> future = executor.submit(() -> {
                     parser.parse(is, handler, new Metadata(), parseContext);

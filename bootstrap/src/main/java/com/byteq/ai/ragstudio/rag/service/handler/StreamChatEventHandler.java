@@ -5,6 +5,7 @@ import com.byteq.ai.ragstudio.rag.core.agent.AgentStep;
 import com.byteq.ai.ragstudio.rag.dao.entity.ConversationDO;
 import com.byteq.ai.ragstudio.rag.dto.AgentStepPayload;
 import com.byteq.ai.ragstudio.rag.dto.CompletionPayload;
+import com.byteq.ai.ragstudio.rag.dto.ErrorPayload;
 import com.byteq.ai.ragstudio.rag.dto.MessageDelta;
 import com.byteq.ai.ragstudio.rag.dto.MetaPayload;
 import com.byteq.ai.ragstudio.rag.enums.SSEEventType;
@@ -43,6 +44,8 @@ public class StreamChatEventHandler implements StreamCallback {
     private java.util.List<String> retrievedImageUrls;
     /** 是否已正常完成（onComplete 置位）：区分"正常收尾"与"连接提前断开/超时"，避免误取消 */
     private final java.util.concurrent.atomic.AtomicBoolean completedNormally = new java.util.concurrent.atomic.AtomicBoolean(false);
+    /** 流是否已终止（onComplete/onError 置位）：断开回调据此跳过无效取消 */
+    private final java.util.concurrent.atomic.AtomicBoolean streamTerminated = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     public void setThinkingLevel(int level) { this.thinkingLevel = level; }
 
@@ -88,7 +91,7 @@ public class StreamChatEventHandler implements StreamCallback {
      * 取消执行中 taskManager.cancel 会中断 Agent 推理、保存已生成内容并发送 CANCEL/DONE。
      */
     private void cancelOnDisconnect() {
-        if (completedNormally.get()) {
+        if (completedNormally.get() || streamTerminated.get()) {
             return;
         }
         log.info("SSE 连接提前关闭/超时，取消任务: taskId={}", taskId);
@@ -127,7 +130,14 @@ public class StreamChatEventHandler implements StreamCallback {
         } catch (Exception e) {
             log.error("取消时持久化消息失败，conversationId：{}", conversationId, e);
         }
-        String title = resolveTitleForEvent();
+        // 标题查询也纳入 try-catch：DB 抖动不应阻断取消收尾，否则 emitter 永不 complete
+        String title;
+        try {
+            title = resolveTitleForEvent();
+        } catch (Exception e) {
+            log.error("取消时获取会话标题失败，conversationId：{}", conversationId, e);
+            title = null;
+        }
         return new CompletionPayload(messageId, title);
     }
 
@@ -195,12 +205,12 @@ public class StreamChatEventHandler implements StreamCallback {
     public void onComplete() {
         // 先置正常完成标志：后续 sender.complete() 触发的 onCompletion 不再取消任务
         completedNormally.set(true);
+        streamTerminated.set(true);
         log.info("onComplete called, thinkingLevel={}", thinkingLevel);
-        if (taskManager.isCancelled(taskId)) {
-            sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
-            // 取消分支同样要注销任务，否则 Redis 取消标记与本地缓存条目将滞留至 TTL 到期，
-            // 若 taskId 复用会误伤后续任务（unregister 幂等，可安全调用）
-            taskManager.unregister(taskId);
+        // 原子抢占终态：与取消路径（buildCompletionPayloadOnCancel）互斥，
+        // 防止"流结束瞬间点停止"时两条路径同时落库、重复发送 DONE
+        if (!taskManager.tryFinalize(taskId)) {
+            // 取消路径已收尾（已落库并发送 CANCEL/DONE），这里不再重复处理
             return;
         }
         String messageId = null;
@@ -216,7 +226,14 @@ public class StreamChatEventHandler implements StreamCallback {
         } catch (Exception e) {
             log.error("对话完成时持久化消息失败，conversationId：{}", conversationId, e);
         }
-        String title = resolveTitleForEvent();
+        // 标题查询纳入 try-catch：DB 抖动不应阻断收尾，否则 emitter 永不 complete
+        String title;
+        try {
+            title = resolveTitleForEvent();
+        } catch (Exception e) {
+            log.error("完成时获取会话标题失败，conversationId：{}", conversationId, e);
+            title = null;
+        }
         String messageIdText = StrUtil.isBlank(messageId) ? null : messageId;
         sender.sendEvent(SSEEventType.FINISH.value(), new CompletionPayload(messageIdText, title));
         sender.sendEvent(SSEEventType.DONE.value(), "[DONE]");
@@ -229,9 +246,13 @@ public class StreamChatEventHandler implements StreamCallback {
         if (taskManager.isCancelled(taskId)) {
             return;
         }
+        streamTerminated.set(true);
+        // 原子抢占终态：与取消路径互斥，防止双落库；抢占失败说明取消路径已收尾
+        if (!taskManager.tryFinalize(taskId)) {
+            return;
+        }
         taskManager.unregister(taskId);
-        // 错误路径同样持久化已产生的回答内容，避免用户已看到的内容在历史中永久缺失
-        // （与取消路径 buildCompletionPayloadOnCancel 行为保持一致）
+        // 错误路径持久化已产生的回答内容，避免用户已看到的内容在历史中永久缺失
         try {
             String content = answer.toString();
             if (StrUtil.isNotBlank(content)) {
@@ -244,7 +265,16 @@ public class StreamChatEventHandler implements StreamCallback {
         } catch (Exception e) {
             log.error("错误时持久化消息失败，conversationId：{}", conversationId, e);
         }
-        sender.fail(t);
+        // 显式推送 error 事件：让前端能感知流中途失败并标记消息状态，
+        // 而不是连接静默断开导致回答被无声截断
+        try {
+            String message = StrUtil.isBlank(t.getMessage()) ? "生成失败，请重试" : "生成中断：" + t.getMessage();
+            sender.sendEvent(SSEEventType.ERROR.value(), new ErrorPayload(message));
+        } catch (Exception e) {
+            log.warn("发送错误事件失败，conversationId：{}", conversationId);
+        }
+        // 正常 complete 而非 completeWithError：保证前端读取循环以流结束状态收口
+        sender.complete();
     }
 
     // 按 Unicode 码点将内容分块发送，确保多字节字符（如 emoji）不会被截断

@@ -20,6 +20,7 @@ import com.alibaba.dashscope.embeddings.TextEmbedding;
 import com.alibaba.dashscope.embeddings.TextEmbeddingParam;
 import com.alibaba.dashscope.embeddings.TextEmbeddingResult;
 import com.alibaba.dashscope.embeddings.TextEmbeddingResultItem;
+import com.alibaba.dashscope.protocol.ConnectionOptions;
 import com.alibaba.dashscope.protocol.Protocol;
 import com.alibaba.dashscope.rerank.TextReRank;
 import com.alibaba.dashscope.rerank.TextReRankOutput;
@@ -125,7 +126,8 @@ public class DashScopeGateway implements ProviderGateway {
         try {
             GenerationResult result = new Generation(
                     Protocol.HTTP.getValue(),
-                    SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)))
+                    SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)),
+                    buildConnectionOptions())
                     .call(param);
             return extractText(result);
         } catch (Exception e) {
@@ -138,7 +140,8 @@ public class DashScopeGateway implements ProviderGateway {
                 try {
                     GenerationResult result = new Generation(
                             Protocol.HTTP.getValue(),
-                            SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)))
+                            SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)),
+                            buildConnectionOptions())
                             .call(plain);
                     return extractText(result);
                 } catch (Exception retryError) {
@@ -154,7 +157,8 @@ public class DashScopeGateway implements ProviderGateway {
         GenerationParam param = buildGenerationParam(request, target, true);
         Generation generation = new Generation(
                 Protocol.HTTP.getValue(),
-                SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)));
+                SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)),
+                buildConnectionOptions());
 
         AtomicBoolean finished = new AtomicBoolean(false);
         AtomicBoolean firstReceived = new AtomicBoolean(false);
@@ -427,7 +431,8 @@ public class DashScopeGateway implements ProviderGateway {
         try {
             TextReRankResult result = new TextReRank(
                     Protocol.HTTP.getValue(),
-                    SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)))
+                    SdkGatewaySupport.normalizeDashScopeBaseUrl(SdkGatewaySupport.resolveBaseUrl(target)),
+                    buildConnectionOptions())
                     .call(param);
             return parseRerankResult(result, docCandidates, candidates, topN);
         } catch (Exception e) {
@@ -483,6 +488,17 @@ public class DashScopeGateway implements ProviderGateway {
     }
 
     // ==================== 内部工具 ====================
+
+    // 显式连接超时配置：此前完全依赖 SDK 内部默认值（connect 120s 过长），这里收紧为 10s 连接/10s 写/300s 读；
+    // 读超时同时兜底流式空闲（连续 300s 无数据即中断），防止线程长时间挂起。
+    // TextEmbedding/MultiModalEmbedding 构造器不支持 ConnectionOptions，沿用 SDK 内部默认（读 300s 已兜底）
+    private ConnectionOptions buildConnectionOptions() {
+        return ConnectionOptions.builder()
+                .connectTimeout(java.time.Duration.ofSeconds(10))
+                .writeTimeout(java.time.Duration.ofSeconds(10))
+                .readTimeout(java.time.Duration.ofSeconds(300))
+                .build();
+    }
 
     private GenerationParam buildGenerationParam(ChatRequest request, ModelTarget target, boolean stream) {
         GenerationParam.GenerationParamBuilder builder = GenerationParam.builder()

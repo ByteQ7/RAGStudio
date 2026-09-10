@@ -150,10 +150,18 @@ public class ModelRoutingExecutor {
                 } else {
                     last.addSuppressed(e);
                 }
-                healthStore.markFailure(target.id());
+                // 熔断计数区分错误类型：UNAUTHORIZED / CLIENT_ERROR 是配置类永久错误，
+                // 重试也无法自愈，累计熔断只会造成"熔断-半开探测"的无效循环；
+                // 仍继续尝试下一个候选（配置问题可能只属于当前模型）
+                if (isPermanentConfigError(e)) {
+                    log.error("{} model failed with permanent config error (skip circuit-breaker counting), fallback to next. modelId={}, provider={}, error={}",
+                            label, target.id(), target.candidate().getProvider(), e.getMessage());
+                } else {
+                    healthStore.markFailure(target.id());
+                    log.error("{} model failed, fallback to next. modelId={}, provider={}, error={}",
+                            label, target.id(), target.candidate().getProvider(), e.getMessage());
+                }
                 failures++;
-                log.error("{} model failed, fallback to next. modelId={}, provider={}, error={}",
-                        label, target.id(), target.candidate().getProvider(), e.getMessage());
                 // 达到失败次数上限：立即终止，不继续尝试剩余候选（防长尾时延）。
                 // 语义为「首次失败后再多试 maxFallback 个候选」：maxFallback=1 时首个失败后可再试 1 个（共 2 次调用），
                 // 此前用 failures >= maxFallback 在首次失败即退出，导致备用模型永远不被尝试
@@ -174,5 +182,15 @@ public class ModelRoutingExecutor {
                 last,
                 BaseErrorCode.REMOTE_ERROR
         );
+    }
+
+    // 判断是否为配置类永久错误（重试与熔断均无法自愈）：认证失败或请求参数错误
+    private boolean isPermanentConfigError(Throwable error) {
+        if (!(error instanceof com.byteq.ai.ragstudio.infra.http.ModelClientException mce)) {
+            return false;
+        }
+        com.byteq.ai.ragstudio.infra.http.ModelClientErrorType type = mce.getErrorType();
+        return type == com.byteq.ai.ragstudio.infra.http.ModelClientErrorType.UNAUTHORIZED
+                || type == com.byteq.ai.ragstudio.infra.http.ModelClientErrorType.CLIENT_ERROR;
     }
 }

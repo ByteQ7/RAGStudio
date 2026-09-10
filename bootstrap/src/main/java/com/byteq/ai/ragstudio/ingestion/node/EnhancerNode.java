@@ -51,6 +51,9 @@ import java.util.Map;
 @Slf4j
 public class EnhancerNode implements IngestionNode {
 
+    /** 非整篇增强任务的单次 LLM 输入字符上限：超长文档截断，防止 prompt 超限导致整条流水线失败 */
+    private static final int MAX_ENHANCE_INPUT_CHARS = 20000;
+
     /** METADATA 任务的结构化输出 Schema：开放对象（键值不定），仅引导不收紧 */
     private static final ChatRequest.JsonSchemaSpec METADATA_SCHEMA =
             ChatRequest.JsonSchemaSpec.of("doc_metadata", Map.of("type", "object"));
@@ -108,10 +111,18 @@ public class EnhancerNode implements IngestionNode {
                 continue;
             }
 
+            // 其余任务（KEYWORDS/QUESTIONS/METADATA）整篇直塞 prompt 必然超限失败，
+            // 超长输入截断到上限后调用
+            String llmInput = input;
+            if (input.length() > MAX_ENHANCE_INPUT_CHARS) {
+                log.warn("文本过长（{} 字符），{} 任务输入截断至 {} 字符", input.length(), type, MAX_ENHANCE_INPUT_CHARS);
+                llmInput = input.substring(0, MAX_ENHANCE_INPUT_CHARS);
+            }
+
             String systemPrompt = StringUtils.hasText(task.getSystemPrompt())
                     ? task.getSystemPrompt()
                     : enhancerPromptManager.systemPrompt(type);
-            String userPrompt = buildUserPrompt(task.getUserPromptTemplate(), input, context);
+            String userPrompt = buildUserPrompt(task.getUserPromptTemplate(), llmInput, context);
 
             ChatRequest.ChatRequestBuilder requestBuilder = ChatRequest.builder()
                     .messages(List.of(

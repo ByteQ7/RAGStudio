@@ -69,10 +69,14 @@ import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -94,6 +98,8 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -124,6 +130,21 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final DocumentVisionExtractor documentVisionExtractor;
     private final ImageChunkGenerator imageChunkGenerator;
     private final GraphExtractionService graphExtractionService;
+    private final RedissonClient redissonClient;
+
+    /** 文档分块消费的文档级互斥锁前缀：MQ at-least-once 重投递时防止同一文档并发双写 */
+    private static final String CHUNK_DOC_LOCK_PREFIX = "RAGStudio:chunk:doc-lock:";
+    /** 分块任务心跳间隔：周期性刷新文档 updateTime，防止长任务被 recoverStuckRunning 误判 */
+    private static final long CHUNK_HEARTBEAT_INTERVAL_SECONDS = 300;
+    /** 单文档分块数量上限：防止超大文档产生海量 chunk 拖垮入库链路与堆内存 */
+    private static final int MAX_CHUNK_COUNT_PER_DOCUMENT = 20000;
+    /** 分块心跳调度线程（daemon，全类共享单线程） */
+    private static final ScheduledExecutorService CHUNK_HEARTBEAT_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "chunk-heartbeat");
+                t.setDaemon(true);
+                return t;
+            });
 
     @Value("knowledge-document-chunk_topic${unique-name:}")
     private String chunkTopic;
@@ -219,13 +240,30 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     public void executeChunk(String docId) {
-        KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
-        if (documentDO == null) {
-            log.warn("文档不存在，跳过分块任务, docId={}", docId);
-            return;
+        // 文档级互斥锁：RocketMQ 为 at-least-once 语义，消费超时/重平衡/进程重启都会重投递，
+        // 同一文档并发执行会产生双倍 chunk 与重复向量；拿不到锁说明已有消费者在处理，直接跳过
+        RLock lock = redissonClient.getLock(CHUNK_DOC_LOCK_PREFIX + docId);
+        boolean locked = false;
+        try {
+            locked = lock.tryLock(0, TimeUnit.SECONDS);
+            if (!locked) {
+                log.info("[消费者] 同一文档的分块任务正在处理，跳过重复投递, docId={}", docId);
+                return;
+            }
+            KnowledgeDocumentDO documentDO = documentMapper.selectById(docId);
+            if (documentDO == null) {
+                log.warn("文档不存在，跳过分块任务, docId={}", docId);
+                return;
+            }
+            runChunkTask(documentDO);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("分块任务获取文档锁被中断, docId={}", docId);
+        } finally {
+            if (locked && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
-
-        runChunkTask(documentDO);
     }
 
     // 执行文档分块任务的完整流程：创建日志 → 按处理模式执行分块 → 持久化结果 → 更新日志
@@ -251,17 +289,31 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     .startTime(new Date())
                     .build();
             chunkLogMapper.insert(chunkLog);
+
+            // 心跳：周期性刷新文档 updateTime，防止合法长任务被 recoverStuckRunning 按 30 分钟阈值误判为卡死，
+            // 进而打开删除/修改与写入的并发窗口
+            ScheduledFuture<?> heartbeat = startChunkHeartbeat(docId);
             List<VectorChunk> chunkResults;
-            if (ProcessMode.PIPELINE == processMode) {
-                long start = System.currentTimeMillis();
-                chunkResults = runPipelineProcess(documentDO);
-                chunkDuration = System.currentTimeMillis() - start;
-            } else {
-                ChunkProcessResult result = runChunkProcess(documentDO);
-                extractDuration = result.extractDuration();
-                chunkDuration = result.chunkDuration();
-                embedDuration = result.embedDuration();
-                chunkResults = result.chunks();
+            try {
+                if (ProcessMode.PIPELINE == processMode) {
+                    long start = System.currentTimeMillis();
+                    chunkResults = runPipelineProcess(documentDO);
+                    chunkDuration = System.currentTimeMillis() - start;
+                } else {
+                    ChunkProcessResult result = runChunkProcess(documentDO);
+                    extractDuration = result.extractDuration();
+                    chunkDuration = result.chunkDuration();
+                    embedDuration = result.embedDuration();
+                    chunkResults = result.chunks();
+                }
+            } finally {
+                heartbeat.cancel(false);
+            }
+
+            // 大文档保护：分块数量超限时直接失败并提示，防止 10 万级 chunk 逐条入库拖垮消费线程与堆内存
+            if (chunkResults != null && chunkResults.size() > MAX_CHUNK_COUNT_PER_DOCUMENT) {
+                throw new ServiceException("文档分块数量 " + chunkResults.size() + " 超过上限 "
+                        + MAX_CHUNK_COUNT_PER_DOCUMENT + "，请调整分块策略或拆分文档后重试");
             }
 
             long persistStart = System.currentTimeMillis();
@@ -282,6 +334,20 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                         extractDuration, chunkDuration, embedDuration, persistDuration, totalDuration, e.getMessage());
             }
         }
+    }
+
+    // 分块心跳：仅当文档仍处于 RUNNING 时周期性刷新 updateTime（与 recoverStuckRunning 的扫描字段一致）
+    private ScheduledFuture<?> startChunkHeartbeat(String docId) {
+        return CHUNK_HEARTBEAT_SCHEDULER.scheduleAtFixedRate(() -> {
+            try {
+                documentMapper.update(Wrappers.lambdaUpdate(KnowledgeDocumentDO.class)
+                        .eq(KnowledgeDocumentDO::getId, docId)
+                        .eq(KnowledgeDocumentDO::getStatus, DocumentStatus.RUNNING.getCode())
+                        .set(KnowledgeDocumentDO::getUpdateTime, new Date()));
+            } catch (Exception e) {
+                log.warn("分块心跳刷新失败, docId={}", docId, e);
+            }
+        }, CHUNK_HEARTBEAT_INTERVAL_SECONDS, CHUNK_HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
 
     // 持久化分块结果：Phase1 在事务中删除旧分块、批量创建新分块并更新文档状态；Phase2 在事务外写入向量库
@@ -313,14 +379,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 })
                 .toList();
 
-        // Phase 1: Commit DB changes in a transaction
+        // Phase 1: 事务内提交 DB 变更（chunk 全删全建 + 计数更新）；
+        // 状态保持 RUNNING，向量写入完成后才置 SUCCESS——若进程在 Phase 2 中途崩溃，
+        // recoverStuckRunning 会把 RUNNING 重置为 FAILED，避免出现"DB 已 SUCCESS 但向量缺失"的假象
         transactionOperations.executeWithoutResult(status -> {
             knowledgeChunkService.deleteByDocId(docId);
             knowledgeChunkService.batchCreate(docId, chunks);
             KnowledgeDocumentDO updateDocumentDO = KnowledgeDocumentDO.builder()
                     .id(docId)
                     .chunkCount(chunks.size())
-                    .status(DocumentStatus.SUCCESS.getCode())
                     .updatedBy(UserContext.getUsername())
                     .build();
             documentMapper.updateById(updateDocumentDO);
@@ -359,7 +426,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
 
         // 向量写入最终失败时，将文档状态回退为 FAILED 并保留分块记录，
-        // 用户可感知失败并通过重新分块重试（避免 DB 显示 SUCCESS 但检索静默丢文档）
+        // 并向上抛出让 chunk 日志同样记为 FAILED，保持文档状态与分块日志一致
         if (!vectorPersisted) {
             KnowledgeDocumentDO failedDocumentDO = KnowledgeDocumentDO.builder()
                     .id(docId)
@@ -368,8 +435,16 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     .build();
             documentMapper.updateById(failedDocumentDO);
             log.error("向量存储写入失败，文档状态已置为 FAILED: docId={}", docId);
-            return chunks.size();
+            throw new ServiceException("向量库写入重试 3 次后仍然失败，docId=" + docId);
         }
+
+        // Phase 3: 向量写入完成后置为 SUCCESS，保证文档状态与向量库的真实可用性一致
+        KnowledgeDocumentDO successDocumentDO = KnowledgeDocumentDO.builder()
+                .id(docId)
+                .status(DocumentStatus.SUCCESS.getCode())
+                .updatedBy(UserContext.getUsername())
+                .build();
+        documentMapper.updateById(successDocumentDO);
 
         // 图谱增量抽取（异步，不阻塞分块链路）：未变更 chunk 复用抽取缓存，零 LLM 成本
         try {
@@ -728,19 +803,26 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return "image/jpeg";
     }
 
-    // 带超时（120秒）的视觉提取，防止 LLM 调用挂死线程
+    // 带超时（120秒）的视觉提取，防止 LLM 调用挂死线程；线程有唯一序号，便于线程 dump 定位
+    private static final java.util.concurrent.atomic.AtomicInteger VISION_THREAD_SEQ =
+            new java.util.concurrent.atomic.AtomicInteger();
     private static final ExecutorService VISION_EXECUTOR = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "vision-extract-");
+        Thread t = new Thread(r, "vision-extract-" + VISION_THREAD_SEQ.incrementAndGet());
         t.setDaemon(true);
         return t;
     });
 
     private String extractTextWithVisionWithTimeout(String fileUrl, String mimeType, String fileName) {
+        Future<String> future = null;
         try {
-            Future<String> future = VISION_EXECUTOR.submit(() ->
+            future = VISION_EXECUTOR.submit(() ->
                     documentVisionExtractor.extractTextWithVision(fileUrl, mimeType, fileName));
             return future.get(120, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
+            // 超时后取消底层任务：cached pool 线程不再被挂死的 LLM 调用持续占用
+            if (future != null) {
+                future.cancel(true);
+            }
             log.warn("视觉提取超时（120s），跳过视觉提取: fileUrl={}", fileUrl);
             return "";
         } catch (Exception e) {
@@ -895,7 +977,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         String collectionName = resolveCollectionName(documentDO.getKbId());
         int dimension = resolveDimension(documentDO.getKbId());
         vectorStoreService.deleteDocumentVectors(collectionName, docId, dimension);
-        deleteStoredFileQuietly(documentDO);
+
+        // S3 文件删除是慢速网络 IO，注册到事务提交后执行，避免长事务占用连接池
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                deleteStoredFileQuietly(documentDO);
+            }
+        });
 
         // 清理图谱数据（关系 + 抽取缓存 + 孤立实体），图谱总开关关闭时静默跳过
         graphExtractionService.deleteDocumentGraph(documentDO.getKbId(), docId);

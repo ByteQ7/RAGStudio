@@ -45,8 +45,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -82,8 +84,18 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
     private final ObjectMapper objectMapper;
     private final GraphExtractionPromptManager graphExtractionPromptManager;
 
-    /** 图谱抽取专用线程池：隔离 LLM 调用，避免打满业务线程池 */
-    private final ExecutorService graphExecutor;
+    /** 图谱文档级任务线程池（重建/异步抽取）：有界队列 + Abort，防止无界队列堆积重量级 LLM 任务 */
+    private final ThreadPoolExecutor graphExecutor;
+
+    /**
+     * 图谱 chunk 级并行抽取线程池：与文档级线程池分离。
+     * 文档级任务会阻塞等待其 chunk 任务完成，若共用同一线程池，
+     * 并发文档任务占满线程后内部 chunk 任务排队等不到线程，形成自我饿死（240s 全超时）。
+     */
+    private final ThreadPoolExecutor graphChunkExecutor;
+
+    /** 正在重建的知识库 ID 集合：防止同一知识库重复触发重建造成"先删全部旧关系再插入"并发交错 */
+    private final Set<String> rebuildingKbs = ConcurrentHashMap.newKeySet();
 
     /** 抽取结果状态 */
     private static final String STATUS_DONE = "DONE";
@@ -122,7 +134,14 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
         this.objectMapper = objectMapper;
         this.graphExtractionPromptManager = graphExtractionPromptManager;
         int core = Math.max(1, Math.min(properties.getExtract().getParallelLimit(), 8));
-        this.graphExecutor = Executors.newFixedThreadPool(core, new NamedThreadFactory("graph-extract"));
+        // 文档级任务为分钟级重任务，队列有界（50）防止任务无限堆积；Abort 后调用方给出友好提示
+        this.graphExecutor = new ThreadPoolExecutor(core, core, 60, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(50), new NamedThreadFactory("graph-extract"),
+                new ThreadPoolExecutor.AbortPolicy());
+        // chunk 级任务为单次 LLM 调用（秒级到分钟级），队列有界 + CallerRuns 兜底（文档级等待线程执行也不阻塞全链路）
+        this.graphChunkExecutor = new ThreadPoolExecutor(core, core, 60, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(500), new NamedThreadFactory("graph-extract-chunk"),
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     @Override
@@ -261,13 +280,17 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
         if (!graphConfigService.isEnabled() || chunks == null || chunks.isEmpty()) {
             return;
         }
-        graphExecutor.submit(() -> {
-            try {
-                extractForDocument(kbId, docId, chunks, "DOC");
-            } catch (Exception e) {
-                log.error("异步图谱抽取失败: kbId={}, docId={}", kbId, docId, e);
-            }
-        });
+        try {
+            graphExecutor.submit(() -> {
+                try {
+                    extractForDocument(kbId, docId, chunks, "DOC");
+                } catch (Exception e) {
+                    log.error("异步图谱抽取失败: kbId={}, docId={}", kbId, docId, e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("图谱抽取任务队列已满，本次异步抽取被拒绝: kbId={}, docId={}", kbId, docId);
+        }
     }
 
     @Override
@@ -326,44 +349,57 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
         if (!graphConfigService.isEnabled()) {
             return "图谱总开关未开启（后管「知识图谱」页可开启），无法重建";
         }
-        graphExecutor.submit(() -> {
-            long start = System.currentTimeMillis();
-            int docCount = 0;
-            int failed = 0;
-            try {
-                List<KnowledgeDocumentDO> docs = knowledgeDocumentMapper.selectList(
-                        Wrappers.<KnowledgeDocumentDO>lambdaQuery()
-                                .eq(KnowledgeDocumentDO::getKbId, kbId)
-                                .eq(KnowledgeDocumentDO::getEnabled, 1));
-                for (KnowledgeDocumentDO doc : docs) {
-                    List<KnowledgeChunkDO> chunks = knowledgeChunkMapper.selectList(
-                            Wrappers.<KnowledgeChunkDO>lambdaQuery()
-                                    .eq(KnowledgeChunkDO::getDocId, doc.getId())
-                                    .eq(KnowledgeChunkDO::getEnabled, 1));
-                    if (chunks.isEmpty()) {
-                        continue;
+        // 同知识库重建去重：两个重建任务并发执行会"先删全部旧关系再插入"，产生重复/悬空关系
+        if (!rebuildingKbs.add(kbId)) {
+            return "该知识库的图谱重建正在进行中，请勿重复触发";
+        }
+        try {
+            graphExecutor.submit(() -> {
+                long start = System.currentTimeMillis();
+                int docCount = 0;
+                int failed = 0;
+                try {
+                    List<KnowledgeDocumentDO> docs = knowledgeDocumentMapper.selectList(
+                            Wrappers.<KnowledgeDocumentDO>lambdaQuery()
+                                    .eq(KnowledgeDocumentDO::getKbId, kbId)
+                                    .eq(KnowledgeDocumentDO::getEnabled, 1));
+                    for (KnowledgeDocumentDO doc : docs) {
+                        List<KnowledgeChunkDO> chunks = knowledgeChunkMapper.selectList(
+                                Wrappers.<KnowledgeChunkDO>lambdaQuery()
+                                        .eq(KnowledgeChunkDO::getDocId, doc.getId())
+                                        .eq(KnowledgeChunkDO::getEnabled, 1));
+                        if (chunks.isEmpty()) {
+                            continue;
+                        }
+                        List<VectorChunk> vectorChunks = chunks.stream().map(c -> VectorChunk.builder()
+                                .chunkId(c.getId())
+                                .index(c.getChunkIndex())
+                                .content(c.getContent())
+                                .contentType(c.getContentType() != null ? c.getContentType() : "TEXT")
+                                .build()).toList();
+                        try {
+                            extractForDocument(kbId, doc.getId(), vectorChunks, "KB");
+                            docCount++;
+                        } catch (Exception e) {
+                            failed++;
+                            log.error("知识库重建文档失败: kbId={}, docId={}", kbId, doc.getId(), e);
+                        }
                     }
-                    List<VectorChunk> vectorChunks = chunks.stream().map(c -> VectorChunk.builder()
-                            .chunkId(c.getId())
-                            .index(c.getChunkIndex())
-                            .content(c.getContent())
-                            .contentType(c.getContentType() != null ? c.getContentType() : "TEXT")
-                            .build()).toList();
-                    try {
-                        extractForDocument(kbId, doc.getId(), vectorChunks, "KB");
-                        docCount++;
-                    } catch (Exception e) {
-                        failed++;
-                        log.error("知识库重建文档失败: kbId={}, docId={}", kbId, doc.getId(), e);
-                    }
+                    log.info("知识库图谱重建完成: kbId={}, docs={}, failed={}, {}ms",
+                            kbId, docCount, failed, System.currentTimeMillis() - start);
+                } catch (Exception e) {
+                    log.error("知识库图谱重建异常: kbId={}", kbId, e);
+                } finally {
+                    // 异步任务结束时释放重建标记（不能放在 submit 外层，否则提交即释放）
+                    rebuildingKbs.remove(kbId);
                 }
-                log.info("知识库图谱重建完成: kbId={}, docs={}, failed={}, {}ms",
-                        kbId, docCount, failed, System.currentTimeMillis() - start);
-            } catch (Exception e) {
-                log.error("知识库图谱重建异常: kbId={}", kbId, e);
-            }
-        });
-        return "知识库图谱重建任务已提交（异步执行）";
+            });
+            return "知识库图谱重建任务已提交（异步执行）";
+        } catch (RejectedExecutionException e) {
+            rebuildingKbs.remove(kbId);
+            log.warn("图谱重建任务队列已满: kbId={}", kbId);
+            return "图谱重建任务队列已满，请稍后再试";
+        }
     }
 
     // ==================== 内部实现 ====================
@@ -397,7 +433,7 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
                     log.warn("chunk 图谱抽取异常: chunkId={}, error={}", unit.chunkId(), e.getMessage());
                     outcomes.put(unit.chunkId(), ExtractionOutcome.failed(e.getMessage()));
                 }
-            }, graphExecutor));
+            }, graphChunkExecutor));
         }
         // 整体截止（并行等待，非逐个串行）：超时后已完成的 chunk 照常落库，
         // 未完成的记 SKIPPED，下次构建自动重试（缓存幂等）
@@ -407,6 +443,10 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .get(overallDeadline, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
+            // 超时后取消未完成任务：避免超时返回后 LLM 调用继续占满 chunk 线程池
+            for (CompletableFuture<Void> future : futures) {
+                future.cancel(true);
+            }
             log.warn("批量图谱抽取部分超时（超过 {}ms，已完成的照常落库）", overallDeadline);
         }
         return outcomes;

@@ -42,7 +42,8 @@ public class ToolRetriever {
     @Setter
     private String toolRoutingModel;
 
-    private long lastAlertTs = 0;
+    /** 告警冷却时间戳（原子 CAS：并发 retrieve 下冷却判定不再双通过） */
+    private final java.util.concurrent.atomic.AtomicLong lastAlertTs = new java.util.concurrent.atomic.AtomicLong();
 
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -75,7 +76,7 @@ public class ToolRetriever {
         thread.start();
     }
 
-    public synchronized void rebuildIndex() {
+    public void rebuildIndex() {
         try {
             List<ToolCard> cards = buildAllCards();
             if (cards.isEmpty()) {
@@ -86,6 +87,7 @@ public class ToolRetriever {
                     .map(c -> "[" + c.getType() + "] " + c.getName() + ": " + c.getDescription())
                     .collect(Collectors.toList());
 
+            // 远程批量 embedding 在锁外执行：慢 IO 不占用对象锁，避免阻塞 setModelAndRebuild 等管理操作
             List<List<Float>> vectors;
             if (toolRoutingModel != null) {
                 vectors = embeddingService.embedBatch(texts, toolRoutingModel);
@@ -100,7 +102,9 @@ public class ToolRetriever {
                 }
                 cards.get(i).setEmbedding(arr);
             }
-            store.rebuild(cards);
+            synchronized (this) {
+                store.rebuild(cards);
+            }
             log.info("工具检索索引构建完成: {} 个工具, TopK={}, model={}",
                     cards.size(), TOP_K, toolRoutingModel != null ? toolRoutingModel : "default");
         } catch (Exception e) {
@@ -110,6 +114,7 @@ public class ToolRetriever {
 
     public synchronized void setModelAndRebuild(String modelId) {
         this.toolRoutingModel = modelId;
+        // rebuildIndex 已把慢 IO 移出锁外，这里串行化仅保证模型字段更新的可见性
         rebuildIndex();
     }
 
@@ -157,8 +162,10 @@ public class ToolRetriever {
 
     private void maybeAlert(String error) {
         long now = System.currentTimeMillis();
-        if (now - lastAlertTs < ALERT_COOLDOWN_MS) return;
-        lastAlertTs = now;
+        long prev = lastAlertTs.get();
+        if (now - prev < ALERT_COOLDOWN_MS) return;
+        // CAS 抢占冷却窗口：并发调用下只有一个请求真正发出告警
+        if (!lastAlertTs.compareAndSet(prev, now)) return;
         String model = toolRoutingModel != null ? toolRoutingModel : "default";
         log.warn("⚠️ 语义选择嵌入模型不可用 (model={}), 已降级为全量注册。错误: {}", model, error);
         if (toolRoutingModel != null) {

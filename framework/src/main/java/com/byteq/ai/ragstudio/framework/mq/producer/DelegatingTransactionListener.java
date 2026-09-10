@@ -78,6 +78,19 @@ public class DelegatingTransactionListener implements RocketMQLocalTransactionLi
     }
 
     /**
+     * 移除本地事务执行逻辑
+     * <p>half 消息发送失败时（{@code executeLocalTransaction} 不会回调）由生产者调用，
+     * 防止注册表条目连同业务闭包永久滞留。</p>
+     *
+     * @param txId 事务唯一标识
+     */
+    public void unregisterLocalTransaction(String txId) {
+        if (txId != null) {
+            localTransactionMap.remove(txId);
+        }
+    }
+
+    /**
      * 注册事务回查处理器
      * <p>按 Topic 注册回查逻辑，当 Broker 发起事务回查时调用。</p>
      *

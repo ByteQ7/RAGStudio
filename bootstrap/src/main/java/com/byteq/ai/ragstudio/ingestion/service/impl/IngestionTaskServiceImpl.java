@@ -68,6 +68,7 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final KnowledgeChunkService knowledgeChunkService;
     private final ObjectMapper objectMapper;
+    private final org.springframework.transaction.support.TransactionOperations transactionOperations;
 
     /**
      * 执行数据摄入任务
@@ -340,22 +341,24 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                 .createdBy(UserContext.getUsername())
                 .updatedBy(UserContext.getUsername())
                 .build();
-        knowledgeDocumentMapper.insert(documentDO);
-
-        // 4. 创建分块记录
-        List<KnowledgeChunkCreateRequest> chunkRequests = context.getChunks().stream()
-                .map(vc -> {
-                    KnowledgeChunkCreateRequest req = new KnowledgeChunkCreateRequest();
-                    req.setChunkId(vc.getChunkId());
-                    req.setIndex(vc.getIndex());
-                    req.setContent(vc.getContent());
-                    return req;
-                })
-                .toList();
-        knowledgeChunkService.batchCreate(docId, chunkRequests);
+        // 文档记录与分块记录在同一事务内提交：避免出现"任务 COMPLETED、文档 success 但 0 分块"的不一致
+        transactionOperations.executeWithoutResult(txStatus -> {
+            knowledgeDocumentMapper.insert(documentDO);
+            // 4. 创建分块记录
+            List<KnowledgeChunkCreateRequest> chunkRequests = context.getChunks().stream()
+                    .map(vc -> {
+                        KnowledgeChunkCreateRequest req = new KnowledgeChunkCreateRequest();
+                        req.setChunkId(vc.getChunkId());
+                        req.setIndex(vc.getIndex());
+                        req.setContent(vc.getContent());
+                        return req;
+                    })
+                    .toList();
+            knowledgeChunkService.batchCreate(docId, chunkRequests);
+        });
 
         log.info("流水线任务完成，已创建知识库文档 docId={}, kbName={}, chunkCount={}",
-                docId, kb.getName(), chunkRequests.size());
+                docId, kb.getName(), context.getChunks().size());
     }
 
     /**
