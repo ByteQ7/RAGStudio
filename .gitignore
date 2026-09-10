@@ -129,3 +129,6 @@ frontend/vite.config.*.js
 
 # ZCode 本地工作区
 .zcode/
+
+# AI 助手工作数据（记忆/任务等，仅本地维护，不入库）
+.workbuddy/

@@ -5,11 +5,6 @@ import com.byteq.ai.ragstudio.rag.core.tool.Tool;
 import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
 
 import java.util.List;
 import java.util.Map;
@@ -17,41 +12,46 @@ import java.util.Map;
 /**
  * 将 {@link SkillDefinition} 包装为 Agent 可调用的 {@link Tool}
  * <p>
- * 根据 SKILL 的 type 字段分发到不同的执行逻辑：
+ * 根据 SKILL 的 type 字段分发到不同的执行逻辑，三种类型统一在 Docker 沙箱内执行：
  * <ul>
- *   <li>http — 通过 OkHttp 发起 HTTP 请求</li>
+ *   <li>http — 沙箱内通过 curl 发起 HTTP 请求（模板解析在宿主侧完成后交给沙箱）</li>
  *   <li>script — 通过 Docker 沙箱执行 scripts/ 下的脚本文件</li>
- *   <li>command — 通过 Docker 沙箱执行命令（默认禁用）</li>
+ *   <li>command — 通过 Docker 沙箱执行命令（受命令前缀白名单约束）</li>
  * </ul>
  * <p>
- * script 和 command 类型执行前会经过 {@link SecurityAuditor} 安全检查，
- * 然后通过 {@link SandboxExecutor} 在隔离容器中执行。
+ * 三种类型执行前均经过 {@link SecurityAuditor} 安全检查，然后通过
+ * {@link SandboxExecutor} 在隔离容器中执行。沙箱默认开放网络
+ * （rag.skills.sandbox.network-enabled），skill.yaml 可用 {@code config.network}
+ * 按技能显式覆盖（true/false）。
  */
 @Slf4j
 public class SkillTool implements Tool {
 
+    /** 沙箱内 curl 的单请求超时（秒）：略小于沙箱总超时（30s），留出容器启动与输出回传余量 */
+    private static final long HTTP_CURL_MAX_TIME_SECONDS = 25;
+
+    /** curl -w 追加在响应体末尾的 HTTP 状态码标记（执行后解析，用于判定 2xx 语义成功） */
+    private static final String HTTP_CODE_MARKER = "__RAGSTUDIO_HTTP_CODE__";
+
     private final SkillDefinition definition;
     private final SandboxExecutor sandboxExecutor;
-    private final OkHttpClient httpClient;
-    /** 沙箱总开关（rag.skills.sandbox.enabled）：false 时 script/command 类型全部拒绝执行 */
+    /** 沙箱总开关（rag.skills.sandbox.enabled）：false 时三类 SKILL 全部拒绝执行 */
     private final boolean sandboxEnabled;
+    /** 沙箱默认网络开关（rag.skills.sandbox.network-enabled）：skill.yaml config.network 未显式声明时生效 */
+    private final boolean sandboxNetworkEnabled;
     /** command 类型命令前缀白名单（rag.skills.allowed-commands，逗号分隔）：空表示 command 类型禁用 */
     private final List<String> allowedCommandPrefixes;
 
-    public SkillTool(SkillDefinition definition, OkHttpClient httpClient) {
-        this(definition, httpClient, SandboxExecutor.builder().build(), true, List.of());
+    public SkillTool(SkillDefinition definition, SandboxExecutor sandboxExecutor) {
+        this(definition, sandboxExecutor, true, true, List.of());
     }
 
-    public SkillTool(SkillDefinition definition, OkHttpClient httpClient, SandboxExecutor sandboxExecutor) {
-        this(definition, httpClient, sandboxExecutor, true, List.of());
-    }
-
-    public SkillTool(SkillDefinition definition, OkHttpClient httpClient, SandboxExecutor sandboxExecutor,
-                     boolean sandboxEnabled, List<String> allowedCommandPrefixes) {
+    public SkillTool(SkillDefinition definition, SandboxExecutor sandboxExecutor, boolean sandboxEnabled,
+                     boolean sandboxNetworkEnabled, List<String> allowedCommandPrefixes) {
         this.definition = definition;
         this.sandboxExecutor = sandboxExecutor;
-        this.httpClient = httpClient;
         this.sandboxEnabled = sandboxEnabled;
+        this.sandboxNetworkEnabled = sandboxNetworkEnabled;
         this.allowedCommandPrefixes = allowedCommandPrefixes != null ? allowedCommandPrefixes : List.of();
     }
 
@@ -100,6 +100,10 @@ public class SkillTool implements Tool {
 
     @SuppressWarnings("unchecked")
     private ToolResult executeHttp(Map<String, Object> params) {
+        if (!sandboxEnabled) {
+            log.warn("SKILL 沙箱已禁用，拒绝执行 HTTP 请求: name={}", name());
+            return ToolResult.failure(name(), "沙箱已禁用（rag.skills.sandbox.enabled=false），HTTP 类型 SKILL 不可用");
+        }
         Map<String, Object> config = definition.getConfig();
         if (config == null) {
             return ToolResult.failure(name(), "HTTP 类型的 SKILL 缺少 config 配置");
@@ -109,47 +113,90 @@ public class SkillTool implements Tool {
         if (StrUtil.isBlank(url)) {
             return ToolResult.failure(name(), "HTTP 类型的 SKILL 缺少 url 配置");
         }
-        String method = (String) config.getOrDefault("method", "GET");
+        String method = String.valueOf(config.getOrDefault("method", "GET")).trim().toUpperCase();
 
-        try {
-            Request.Builder reqBuilder = new Request.Builder().url(url);
+        String command = buildCurlCommand(config, url, method, params);
 
-            // 设置请求体（POST/PUT/PATCH）
-            Object bodyObj = config.get("body");
-            if (bodyObj != null && !method.equalsIgnoreCase("GET")) {
-                String bodyTemplate = String.valueOf(bodyObj);
-                String bodyStr = resolveTemplate(bodyTemplate, params);
-                String contentType = (String) config.getOrDefault("contentType", "application/json");
-                reqBuilder.method(method, RequestBody.create(bodyStr, MediaType.parse(contentType)));
-            } else if (!method.equalsIgnoreCase("GET")) {
-                reqBuilder.method(method, RequestBody.create("", MediaType.parse("application/json")));
-            }
-
-            // 设置请求头
-            Object headersObj = config.get("headers");
-            if (headersObj instanceof Map) {
-                Map<String, Object> headers = (Map<String, Object>) headersObj;
-                for (Map.Entry<String, Object> entry : headers.entrySet()) {
-                    String value = resolveTemplate(String.valueOf(entry.getValue()), params);
-                    reqBuilder.header(entry.getKey(), value);
-                }
-            }
-
-            Request request = reqBuilder.build();
-            long start = System.currentTimeMillis();
-
-            try (Response response = httpClient.newCall(request).execute()) {
-                long duration = System.currentTimeMillis() - start;
-                String respBody = response.body() != null ? response.body().string() : "";
-                String content = "HTTP " + response.code() + " (" + duration + "ms):\n" + respBody;
-                return response.isSuccessful()
-                        ? ToolResult.success(name(), content)
-                        : ToolResult.failure(name(), content);
-            }
-        } catch (Exception e) {
-            log.warn("SKILL HTTP 请求失败: name={}, error={}", name(), e.getMessage());
-            return ToolResult.failure(name(), "HTTP 请求失败: " + e.getMessage());
+        // 1. 安全检查（与 script/command 一致：拦截内网地址、反弹 shell 等高危操作）
+        SecurityAuditor.AuditResult audit = SecurityAuditor.audit(command);
+        if (!audit.allowed()) {
+            log.warn("SKILL HTTP 命令被安全审计拦截: name={}, reason={}", name(), audit.reason());
+            return ToolResult.failure(name(), "安全审计未通过: " + audit.reason());
         }
+
+        // 2. Docker 可用性
+        if (!sandboxExecutor.isAvailable()) {
+            log.warn("Docker 不可用，无法执行沙箱命令: name={}", name());
+            return ToolResult.failure(name(), "沙箱执行环境不可用（Docker 未运行），请联系管理员");
+        }
+
+        // 3. 沙箱内执行（HTTP 请求本身依赖网络，默认开放，config.network 可显式关闭）
+        SandboxExecutor.SandboxResult result =
+                sandboxExecutor.execute(command, resolveNetworkEnabled(config, true), List.of());
+
+        // 4. 解析末尾状态码标记，判定 HTTP 语义成功/失败
+        String output = result.getOutput();
+        int markerIdx = output.lastIndexOf(HTTP_CODE_MARKER);
+        if (markerIdx < 0 || !result.isSuccess()) {
+            // curl 自身失败（DNS/连接/超时等），无状态码标记或进程异常退出
+            String content = "HTTP 请求失败 (curl exit " + result.getExitCode() + ", "
+                    + result.getDurationMs() + "ms):\n" + output;
+            log.warn("SKILL HTTP 请求失败: name={}, error={}", name(), StrUtil.brief(content, 300));
+            return ToolResult.failure(name(), content);
+        }
+
+        int codeStart = markerIdx + HTTP_CODE_MARKER.length();
+        int codeEnd = codeStart;
+        while (codeEnd < output.length() && Character.isDigit(output.charAt(codeEnd))) {
+            codeEnd++;
+        }
+        String statusCode = output.substring(codeStart, codeEnd);
+        String body = output.substring(0, markerIdx);
+
+        String content = "HTTP " + statusCode + " (" + result.getDurationMs() + "ms):\n" + body;
+        return statusCode.startsWith("2")
+                ? ToolResult.success(name(), content)
+                : ToolResult.failure(name(), content);
+    }
+
+    /**
+     * 构造沙箱内执行的 curl 命令
+     * <p>URL 模板参数已在宿主侧完成 URL 编码；所有动态片段经 {@link #shellEscape}
+     * 单引号包裹防注入，并经 {@link SecurityAuditor} 审计后才进入沙箱。</p>
+     */
+    private String buildCurlCommand(Map<String, Object> config, String url, String method,
+                                    Map<String, Object> params) {
+        StringBuilder cmd = new StringBuilder("curl -sS -L --max-time ").append(HTTP_CURL_MAX_TIME_SECONDS);
+        if (!"GET".equals(method)) {
+            cmd.append(" -X ").append(method);
+        }
+
+        // 请求头（值支持 ${param} 模板）
+        boolean hasContentTypeHeader = false;
+        if (config.get("headers") instanceof Map<?, ?> headers) {
+            for (Map.Entry<?, ?> entry : headers.entrySet()) {
+                String headerValue = resolveTemplate(String.valueOf(entry.getValue()), params);
+                if ("content-type".equalsIgnoreCase(String.valueOf(entry.getKey()))) {
+                    hasContentTypeHeader = true;
+                }
+                cmd.append(" -H ").append(shellEscape(entry.getKey() + ": " + headerValue));
+            }
+        }
+
+        // 请求体（POST/PUT/PATCH；值支持 ${param} 模板）
+        if (config.get("body") != null && !"GET".equals(method)) {
+            String bodyStr = resolveTemplate(String.valueOf(config.get("body")), params);
+            if (!hasContentTypeHeader) {
+                String contentType = (String) config.getOrDefault("contentType", "application/json");
+                cmd.append(" -H ").append(shellEscape("Content-Type: " + contentType));
+            }
+            cmd.append(" --data-raw ").append(shellEscape(bodyStr));
+        }
+
+        // 末尾追加 HTTP 状态码标记（写在响应体之后，执行后解析判定成功/失败）
+        cmd.append(" -w ").append(shellEscape("\n" + HTTP_CODE_MARKER + "%{http_code}"));
+        cmd.append(" ").append(shellEscape(url));
+        return cmd.toString();
     }
 
     // ==================== Script 类型 ====================
@@ -186,7 +233,8 @@ public class SkillTool implements Tool {
             }
         }
 
-        return executeInSandbox(command, false, List.of(volume));
+        // 沙箱默认开放网络（rag.skills.sandbox.network-enabled），config.network 可按技能显式覆盖
+        return executeInSandbox(command, resolveNetworkEnabled(config, sandboxNetworkEnabled), List.of(volume));
     }
 
     private String resolveScriptFile(Map<String, Object> config) {
@@ -240,7 +288,25 @@ public class SkillTool implements Tool {
             return ToolResult.failure(name(), "命令不在允许执行的白名单内: " + command);
         }
 
-        return executeInSandbox(command, false);
+        // 沙箱默认开放网络（rag.skills.sandbox.network-enabled），config.network 可按技能显式覆盖
+        return executeInSandbox(command, resolveNetworkEnabled(config, sandboxNetworkEnabled));
+    }
+
+    // ==================== 网络开关 ====================
+
+    /**
+     * 解析沙箱网络开关：skill.yaml {@code config.network} 显式声明（true/false，容忍字符串形式）优先，
+     * 未声明时回退到传入的默认值（script/command 取全局 rag.skills.sandbox.network-enabled，http 默认 true）
+     */
+    private boolean resolveNetworkEnabled(Map<String, Object> config, boolean defaultEnabled) {
+        Object value = config != null ? config.get("network") : null;
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof String s && !s.isBlank()) {
+            return Boolean.parseBoolean(s.trim());
+        }
+        return defaultEnabled;
     }
 
     // ==================== 沙箱执行 ====================

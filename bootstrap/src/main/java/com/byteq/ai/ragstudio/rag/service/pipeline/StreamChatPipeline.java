@@ -86,6 +86,10 @@ public class StreamChatPipeline {
     @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.enabled:true}")
     private boolean sandboxEnabled;
 
+    /** 沙箱默认网络开关：http/script/command 统一沙箱执行后，未在 skill.yaml config.network 显式声明时生效 */
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.network-enabled:true}")
+    private boolean sandboxNetworkEnabled;
+
     @org.springframework.beans.factory.annotation.Value("${rag.skills.allowed-commands:}")
     private String allowedCommands;
 
@@ -319,7 +323,7 @@ public class StreamChatPipeline {
         // 同时让限流 permit / 会话并发锁自然持有到流式回答真正结束
         traceNode("Agent循环", "AGENT_LOOP", () -> {
             agentscopeExecutor.run(agentCtx, ctx.getTaskId(), sandboxExecutor,
-                    sandboxEnabled, parseAllowedCommandPrefixes(), ctx.getCallback()).join();
+                    sandboxEnabled, sandboxNetworkEnabled, parseAllowedCommandPrefixes(), ctx.getCallback()).join();
             return null;
         });
 

@@ -63,7 +63,8 @@ rag:
     allowed-commands: ""     # 允许执行的命令前缀白名单，空表示禁用 command 类型
     script-timeout-ms: 30000 # 脚本执行超时（毫秒）
     sandbox:
-      enabled: ${SANDBOX_ENABLED:true}   # 是否启用 Docker 沙箱（false 则禁止所有 script/command 执行）
+      enabled: ${SANDBOX_ENABLED:true}   # 是否启用 Docker 沙箱（false 则禁止所有 SKILL 执行；http/script/command 三类统一沙箱）
+      network-enabled: ${SANDBOX_NETWORK:true}  # 沙箱内是否开放网络；skill.yaml 可用 config.network 按技能显式覆盖
       image: ${SANDBOX_IMAGE:sandbox:latest}  # 沙箱镜像
       memory: 256m           # 内存限制
       cpus: "0.5"            # CPU 限制

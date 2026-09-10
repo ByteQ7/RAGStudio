@@ -172,7 +172,6 @@ public class AgentScopeReActExecutor {
     private final SearchChannelProperties searchProperties;
     private final McpToolRegistry mcpToolRegistry;
     private final SkillLoader skillLoader;
-    private final okhttp3.OkHttpClient syncHttpClient;
     private final PromptTemplateLoader templateLoader;
     private final StreamTaskManager taskManager;
     private final RagTraceRecordService traceRecordService;
@@ -188,7 +187,6 @@ public class AgentScopeReActExecutor {
             SearchChannelProperties searchProperties,
             McpToolRegistry mcpToolRegistry,
             SkillLoader skillLoader,
-            okhttp3.OkHttpClient syncHttpClient,
             PromptTemplateLoader templateLoader,
             StreamTaskManager taskManager,
             RagTraceRecordService traceRecordService,
@@ -202,7 +200,6 @@ public class AgentScopeReActExecutor {
         this.searchProperties = searchProperties;
         this.mcpToolRegistry = mcpToolRegistry;
         this.skillLoader = skillLoader;
-        this.syncHttpClient = syncHttpClient;
         this.templateLoader = templateLoader;
         this.taskManager = taskManager;
         this.traceRecordService = traceRecordService;
@@ -223,13 +220,15 @@ public class AgentScopeReActExecutor {
      *
      * @param ctx            Agent 上下文
      * @param taskId         任务 ID（用于取消）
-     * @param sandboxExecutor SKILL 沙箱执行器（script/command 类型）
-     * @param sandboxEnabled 沙箱总开关（false 时 script/command 类型 SKILL 拒绝执行）
+     * @param sandboxExecutor SKILL 沙箱执行器（http/script/command 三类统一沙箱执行）
+     * @param sandboxEnabled 沙箱总开关（false 时三类 SKILL 拒绝执行）
+     * @param sandboxNetworkEnabled 沙箱默认网络开关（skill.yaml config.network 未显式声明时生效）
      * @param allowedCommandPrefixes command 类型命令前缀白名单（空表示禁用 command 类型）
      * @param callback       SSE 流式回调
      */
     public CompletableFuture<Void> run(AgentContext ctx, String taskId, SandboxExecutor sandboxExecutor,
-                                       boolean sandboxEnabled, List<String> allowedCommandPrefixes,
+                                       boolean sandboxEnabled, boolean sandboxNetworkEnabled,
+                                       List<String> allowedCommandPrefixes,
                                        StreamCallback callback) {
         CompletableFuture<Void> done = new CompletableFuture<>();
         if (taskManager.isCancelled(taskId)) {
@@ -254,7 +253,8 @@ public class AgentScopeReActExecutor {
             Model fallbackModel = fallback != null ? modelFactory.buildChatModel(fallback) : null;
 
             // 2. 构建工具集
-            Toolkit toolkit = buildToolkit(ctx, state, sandboxExecutor, sandboxEnabled, allowedCommandPrefixes);
+            Toolkit toolkit = buildToolkit(ctx, state, sandboxExecutor, sandboxEnabled,
+                    sandboxNetworkEnabled, allowedCommandPrefixes);
 
             // 3. 构建 System Prompt（含目标摘要、历史摘要、前置指令——AgentScope 输入不允许 SYSTEM 消息）
             String sysPrompt = buildSystemPrompt(ctx, state.toolNames);
@@ -829,7 +829,8 @@ public class AgentScopeReActExecutor {
     // ==================== 工具集构建 ====================
 
     private Toolkit buildToolkit(AgentContext ctx, RunState state, SandboxExecutor sandboxExecutor,
-                                 boolean sandboxEnabled, List<String> allowedCommandPrefixes) {
+                                 boolean sandboxEnabled, boolean sandboxNetworkEnabled,
+                                 List<String> allowedCommandPrefixes) {
         Toolkit toolkit = new Toolkit();
         List<String> toolNames = new ArrayList<>();
 
@@ -862,8 +863,8 @@ public class AgentScopeReActExecutor {
                 continue;
             }
             executableSkills++;
-            SkillTool skillTool = new SkillTool(def, syncHttpClient, sandboxExecutor,
-                    sandboxEnabled, allowedCommandPrefixes);
+            SkillTool skillTool = new SkillTool(def, sandboxExecutor,
+                    sandboxEnabled, sandboxNetworkEnabled, allowedCommandPrefixes);
             // 网络搜索技能包装为引用溯源工具：结果与知识库 Chunk 共用 [^chunk_N] 编号进入 citations
             Tool tool = isWebSearchSkill(def)
                     ? new WebSearchTool(skillTool,
