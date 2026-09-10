@@ -1,305 +1,366 @@
-# RAGStudio — Agentic RAG Platform
+# RAGStudio — 智能 Agent RAG 平台
 
 <p align="center">
-  <em>ReACT Agent-driven Q&A platform with multi-modal, multi-source retrieval</em>
+  <em>基于 ReACT Agent 循环的深度推理引擎 · 覆盖从文档入库到智能问答的完整链路</em>
 </p>
 
 <p align="center">
-  <a href="README_cn.md"><img src="https://img.shields.io/badge/📖_中文版-6366f1?style=for-the-badge&logo=readme&logoColor=white" alt="中文版" height="36"/></a>
+  <b>中文</b> · <a href="README_EN.md">🌐 English</a>
 </p>
 
 ---
 
 <p align="center">
   <a href="https://openlist.qbyte.top/@s/GVWZlUAk?preview=video" target="_blank">
-    <img src="https://img.shields.io/badge/▶_Watch_Demo_Video-7c3aed?style=for-the-badge&logo=youtubegaming&logoColor=white&labelColor=581c87" alt="Watch Demo Video" height="48"/>
+    <img src="https://img.shields.io/badge/▶_观看演示视频-7c3aed?style=for-the-badge&logo=youtubegaming&logoColor=white&labelColor=581c87" alt="观看演示视频" height="48"/>
   </a>
 </p>
 
-## Overview
+## 概述
 
-**RAGStudio** is a **Java 17 + Spring Boot 3.5** powered AI Q&A platform. All requests flow through an **AgentScope ReActAgent** — the LLM autonomously reasons, calls tools (KB search, MCP, custom skills), observes results, and iterates until producing a final answer.
+**RAGStudio** 基于 **Java 17 + Spring Boot 3.5** 构建，所有请求统一走 **AgentScope ReActAgent 循环**（原生工具调用），LLM 自主推理、调用工具、观察结果，直到给出最终答案。
 
-### Key Capabilities
+### 核心能力
 
-| Capability | Description |
-|------------|-------------|
-| **AgentScope Agent Engine** | ReActAgent (native tool calling) with streaming event bus mapped to SSE; tool results injected as observations |
-| **Official SDK Model Layer** | Vendor official SDKs first (DashScope / Zhipu / VolcEngine ark / OpenAI / Anthropic), OpenAI/Anthropic-compatible strategy for the rest — sync / streaming / deep-thinking params |
-| **22 Providers Ready** | Seed config for 22 providers (BaiLian, DeepSeek, SiliconFlow, Zhipu, Moonshot, xAI, Xiaomi MiMo, iFlytek Spark, 360 Brain, …) with 54 preset models |
-| **Structured Output Fallback** | LLM structured output degrades gracefully: JSON Schema → JSON Output → prompt-only, per-model capability aware |
-| **Unified Tool Discovery** | `tool_reader` enumerates MCP + SKILL registries so the LLM discovers and invokes any tool at runtime |
-| **Multi-Model Routing** | DB-driven dynamic config; automatic failover when a provider fails |
-| **Hybrid Search** | pgvector semantic + pg_trgm keyword, fused via RRF (Reciprocal Rank Fusion) |
-| **Graph RAG** | LLM entity/relation extraction per chunk + local subgraph retrieval channel fused into RRF; admin knowledge-graph visualization |
-| **MinerU Parsing** | Advanced PDF parsing via local or remote MinerU, with Tika + multimodal LLM fallback |
-| **Deep Thinking** | Configurable reasoning depth (0–100%) with step-by-step chain-of-thought |
-| **Multi-Modal Chat** | Image upload (paste/file), S3 storage, presigned HTTP URLs; multimodal knowledge base with IMAGE chunks retrieved as vectors |
-| **Conversation Groups** | Group conversations with per-group instructions auto-injected into the pipeline |
-| **Retrieval Quality** | Embedding-based KB semantic selection + score-cluster dynamic TopK + multimodal Rerank (images sent as base64 data URIs) — **97% answer accuracy** on a 100-question eval set |
-| **SKILL System** | `SKILL.md` + optional `skill.yaml`, versioned in DB (history/diff/import/rollback) — no Java or MCP server required |
-| **Full-Chain Tracing** | Lightweight distributed tracing for every pipeline stage |
-| **Ingestion Pipeline** | Visual document processing pipeline: fetch → parse → chunk → enhance → index |
-| **Dashboard & Monitoring** | Admin dashboard with real-time KPI, request trends, model usage stats |
+| 能力 | 说明 |
+|------|------|
+| **AgentScope ReActAgent** | 基于 AgentScope 编排框架的原生工具调用 ReACT 循环，事件流实时透传 SSE，工具结果以观察角色注入 |
+| **官方 SDK 模型调用层** | 厂商官方 SDK 优先（DashScope SDK / 智谱 zai-sdk / 火山 ark / OpenAI / Anthropic），无 SDK 厂商走 OpenAI/Anthropic 兼容策略，支持同步/流式/深度思考参数 |
+| **22 家供应商预置** | 种子配置内置 22 家供应商（百炼、DeepSeek、SiliconFlow、智谱、Moonshot、xAI、小米 MiMo、讯飞星火、360智脑等）54 个默认模型 |
+| **结构化输出降级链** | LLM 结构化输出按模型能力自动降级：JSON Schema → JSON Output → 纯提示词 |
+| **统一工具发现** | `tool_reader` 遍历 MCP + SKILL 注册表，LLM 运行态自主发现和调用任意工具 |
+| **多模型路由** | 数据库驱动动态配置，供应商故障自动切换 |
+| **混合检索** | pgvector 语义 + pg_trgm 关键词，RRF 融合排序 |
+| **Graph RAG** | LLM 逐 chunk 抽取实体关系 + 图谱局部检索通道接入 RRF 融合，管理后台知识图谱可视化 |
+| **MinerU 解析** | 本地 / 远程 MinerU 增强 PDF 解析，失败回退 Tika + 多模态 LLM |
+| **深度思考** | 0–100% 可调推理深度，分步链式思考过程可见 |
+| **多模态知识库** | 图片/PDF/Office 文档多模态分块与嵌入，IMAGE chunk 独立向量检索，检索结果图片直通多模态 LLM |
+| **会话分组** | 会话分组管理，分组专属指令自动注入对话管线 |
+| **检索质量优化** | 嵌入语义选库防误杀 + 分数簇感知动态 TopK + 多模态 Rerank（图片 base64 直传），100 题评测集问答准确率 97% |
+| **SKILL 技能系统** | `SKILL.md` + 可选 `skill.yaml`，数据库版本化管理（历史/diff/导入/回滚），零代码接入 Agent 循环 |
+| **全链路追踪** | 自研轻量级分布式追踪，记录管线每个阶段耗时 |
+| **数据摄取管线** | 可视化编排的文档处理流水线：抓取 → 解析 → 分块 → 增强 → 索引 |
+| **仪表盘监控** | 管理后台实时展示系统 KPI、请求趋势、模型调用量、性能指标 |
 
 ---
 
-## Architecture
+## 界面预览
 
-### System Overview
+### 智能问答
+
+| 对话欢迎页（示例问题 · 知识库选择 · 深度思考开关） | 知识库问答（流式回答 · 行内引用 · 引用溯源面板） |
+|---|---|
+| <img src="docs/assets/screenshots/chat.png" width="490"/> | <img src="docs/assets/screenshots/chat-session.png" width="490"/> |
+
+| 登录页 | 管理后台仪表盘（KPI · 流量概览 · AI 性能 · 质量快照） |
+|---|---|
+| <img src="docs/assets/screenshots/login.png" width="490"/> | <img src="docs/assets/screenshots/dashboard.png" width="490"/> |
+
+### 知识库与文档
+
+| 知识库管理（Embedding 模型 · 解析引擎 · 文档统计） | 文档管理（多格式上传 · 处理状态 · 分块数） |
+|---|---|
+| <img src="docs/assets/screenshots/knowledge-list.png" width="490"/> | <img src="docs/assets/screenshots/knowledge-documents.png" width="490"/> |
+
+| 分块管理（Chunk 编辑 · 启停 · Token 统计） | 知识图谱 · 实体管理（实体/关系抽取 · 合并 · 构建日志） |
+|---|---|
+| <img src="docs/assets/screenshots/knowledge-chunks.png" width="490"/> | <img src="docs/assets/screenshots/knowledge-graph.png" width="490"/> |
+
+### Graph RAG 与数据通道
+
+| Graph RAG 总控（检索通道开关 · 抽取模型 · 各库图谱状态） | 数据通道（文档处理流水线编排） |
+|---|---|
+| <img src="docs/assets/screenshots/graph-rag.png" width="490"/> | <img src="docs/assets/screenshots/ingestion.png" width="490"/> |
+
+### 可观测性
+
+| 链路追踪（成功率 · 平均/P95 耗时 · 运行列表） | 链路详情（节点级执行时序瀑布图） |
+|---|---|
+| <img src="docs/assets/screenshots/traces.png" width="490"/> | <img src="docs/assets/screenshots/trace-detail.png" width="490"/> |
+
+### 模型与工具
+
+| 模型管理（22 家供应商 · API 配置 · 连通性检查） | 默认模型（按场景分配对话/摘要/重排/嵌入模型） |
+|---|---|
+| <img src="docs/assets/screenshots/ai-models.png" width="490"/> | <img src="docs/assets/screenshots/default-models.png" width="490"/> |
+
+| MCP 服务（运行时注册 · 连接状态 · 工具数） | SKILL 管理（版本化技能 · 同步状态） |
+|---|---|
+| <img src="docs/assets/screenshots/mcp-servers.png" width="490"/> | <img src="docs/assets/screenshots/skills.png" width="490"/> |
+
+| 提示词管理（Agent 全链路提示词在线编辑 · 热重载） |
+|---|
+| <img src="docs/assets/screenshots/prompts.png" width="490"/> |
+
+### 系统管理
+
+| 用户管理 | 系统设置（向量空间 · MinerU 解析服务） |
+|---|---|
+| <img src="docs/assets/screenshots/users.png" width="490"/> | <img src="docs/assets/screenshots/settings.png" width="490"/> |
+
+| 告警设置（邮件告警 · 熔断阈值） | 示例问题（欢迎页推荐问法配置） |
+|---|---|
+| <img src="docs/assets/screenshots/alert-settings.png" width="490"/> | <img src="docs/assets/screenshots/sample-questions.png" width="490"/> |
+
+| 关键词映射（查询归一化规则，按知识库关联） |
+|---|
+| <img src="docs/assets/screenshots/query-term-mapping.png" width="490"/> |
+
+---
+
+## 架构
+
+### 系统总览
 
 ```
 ┌──────────────────┐       HTTP / SSE       ┌──────────────────────────────────────────────┐
-│  Frontend        │ ◄────────────────────► │  bootstrap (Spring Boot, :9090)              │
+│  前端            │ ◄────────────────────► │  bootstrap (Spring Boot, :9090)              │
 │  React 18 + TS   │                        │                                              │
 │  Vite / Zustand  │                        │  Controllers ──► StreamChatPipeline          │
 └──────────────────┘                        │                      │                       │
                                             │                      ▼                       │
-                                            │  AgentScope ReActAgent loop                  │
-                                            │   ├─ rag_search ──► Hybrid Retrieval (RRF)   │
-                                            │   ├─ tool_reader ─► MCP / SKILL registries   │
-                                            │   └─ FINISH ──────► streamed answer + [^N]   │
+                                            │  AgentScope ReActAgent 循环                  │
+                                            │   ├─ rag_search ──► 混合检索（RRF 融合）      │
+                                            │   ├─ tool_reader ─► MCP / SKILL 注册表       │
+                                            │   └─ FINISH ──────► 流式回答 + [^N] 引用     │
                                             └────────┬─────────────────────┬───────────────┘
                                                      │                     │
                                            ┌─────────▼─────────┐  ┌────────▼─────────────────┐
                                            │ infra-ai          │  │ framework                │
-                                           │ LLM SDK gateways, │  │ cache / security / MQ /  │
-                                           │ embedding, rerank,│  │ DB / distributed ID /    │
-                                           │ model routing     │  │ trace                    │
+                                           │ LLM SDK 网关、    │  │ 缓存 / 安全 / MQ /       │
+                                           │ Embedding、Rerank、│  │ 数据库 / 分布式ID /      │
+                                           │ 模型路由          │  │ 链路追踪                 │
                                            └─────────┬─────────┘  └──────────────────────────┘
                                                      │
                         ┌───────────────────┬────────┴────────┬──────────────┬──────────────┐
                         ▼                   ▼                 ▼              ▼              ▼
-                  LLM providers      PostgreSQL          Redis        RocketMQ       S3 (MinIO)
-                  (22 vendors)       + pgvector                                     Docker sandbox
+                  LLM 厂商（22 家）   PostgreSQL          Redis        RocketMQ       S3 (MinIO)
+                                     + pgvector                                     Docker 沙箱
 ```
 
-### Request Flow
+### 请求处理流程
 
 ```
-User Question
+用户提问
   │
   ▼
 StreamChatPipeline
-  ├─ 1. Memory Loading — history + summary + group instruction
-  ├─ 2. Strong Entity ID Detection — ID-like queries skip rewrite/KB-select
-  ├─ 3. Query Rewrite — multi-turn rewriting + question splitting
-  ├─ 4. KB Semantic Selection — embedding-based, filters irrelevant KBs
-  └─ 5. Agent Loop — iterate until FINISH
-        ├─ Tools: rag_search / MCP / SKILL (retrieval runs inside the loop)
-        ├─ Thought → Action → Observation → continue
-        └─ Thought → FINISH → Final Answer (streaming, [^chunk_N] citations)
+  ├─ 1. 记忆加载 — 对话历史 + 摘要 + 分组专属指令
+  ├─ 2. 强实体 ID 检测 — 订单号/单据号类问题跳过改写与选库
+  ├─ 3. 查询改写 — 多轮改写 + 问题拆分
+  ├─ 4. 知识库语义选择 — 嵌入相似度过滤无关知识库
+  └─ 5. Agent Loop — 迭代至 FINISH
+        ├─ 工具：rag_search / MCP / SKILL（检索在循环内执行）
+        ├─ Thought → Action → Observation → 继续
+        └─ Thought → FINISH → Final Answer（流式推送，[^chunk_N] 引用）
 ```
 
-### Tech Stack
+### 技术栈
 
-| Layer | Stack |
-|-------|-------|
-| Backend | Java 17, Spring Boot 3.5, MyBatis-Plus, RocketMQ, Sa-Token |
-| AI Engine | AgentScope ReActAgent + official SDK gateways (OpenAI / DashScope / Anthropic / VolcEngine / Zhipu, OpenAI/Anthropic-compatible fallback) |
-| Vector Store | PostgreSQL + pgvector (HNSW index) + pg_trgm (GIN index) |
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, AntV G6 (graph view), Mermaid |
-| Infrastructure | Redis, Docker sandbox (SKILL isolation), S3 storage (MinIO / RustFS) |
+| 层级 | 技术 |
+|------|------|
+| 后端 | Java 17, Spring Boot 3.5, MyBatis-Plus, RocketMQ, Sa-Token |
+| AI 引擎 | AgentScope ReActAgent 编排 + 厂商官方 SDK 网关（OpenAI / DashScope / Anthropic / 火山 ark / 智谱，OpenAI/Anthropic 兼容策略兜底） |
+| 向量存储 | PostgreSQL + pgvector (HNSW) + pg_trgm (GIN) |
+| 前端 | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, AntV G6（图谱可视化）, Mermaid |
+| 基础设施 | Redis, Docker 沙箱, S3 对象存储（MinIO / RustFS） |
 
-### Module Structure
+### 模块结构
 
-Maven multi-module project; dependency direction is **bootstrap → infra-ai / framework** (never the reverse).
+Maven 多模块工程，依赖方向为 **bootstrap → infra-ai / framework**（禁止反向依赖）。
 
 ```
 ragstudio
-├── bootstrap/     — All business code (controllers, services, agent loop, retrieval, graph)
-├── framework/     — Cache, DB, security, exceptions, MQ, distributed IDs
-└── infra-ai/      — LLM clients & SDK gateways, embedding, rerank, model routing, reasoning
+├── bootstrap/     — 业务代码（控制器、服务、Agent 循环、检索、图谱）
+├── framework/     — 基础框架（缓存、数据库、安全、异常、MQ、分布式ID）
+└── infra-ai/      — AI 基础设施（LLM 客户端与 SDK 网关、路由、推理、Embedding）
 ```
 
-Key packages inside `bootstrap` (`com.byteq.ai.ragstudio`):
+`bootstrap` 内关键包（`com.byteq.ai.ragstudio`）：
 
-| Package | Responsibility |
-|---------|----------------|
-| `rag/service/pipeline` | `StreamChatPipeline` orchestration (memory → rewrite → KB selection → agent loop) |
-| `rag/core/agent` | AgentScope ReActAgent integration, tool registration (`rag_search`, `tool_reader`) |
-| `rag/core/retrieve` | Retrieval channels (pgvector + pg_trgm) fused via RRF; `postprocessor/` Rerank + dynamic TopK |
-| `rag/core/memory` / `core/rewrite` | Conversation memory (history/summary/compression); multi-turn query rewriting |
-| `knowledge/` | Knowledge base & document management, MQ consumers, scheduled sync |
-| `ingestion/` | Document pipeline: fetch → parse → chunk → enhance → index |
-| `graph/` | Graph RAG: LLM entity/relation extraction + local subgraph retrieval channel |
-| `aimodel/` | Model config, multi-model routing and failover |
-| `mcp/` / `skillstore/` | MCP server registry; DB-versioned SKILL storage & sandbox execution |
+| 包 | 职责 |
+|----|------|
+| `rag/service/pipeline` | `StreamChatPipeline` 编排（记忆 → 改写 → 选库 → Agent 循环） |
+| `rag/core/agent` | AgentScope ReActAgent 集成，工具注册（`rag_search`、`tool_reader`） |
+| `rag/core/retrieve` | 检索通道（pgvector + pg_trgm）经 RRF 融合；`postprocessor/` Rerank + 动态 TopK |
+| `rag/core/memory` / `core/rewrite` | 会话记忆（历史/摘要/压缩）；多轮查询改写 |
+| `knowledge/` | 知识库与文档管理、MQ 消费、定时同步 |
+| `ingestion/` | 文档摄入流水线：fetch → parse → chunk → enhance → index |
+| `graph/` | Graph RAG：LLM 实体/关系抽取 + 局部子图检索通道 |
+| `aimodel/` | 模型配置、多模型路由与故障转移 |
+| `mcp/` / `skillstore/` | MCP 服务注册；数据库版本化 SKILL 存储与沙箱执行 |
 
-`infra-ai` provides the vendor SDK gateway layer (official SDKs for OpenAI / DashScope / Anthropic / Zhipu / VolcEngine, OpenAI/Anthropic-compatible fallback for the rest), plus embedding, rerank, model routing, structured-output fallback and in-process chunk cropping (`crop/`).
+`infra-ai` 提供厂商官方 SDK 网关层（OpenAI / DashScope / Anthropic / 智谱 / 火山方舟官方 SDK，其余厂商走 OpenAI/Anthropic 兼容策略兜底），以及 Embedding、Rerank、模型路由、结构化输出降级链与进程内 Chunk 裁剪（`crop/`）。
 
 ---
 
-## Quick Start
+## 快速开始
 
-**Prerequisites:** JDK 17+, Maven 3.8+, Node.js 18+, PostgreSQL 14+ (pgvector), Redis 6+, Docker
+**环境要求：** JDK 17+, Maven 3.8+, Node.js 18+, PostgreSQL 14+ (pgvector), Redis 6+, Docker
 
 ```bash
-# 1. Infrastructure (Docker)
-# ── RocketMQ (choose by CPU arch) ──
+# 1. 启动基础设施（Docker）
+# ── RocketMQ（根据 CPU 架构选择版本）──
 docker compose -f resources/docker/rocketmq-stack-5.2.0.compose.yaml up -d       # ARM64
 docker compose -f resources/docker/rocketmq-stack-amd-5.2.0.compose.yaml up -d   # AMD64
 # ── PostgreSQL + pgvector ──
 docker run -d --name pgvector -e POSTGRES_DB=ragstudio -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg16
 # ── Redis ──
 docker run -d --name redis -p 6379:6379 redis:7-alpine
-# ── MinIO (S3-compatible storage; RustFS or any S3-compatible service works too) ──
+# ── MinIO (S3 兼容存储；RustFS 或任意 S3 兼容服务均可) ──
 docker run -d --name minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=admin -e MINIO_ROOT_PASSWORD=password minio/minio server /data --console-address ":9001"
 
-# 2. Database initialization
+# 2. 初始化数据库
 createdb -U postgres ragstudio
-psql -U postgres -d ragstudio -f resources/database/schema_all.sql   # full schema + seed data (fresh install only)
+psql -U postgres -d ragstudio -f resources/database/schema_all.sql   # 全量初始化（Schema + 种子数据，仅全新部署）
 
-# 3. Environment config
-cp .env-example .env   # edit DB / Redis / RocketMQ / S3 settings
-# .env lives at project root; bootstrap reads it via spring-dotenv (../.env)
+# 3. 配置环境变量
+cp .env-example .env   # 修改数据库 / Redis / RocketMQ / S3 配置
+# .env 文件在项目根目录，bootstrap 模块通过 spring-dotenv 自动读取 ../.env
 
-# 4. Start backend
+# 4. 启动后端
 cd bootstrap && mvn spring-boot:run   # → http://localhost:9090/api/ragstudio
 
-# 5. Start frontend
-cd frontend && npm install && npm run dev   # → http://localhost:5173
+# 5. 启动前端
+cd frontend && npm install && npm run dev   # → http://localhost:51023
 ```
 
-> **Note:** Backend context-path is `/api/ragstudio`. Vite dev proxy forwards `/api` → `localhost:9090`, so no CORS config is needed in development.
+> **注意：** 后端 context-path 为 `/api/ragstudio`，前端的 Vite 代理配置会将 `/api` 请求转发到 `localhost:9090`，开发环境下无需跨域配置。前端 dev server 固定端口 **51023**（`strictPort`，避免多项目并存时端口漂移）。默认管理员账号 `admin / admin`，首次登录后请修改密码。
 
 ---
 
-## Features
+## 核心功能
 
-### Agent Loop
+### Agent 循环
 
 ```
-Iteration 0:  Thought → need today's date
-               Action → time_now({})
-               Observation → June 21, 2026
+迭代 0:  LLM → 调用 time_now
+         系统 → Observation: 2026年6月21日
 
-Iteration 1:  Thought → check festival
-               Action → web-search({"query": "June 21 holiday"})
-               Observation → Father's Day
+迭代 1:  LLM → 调用 web-search("6月21日节日")
+         系统 → Observation: 父亲节
 
-Iteration 2:  Thought → information sufficient
-               Action → FINISH
-               Final Answer → Today is June 21, 2026. It's Father's Day.
+迭代 2:  LLM → 直接回答：今天是2026年6月21日，父亲节。
+         → 流式推送至前端
 ```
 
-- **Native Tool Calling**: AgentScope ReActAgent drives the loop with native function calling; tool results are injected as observations (isolated role, no confusion with user speech)
-- **Tools**: `rag_search` (hybrid retrieval) + `tool_reader` (MCP/SKILL discovery) + skills + MCP — all registered in the Toolkit
-- **KB Semantic Selection**: embedding similarity decides which KBs to search, with tie-band protection and threshold gating — irrelevant questions (chitchat) trigger no retrieval at all
-- **Query Rewrite**: multi-turn rewriting with question splitting; simple questions skip the LLM via rules; strong entity IDs (order numbers, doc IDs) bypass rewrite/selection and hit exact retrieval
-- **Structured Output Fallback**: JSON Schema → JSON Output → prompt-only, chosen per model capability; capability mislabels degrade-and-retry automatically
-- **Citations**: answers carry `[^chunk_N]` numbered citations resolved to source KB documents
+- **AgentScope 原生工具调用**：ReActAgent 驱动循环，工具定义自动转为各厂商 function calling 格式，工具结果以独立观察角色注入（不与用户发言混淆）
+- **工具全量注册**：`rag_search`（混合检索）+ `tool_reader`（MCP/SKILL 发现）+ SKILL + MCP 全部注册到 Toolkit
+- **知识库语义选择**：嵌入相似度选库，带并列带保护与阈值门控——闲聊等明显无关问题不触发任何检索
+- **查询改写**：多轮改写 + 问题拆分；简单问题规则直通省一次 LLM 往返；强实体 ID（订单号、单据号）跳过改写/选库走精确检索
+- **结构化输出降级链**：JSON Schema → JSON Output → 纯提示词，按模型能力自动选择；能力标记错误时自动降级重试
+- **引用溯源**：回答携带 `[^chunk_N]` 编号引用，chunk 定位到具体知识库文档
 
-### Deep Thinking
+### 深度思考
 
-Configurable reasoning depth (0–100%) via a slider in the chat UI. Higher levels produce step-by-step chain-of-thought before the final answer, visible in the streaming output. The reasoning content is persisted in `t_message.thinking_content`.
+聊天界面提供滑块控制推理深度（0–100%）。深度越高，LLM 在给出最终答案前输出更详细的链式推理过程（展示在流式输出中）。思考内容持久化在 `t_message.thinking_content`。
 
-### Multi-Modal Chat
+### 多模态对话
 
-- Upload images via file picker or Ctrl+V paste (up to 10 per message)
-- Images stored to S3, served via presigned HTTP URLs
-- Supported in both regular and Agent modes
+- 文件选择或 Ctrl+V 粘贴上传图片（单次最多 10 张）
+- 图片上传到 S3，通过预签名 HTTP URL 在浏览器展示
+- 支持普通问答和 Agent 两种模式
 
-### Hybrid Search (RRF Fusion)
+### 混合检索（RRF 融合）
 
-Two parallel search channels fused via RRF:
+两通道并行检索后融合：
 
-| Channel | Method | Index |
-|---------|--------|-------|
-| Vector | pgvector cosine similarity | HNSW |
-| Keyword | PostgreSQL pg_trgm `ILIKE` substring match | GIN (`gin_trgm_ops`) |
+| 通道 | 方法 | 索引 |
+|------|------|------|
+| 向量 | pgvector cosine similarity | HNSW |
+| 关键词 | PostgreSQL pg_trgm `ILIKE` 子串匹配 | GIN (`gin_trgm_ops`) |
 
-RRF formula: `score = Σ 1/(60 + rank)` — no manual weight tuning needed.
+RRF 公式：`score = Σ 1/(60 + rank)`，无需人工调权重。
 
-A post-processing chain (per-KB fusion → Rerank → dynamic TopK) refines the results: text and image chunks are jointly scored by a multimodal Rerank model (e.g. qwen3-vl-rerank), with images sent as base64 data URIs (no public URL required). Score-cluster-aware dynamic TopK decides how many chunks reach the LLM based on the score distribution. **97% answer accuracy** on a 100-question internal eval set.
+检索后处理链（per-KB 粗召融合 → Rerank → 动态 TopK）进一步精排：文本/图片统一由多模态 Rerank 模型（如 qwen3-vl-rerank）语义打分（图片以 base64 data URI 直传，不依赖公网地址），分数簇感知动态 TopK 按分数分布决定送入 LLM 的条数。100 题内部评测集问答准确率 **97%**。
 
 ### Graph RAG
 
-- **Extraction**: LLM-based entity/relation extraction per chunk (structured output, incremental with per-chunk caching and self-repair on validation failure)
-- **Retrieval**: query entities are matched against the graph, local subgraph retrieved by hop expansion and injected as context triples into the RRF fusion — enabled via `rag.graph.retrieval.*`, master switch controlled from the admin "Knowledge Graph" page (off by default)
-- **Visualization**: admin graph page with interactive knowledge-graph view (AntV G6), build logs and stats
+- **图谱抽取**：LLM 逐 chunk 抽取实体与关系（结构化输出约束，按 chunk 增量抽取 + 缓存，校验失败自动修复重试）
+- **图谱检索**：查询实体匹配图谱，局部子图按跳数扩展，以上下文三元组注入 RRF 融合——检索侧 `rag.graph.retrieval.*`，总开关在后管「知识图谱」页动态控制（默认关闭）
+- **图谱可视化**：管理后台交互式知识图谱视图（AntV G6），实体管理（同名/别名合并）与构建日志
 
-### Knowledge Base & Documents
+### 知识库与文档
 
-- Multi-format upload: PDF, DOCX, HTML, Markdown, Excel (file or URL)
-- **MinerU parsing**: layout-aware PDF parsing via local or remote (mineru.net free API) MinerU, with Tika fallback; tables/images in PDFs extracted by multimodal LLM
-- Three chunking strategies: `fixed_size` (overlap), `recursive` (multi-level separators), `structure_aware` (markdown-aware)
-- Scheduled sync with ETag/Hash change detection
-- Chunk view/edit/enable-disable per document
+- 多格式上传：PDF / DOCX / HTML / Markdown / Excel（支持文件和 URL）
+- **MinerU 解析**：本地或远程（mineru.net 免费 API）MinerU 版面感知 PDF 解析，失败回退 Tika；PDF 内表格/图片由多模态 LLM 提取
+- 三种分块策略：重叠分块、递归分块、结构感知分块
+- 定时同步（cron + ETag/Hash 变更检测）
+- 分块查看、启用/禁用、手动编辑
 
-### Conversation Groups
+### 会话分组
 
-- Create/rename/delete groups and batch-move conversations into/out of groups
-- Group-specific instructions are automatically injected into conversations of that group
-- New conversations started from a group page are auto-assigned
+- 创建/重命名/删除分组，会话批量移入/移出分组
+- 分组专属指令自动注入该组会话的对话管线
+- 从分组页发起的新会话自动归组
 
-### MCP Integration
+### MCP 集成
 
-- Register external MCP servers at runtime (SSE / Streamable HTTP)
-- Agent autonomously discovers and invokes tools during the loop
-- Failure retry: Agent can retry or switch to alternative tools
+- 运行时注册外部 MCP 服务器（SSE / Streamable HTTP）
+- Agent 通过 `tool_reader search` 在循环中自主发现和调用工具
+- 失败时可自动重试或切换工具
 
-### SKILL System
+### SKILL 技能系统
 
-Define skills as `SKILL.md` (metadata source of truth) with an optional `skill.yaml` — no code needed:
+在 `skills/{name}/` 目录下写 `SKILL.md`（元数据标准来源）+ 可选 `skill.yaml` 即可，无需写 Java 或搭 MCP：
 
 ````markdown
 # skills/my-skill/SKILL.md
 ---
 name: my-skill
-description: "Query internal API. Use when the user asks about xxx."
+description: "查询内部 API。当用户询问 xxx 时使用。"
 ---
 
-## Steps
+## 使用步骤
 ...
 ````
 
-- `name`/`description` live in the SKILL.md frontmatter (Agent Skills open standard — portable across agents)
-- Types: `http` (REST API), `script` (shell scripts), `command` (executables); skills without execution config are knowledge-only (activated via `tool_reader`)
-- **DB-versioned storage**: skills are stored in the database (`t_skill` / `t_skill_version` / `t_skill_file` / `t_skill_blob`) with version history, file-level diff, rollback, zip import/export and GitHub import; the `skills/` directory acts as a workspace reconciled from DB at startup (legacy dirs are auto-imported)
-- `script`/`command` run in Docker sandbox (`--read-only`, `--cap-drop=ALL`, `--network=none`, 30s timeout)
-- Admin Skills page: version management, diff view, diagnostics for load failures
+- `name`/`description` 写在 SKILL.md frontmatter（兼容 Agent Skills 开放标准，可跨端复用）
+- 类型：`http`（REST API）、`script`（脚本）、`command`（命令）；无执行配置则为纯知识型技能（通过 `tool_reader` 激活）
+- **数据库版本化管理**：技能存于数据库（`t_skill` / `t_skill_version` / `t_skill_file` / `t_skill_blob`），支持版本历史、文件级 diff、回滚、zip 导入导出与 GitHub 导入；`skills/` 目录作为文件工作区，启动时以数据库为准对账（存量目录自动收编）
+- `script`/`command` 在 Docker 沙箱隔离运行（只读文件系统、去权、无网络、30 秒超时）
+- 管理后台「技能」页：版本管理、diff 查看、加载失败诊断
 
-### Tracing & Monitoring
+### 链路追踪
 
-- Full-chain distributed tracing: every pipeline stage records duration, status, error
-- Admin dashboard with latency/success trends, per-node trace inspection
-- Message feedback (like/dislike) with reason collection
+- 全链路 trace：每个阶段记录耗时、状态、异常
+- 管理后台查看延迟/成功率趋势，节点级执行时序瀑布图
+- 消息点赞/点踩反馈
 
 ---
 
-## Config Reference
+## 配置参考
 
-Key application config (`bootstrap/src/main/resources/application.yaml`):
+核心配置（`bootstrap/src/main/resources/application.yaml`）：
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `rag.agent.max-iterations` | `10` | Max Agent loop iterations |
-| `rag.agent.timeout-ms` | `120000` | Agent overall execution timeout (ms) |
-| `rag.skills.dir` | `${ragstudio.data-dir}/skills` | SKILL workspace directory |
-| `rag.skills.max-versions` | `0` | Skill version retention (0 = unlimited) |
-| `rag.skills.allowed-commands` | `""` | Skill command whitelist (empty = command type disabled) |
-| `rag.skills.sandbox.enabled` | `true` | Docker sandbox isolation for script/command skills |
-| `rag.skills.script-timeout-ms` | `30000` | Script execution timeout (ms) |
-| `rag.query-rewrite.enabled` | `true` | Multi-turn query rewriting (simple questions handled by rules) |
-| `rag.search.default-top-k` | `10` | Top-K retrieval results |
-| `rag.search.max-final-chunks` | `5` | Baseline chunk count after rerank (dynamic TopK target) |
-| `rag.search.channels.hybrid-rrf.k` | `60` | RRF smoothing constant |
-| `rag.search.crop.enabled` | `false` | Semantic chunk cropping (in-process bge-small-zh-v1.5, enable with `RAG_CROP_ENABLED=true` in `.env`) |
-| `rag.memory.history-keep-turns` | `6` | Recent conversation turns to keep |
-| `rag.memory.compress-threshold` | `12` | Compression trigger threshold |
-| `rag.memory.summary-enabled` | `true` | Enable conversation summary |
-| `rag.memory.title-max-length` | `30` | Max chat title length |
-| `rag.rate-limit.global.max-concurrent` | `3` | Max concurrent chat sessions |
-| `rag.rate-limit.global.max-wait-seconds` | `15` | Queue wait timeout (seconds) |
-| `rag.model-routing.selection.failure-threshold` | `2` | Consecutive failures before a model is temporarily routed out |
-| `rag.graph.retrieval.enabled` | `true` | Graph retrieval channel (master switch in admin, default off) |
-| `rag.trace.enabled` | `true` | Enable distributed tracing |
-| `mineru.enabled` | `false` | MinerU document parsing (false = Tika/multimodal fallback only) |
-| `app.default-avatar-url` | `https://avatars.githubusercontent.com/u/583231?v=4` | Default user avatar |
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `rag.agent.max-iterations` | `10` | Agent 循环最大迭代次数 |
+| `rag.agent.timeout-ms` | `120000` | Agent 总执行超时（毫秒） |
+| `rag.skills.dir` | `${ragstudio.data-dir}/skills` | SKILL 工作区目录 |
+| `rag.skills.max-versions` | `0` | 技能版本保留数（0 = 不限制） |
+| `rag.skills.allowed-commands` | `""` | SKILL 命令白名单（空=禁用 command 类型） |
+| `rag.skills.sandbox.enabled` | `true` | Docker 沙箱隔离执行 script/command |
+| `rag.skills.script-timeout-ms` | `30000` | 脚本执行超时（毫秒） |
+| `rag.query-rewrite.enabled` | `true` | 多轮查询改写开关（简单问题规则直通） |
+| `rag.search.default-top-k` | `10` | 检索返回 Top-K 条数 |
+| `rag.search.max-final-chunks` | `5` | 重排后基准条数（动态 TopK 目标值） |
+| `rag.search.channels.hybrid-rrf.k` | `60` | RRF 融合平滑常数 |
+| `rag.search.crop.enabled` | `false` | 语义裁剪开关（进程内 bge-small-zh-v1.5，在 `.env` 中设 `RAG_CROP_ENABLED=true` 开启） |
+| `rag.memory.history-keep-turns` | `6` | 保留最近对话轮数 |
+| `rag.memory.compress-threshold` | `12` | 压缩触发阈值 |
+| `rag.memory.summary-enabled` | `true` | 启用对话摘要 |
+| `rag.memory.title-max-length` | `30` | 会话标题最大字符数 |
+| `rag.rate-limit.global.max-concurrent` | `3` | 全局并发对话数限制 |
+| `rag.rate-limit.global.max-wait-seconds` | `15` | 排队最大等待秒数 |
+| `rag.model-routing.selection.failure-threshold` | `2` | 连续失败次数达阈值后模型临时摘除 |
+| `rag.graph.retrieval.enabled` | `true` | 图谱检索通道（总开关在后管，默认关闭） |
+| `rag.trace.enabled` | `true` | 启用链路追踪 |
+| `mineru.enabled` | `false` | MinerU 文档解析（false = 仅 Tika/多模态兜底） |
+| `app.default-avatar-url` | `https://avatars.githubusercontent.com/u/583231?v=4` | 用户默认头像 |
 
 ---
 
 <p align="center">
-  <a href="LICENSE">MIT License</a> · Built by ByteQ
+  <a href="README_EN.md">🌐 English Version</a> · <a href="LICENSE">MIT License</a> · Built by ByteQ
 </p>
