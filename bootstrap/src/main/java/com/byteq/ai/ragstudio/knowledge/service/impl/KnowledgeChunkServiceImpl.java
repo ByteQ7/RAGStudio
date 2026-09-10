@@ -342,8 +342,14 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         });
 
         // 图谱增量重抽：仅重抽该 chunk，文档其余 chunk 复用抽取缓存（零额外 LLM 成本）；
-        // LLM 同步调用较慢，放在事务提交后执行
-        graphExtractionService.extractForChunk(documentDO.getKbId(), docId, chunkId, newContent);
+        // LLM 同步调用较慢，放在事务提交后执行。DB+向量已提交成功，图谱失败不应让接口返回 500
+        // （否则用户重试时内容相同会提前 return，图谱永远不补跑）；失败按内容哈希缓存在下次构建自愈
+        try {
+            graphExtractionService.extractForChunk(documentDO.getKbId(), docId, chunkId, newContent);
+        } catch (Exception e) {
+            log.warn("chunk 图谱增量重抽失败（不影响分片更新结果）: docId={}, chunkId={}, error={}",
+                    docId, chunkId, e.getMessage());
+        }
     }
 
     /**
@@ -427,11 +433,17 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
             }
         });
 
-        // 图谱联动：禁用 → 清理该 chunk 派生关系（纯 DB）；启用 → 增量重建（LLM，事务外执行）
-        if (enabled) {
-            graphExtractionService.extractForChunk(documentDO.getKbId(), docId, chunkId, chunkDO.getContent());
-        } else {
-            graphExtractionService.deleteChunkGraph(documentDO.getKbId(), docId, chunkId);
+        // 图谱联动：禁用 → 清理该 chunk 派生关系（纯 DB）；启用 → 增量重建（LLM，事务外执行）。
+        // DB+向量已提交成功，图谱联动失败不应让接口返回 500（抽取缓存按内容哈希在下次构建自愈）
+        try {
+            if (enabled) {
+                graphExtractionService.extractForChunk(documentDO.getKbId(), docId, chunkId, chunkDO.getContent());
+            } else {
+                graphExtractionService.deleteChunkGraph(documentDO.getKbId(), docId, chunkId);
+            }
+        } catch (Exception e) {
+            log.warn("chunk 图谱联动失败（不影响分片状态变更结果）: docId={}, chunkId={}, enabled={}, error={}",
+                    docId, chunkId, enabled, e.getMessage());
         }
     }
 

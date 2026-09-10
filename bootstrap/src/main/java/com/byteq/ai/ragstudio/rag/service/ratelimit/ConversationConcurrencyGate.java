@@ -44,6 +44,12 @@ public class ConversationConcurrencyGate {
      * @return true-获取成功可执行；false-同会话已有请求在处理
      */
     public boolean tryAcquire(String userId, String conversationId) {
+        // 本实例已有降级门闸持有者（Redis 故障期获取）时直接拒绝，
+        // 防止"获取时 Redis 故障走内存门闸、恢复后下一请求走 Redis"两条路径互不感知导致同会话并发
+        String gateKey = key(userId, conversationId);
+        if (LOCAL_FALLBACK_GATE.containsKey(gateKey)) {
+            return false;
+        }
         try {
             RBucket<String> bucket = redissonClient.getBucket(key(userId, conversationId));
             return bucket.trySet("busy", MARK_TTL_MINUTES, TimeUnit.MINUTES);
@@ -51,7 +57,7 @@ public class ConversationConcurrencyGate {
             // Redis 不可用时降级为本实例内存门闸（fail-open 仅跨实例，本实例仍互斥），
             // 避免 Redis 故障期间同会话并发请求互相读到不完整历史并乱序落库
             log.warn("会话并发门闸获取失败，降级为本地内存门闸: conversationId={}", conversationId, e);
-            return LOCAL_FALLBACK_GATE.putIfAbsent(key(userId, conversationId), new Object()) == null;
+            return LOCAL_FALLBACK_GATE.putIfAbsent(gateKey, new Object()) == null;
         }
     }
 
@@ -66,6 +72,11 @@ public class ConversationConcurrencyGate {
      * @return true-获取成功；false-等待期内门闸仍被占用
      */
     public boolean tryAcquireWait(String userId, String conversationId, long waitSeconds) {
+        String gateKey = key(userId, conversationId);
+        // 与 tryAcquire 一致：本地降级门闸持有者优先
+        if (LOCAL_FALLBACK_GATE.containsKey(gateKey)) {
+            return false;
+        }
         try {
             RBucket<String> bucket = redissonClient.getBucket(key(userId, conversationId));
             // 先检查是否已被占用，避免无谓等待
@@ -87,7 +98,7 @@ public class ConversationConcurrencyGate {
             return false;
         } catch (Exception e) {
             log.warn("会话并发门闸限时获取失败，降级为本地内存门闸: conversationId={}", conversationId, e);
-            return LOCAL_FALLBACK_GATE.putIfAbsent(key(userId, conversationId), new Object()) == null;
+            return LOCAL_FALLBACK_GATE.putIfAbsent(gateKey, new Object()) == null;
         }
     }
 

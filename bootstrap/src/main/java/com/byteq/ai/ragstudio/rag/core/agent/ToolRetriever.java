@@ -87,10 +87,12 @@ public class ToolRetriever {
                     .map(c -> "[" + c.getType() + "] " + c.getName() + ": " + c.getDescription())
                     .collect(Collectors.toList());
 
-            // 远程批量 embedding 在锁外执行：慢 IO 不占用对象锁，避免阻塞 setModelAndRebuild 等管理操作
+            // 远程批量 embedding 在锁外执行：慢 IO 不占用对象锁，避免阻塞 setModelAndRebuild 等管理操作。
+            // 记录本次 embedding 使用的模型，换入前校验模型未变（慢 IO 期间可能已被切换）
+            final String modelUsed = toolRoutingModel;
             List<List<Float>> vectors;
-            if (toolRoutingModel != null) {
-                vectors = embeddingService.embedBatch(texts, toolRoutingModel);
+            if (modelUsed != null) {
+                vectors = embeddingService.embedBatch(texts, modelUsed);
             } else {
                 vectors = embeddingService.embedBatch(texts);
             }
@@ -103,6 +105,12 @@ public class ToolRetriever {
                 cards.get(i).setEmbedding(arr);
             }
             synchronized (this) {
+                if (!java.util.Objects.equals(modelUsed, toolRoutingModel)) {
+                    // 慢 IO 期间模型已被切换：本次向量与新模型语义空间不匹配，丢弃本次结果，
+                    // setModelAndRebuild 发起的重建会用新模型重新构建
+                    log.info("工具索引构建期间模型已切换({} → {})，丢弃本次结果", modelUsed, toolRoutingModel);
+                    return;
+                }
                 store.rebuild(cards);
             }
             log.info("工具检索索引构建完成: {} 个工具, TopK={}, model={}",

@@ -399,6 +399,10 @@ public class GraphExtractionServiceImpl implements GraphExtractionService {
             rebuildingKbs.remove(kbId);
             log.warn("图谱重建任务队列已满: kbId={}", kbId);
             return "图谱重建任务队列已满，请稍后再试";
+        } catch (RuntimeException e) {
+            // submit 抛出其他运行时异常时同样清理标记，否则该知识库将永久无法再次触发重建
+            rebuildingKbs.remove(kbId);
+            throw e;
         }
     }
 
