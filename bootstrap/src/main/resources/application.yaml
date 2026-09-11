@@ -66,6 +66,8 @@ rag:
       enabled: ${SANDBOX_ENABLED:true}   # 是否启用 Docker 沙箱（false 则禁止所有 SKILL 执行；http/script/command 三类统一沙箱）
       network-enabled: ${SANDBOX_NETWORK:true}  # 沙箱内是否开放网络；skill.yaml 可用 config.network 按技能显式覆盖
       image: ${SANDBOX_IMAGE:sandbox:latest}  # 沙箱镜像
+      pool-size: ${SANDBOX_POOL_SIZE:1}  # 常驻沙箱池大小（0 = 每次执行临时创建用完即删）；执行后容器内自动清场，可复用免冷启动
+      dns: ${SANDBOX_DNS:223.5.5.5,119.29.29.29}  # 沙箱容器 DNS（逗号分隔；置空则跟随宿主机 resolv.conf，避免固化宿主机临时 DNS 配置）
       memory: 256m           # 内存限制
       cpus: "0.5"            # CPU 限制
       timeout-ms: 30000      # 执行超时

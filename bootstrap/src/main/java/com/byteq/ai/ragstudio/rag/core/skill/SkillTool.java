@@ -216,13 +216,13 @@ public class SkillTool implements Tool {
             return ToolResult.failure(name(), "Script 类型未指定 scriptFile，且 scripts/ 目录为空");
         }
 
-        // 脚本目录挂载到容器的 /scripts/ 下
-        java.nio.file.Path scriptsDir = definition.getSkillDir().resolve("scripts");
-        String volume = scriptsDir.toAbsolutePath().toString() + ":/scripts:ro";
+        // 脚本基础路径：池化模式 = /skills/<skill>/scripts（工作区整体只读预挂载，容器常驻）；
+        // 传统模式 = /scripts（每次执行按技能单独挂载）
+        String basePath = sandboxExecutor.scriptBasePath(definition.getName());
 
         // 构造执行的命令
         String interpreter = resolveInterpreter(scriptFile, config);
-        String command = interpreter + " /scripts/" + scriptFile;
+        String command = interpreter + " " + basePath + "/" + scriptFile;
 
         // 追加参数（shell 转义，防止注入）
         if (params != null) {
@@ -233,8 +233,12 @@ public class SkillTool implements Tool {
             }
         }
 
-        // 沙箱默认开放网络（rag.skills.sandbox.network-enabled），config.network 可按技能显式覆盖
-        return executeInSandbox(command, resolveNetworkEnabled(config, sandboxNetworkEnabled), List.of(volume));
+        // 沙箱默认开放网络（rag.skills.sandbox.network-enabled），config.network 可按技能显式覆盖；
+        // 池化模式下网络策略在容器创建时固定，本参数仅传统模式/兜底一次性容器按次生效
+        List<String> volumes = sandboxExecutor.isPooled()
+                ? List.of()
+                : List.of(definition.getSkillDir().resolve("scripts").toAbsolutePath() + ":/scripts:ro");
+        return executeInSandbox(command, resolveNetworkEnabled(config, sandboxNetworkEnabled), volumes);
     }
 
     private String resolveScriptFile(Map<String, Object> config) {

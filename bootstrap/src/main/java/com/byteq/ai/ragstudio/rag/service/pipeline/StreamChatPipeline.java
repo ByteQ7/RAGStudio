@@ -90,6 +90,22 @@ public class StreamChatPipeline {
     @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.network-enabled:true}")
     private boolean sandboxNetworkEnabled;
 
+    /** 沙箱常驻池大小（0 = 传统按次创建模式） */
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.pool-size:1}")
+    private int sandboxPoolSize;
+
+    /** SKILL 工作区路径（池化模式挂载为容器 /skills:ro） */
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.dir:skills}")
+    private String skillsDirPath;
+
+    /**
+     * 沙箱容器 DNS（逗号分隔，置空则跟随宿主机 /etc/resolv.conf）
+     * <p>显式指定可避免容器创建时固化宿主机当时的 resolv.conf——宿主机跑代理（TUN/系统代理切换）
+     * 时该文件可能被临时改写，固化后容器会长期携带失效 DNS，导致偶发解析/连接异常。</p>
+     */
+    @org.springframework.beans.factory.annotation.Value("${rag.skills.sandbox.dns:223.5.5.5,119.29.29.29}")
+    private String sandboxDns;
+
     @org.springframework.beans.factory.annotation.Value("${rag.skills.allowed-commands:}")
     private String allowedCommands;
 
@@ -107,7 +123,28 @@ public class StreamChatPipeline {
                 .timeoutMs(sandboxTimeoutMs)
                 .memory(sandboxMemory)
                 .cpus(sandboxCpus)
+                .poolSize(sandboxPoolSize)
+                .networkEnabled(sandboxNetworkEnabled)
+                .workspaceMount(com.byteq.ai.ragstudio.rag.core.skill.SkillDirs.resolve(skillsDirPath).toString())
+                .dnsServers(parseSandboxDns())
                 .build();
+        try {
+            // 预热常驻沙箱池；Docker 暂不可用时仅告警，首次执行时懒加载重试
+            this.sandboxExecutor.warmup();
+        } catch (Exception e) {
+            log.warn("SKILL 沙箱池预热失败（首次执行时重试）", e);
+        }
+    }
+
+    /** 解析沙箱 DNS 配置（逗号分隔；空白项忽略，返回空列表表示跟随宿主机 resolv.conf） */
+    private java.util.List<String> parseSandboxDns() {
+        if (StrUtil.isBlank(sandboxDns)) {
+            return java.util.List.of();
+        }
+        return java.util.Arrays.stream(sandboxDns.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 
 
