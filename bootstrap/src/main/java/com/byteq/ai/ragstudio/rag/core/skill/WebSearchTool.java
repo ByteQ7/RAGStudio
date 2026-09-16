@@ -100,7 +100,7 @@ public class WebSearchTool implements Tool {
         StringBuilder observation = new StringBuilder();
         observation.append("网络搜索完成，共 ")
                 .append(Math.min(results.size(), MAX_CITED_RESULTS))
-                .append(" 条结果。回答中引用某条结果时，必须在句末标注对应的 [^chunk_{id}] 编号：\n");
+                .append(" 条结果（已带 [^chunk_{id}] 编号，引用规则见系统提示词）：\n");
 
         for (JsonNode item : results) {
             if (webChunks.size() >= MAX_CITED_RESULTS) {

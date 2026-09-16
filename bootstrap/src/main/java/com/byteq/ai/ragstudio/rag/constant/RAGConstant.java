@@ -49,12 +49,6 @@ public class RAGConstant {
     public static final String CONVERSATION_TITLE_PROMPT_PATH = "prompt/conversation-title.st";
 
     /**
-     * 统一 RAG 问答提示词模板路径
-     * 合并了 KB-only、MCP-only、MCP+KB 三种场景，根据输入标签自动匹配规则
-     */
-    public static final String ANSWER_CHAT_PATH = "prompt/answer-chat.st";
-
-    /**
      * MCP 工具参数提取提示词模板路径
      * 用于从用户问题中提取工具调用参数
      */

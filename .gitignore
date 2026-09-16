@@ -123,6 +123,8 @@ frontend/vite.config.*.js
 # AI 协作约定（仅本地维护，不入库）
 # Graph RAG 现状报告（本地调研笔记，不入库）
 /docs/graph-rag-report.md
+# 提示词审查报告（本地工作记录，不入库）
+/docs/prompt-audit-2026-09-11.md
 
 # AI 协作约定（仅本地维护，不入库）
 /AGENTS.md
@@ -132,3 +134,7 @@ frontend/vite.config.*.js
 
 # AI 助手工作数据（记忆/任务等，仅本地维护，不入库）
 .workbuddy/
+
+# JVM 崩溃日志与回收站（本地运行时产物，不入库）
+hs_err_pid*.log
+.Trash-*/

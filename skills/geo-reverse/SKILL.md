@@ -1,15 +1,13 @@
 ---
 name: geo-reverse
-description: 经纬度坐标逆地理编码。输入纬度和经度，返回对应的省份、城市、区县名称及行政编码。完全离线运行，使用本地中国行政区划边界数据。当你从用户消息中获取到经纬度坐标后，可以调用此工具将坐标转换为城市名。
+description: 经纬度逆地理编码。输入 lat、lng，返回省份/城市/区县名称及行政编码（仅覆盖中国）。
 ---
 
 # Geo Reverse SKILL — 经纬度逆地理编码
 
-## 功能
-将经纬度坐标转换为可读的地理位置信息，包括省份、城市、区县名称及行政编码。完全离线运行，使用本地中国行政区划边界数据，不依赖外部 API。
+将经纬度坐标转换为可读的地理位置信息（省份、城市、区县名称及行政编码）。完全离线运行，使用本地中国行政区划边界数据，不依赖外部 API。
 
-## 使用场景
-当 AI 收到用户发来的坐标信息（如 `我的位置：纬度 39.9042, 经度 116.4074`）时，使用此工具将坐标转换为城市名，以便进一步查询天气等信息。
+当用户发来坐标（如 `我的位置：纬度 39.9042, 经度 116.4074`）时调用本技能，把坐标转成城市名，便于后续查询天气等信息。
 
 ## 参数
 
@@ -26,12 +24,9 @@ description: 经纬度坐标逆地理编码。输入纬度和经度，返回对�
 {
   "status": 1,
   "address": {
-    "province": "北京市",
-    "province_code": "110000",
-    "city": "北京市",
-    "city_code": "110000",
-    "district": "东城区",
-    "district_code": "110101"
+    "province": "北京市", "province_code": "110000",
+    "city": "北京市", "city_code": "110000",
+    "district": "东城区", "district_code": "110101"
   }
 }
 ```
@@ -40,44 +35,14 @@ description: 经纬度坐标逆地理编码。输入纬度和经度，返回对�
 - `province/city/district`: 省/市/区县名称
 - `*_code`: 对应行政编码
 
-## 使用示例（完整流程）
-
-### 场景：用户查询天气
+## 使用示例
 
 ```
 用户：我的位置：纬度 31.9242, 经度 120.4923
-
-AI（ReACT 循环）：
-  Thought: 用户提供了坐标，我需要将其转换为城市名
-  Action: geo-reverse
-  Action Input: {"lat": "31.9242", "lng": "120.4923"}
-  → 返回：{"status": 1, "address": {"province": "江苏省", "city": "苏州市", "district": "吴中区", ...}}
-
-  Thought: 用户在苏州市。需要确认她查询的是本地还是其他城市。
-  Action: FINISH
-  Final Answer: 好的，您当前在江苏省苏州市。请问您想：
-  [USER_CHOICE]
-  查询苏州市的今天天气
-  查询其他城市天气
-  [/USER_CHOICE]
-```
-
-### 场景：直辖市处理
-
-```
-用户：我的位置：纬度 39.9042, 经度 116.4074
-
-  Action: geo-reverse
-  Action Input: {"lat": "39.9042", "lng": "116.4074"}
-  → 返回：{"status": 1, "address": {"province": "北京市", "city": "北京市", "district": "东城区", ...}}
-
-  Thought: 用户在北京市东城区
-  Action: FINISH
-  Final Answer: 您当前在北京市东城区。请问您想：
-  [USER_CHOICE]
-  查询北京市的今天天气
-  查询其他城市天气
-  [/USER_CHOICE]
+Action: geo-reverse
+Action Input: {"lat": "31.9242", "lng": "120.4923"}
+→ {"status": 1, "address": {"province": "江苏省", "city": "苏州市", "district": "吴中区", ...}}
+→ Final Answer: 您当前在江苏省苏州市。请问您想查询哪个城市的天气？
 ```
 
 ## 注意事项

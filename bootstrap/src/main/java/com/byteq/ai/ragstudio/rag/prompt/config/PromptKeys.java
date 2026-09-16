@@ -28,11 +28,6 @@ public enum PromptKeys {
             "prompt/agent-reminder.st",
             "{previous_questions},{image_note}"),
 
-    ANSWER_CHAT("answer_chat", "chat", "统一 RAG 问答系统提示词（备用）",
-            "非 Agent 场景下的统一问答 system（KB/MCP/混合），当前主链路已走 Agent，属备用路径。",
-            "prompt/answer-chat.st",
-            ""),
-
     CONTEXT_FORMAT("context_format", "chat", "上下文格式 section 模板",
             "检索上下文拼装格式，含 kb-section / snippet-rules / mcp-section / sub-question / evidence / summary 等多段 section。",
             "prompt/context-format.st",

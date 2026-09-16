@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  * 提示词模板工具类
  * <p>
  * 提供模板占位符填充、连续空行清理、section 分隔解析等文本处理能力，
- * 被 {@link PromptTemplateLoader} 和 {@link RAGPromptService} 调用。
+ * 被 {@link PromptTemplateLoader} 调用。
  * </p>
  */
 public final class PromptTemplateUtils {

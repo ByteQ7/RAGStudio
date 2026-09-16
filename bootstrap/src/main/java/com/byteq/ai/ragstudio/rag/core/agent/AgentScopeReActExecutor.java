@@ -104,8 +104,6 @@ public class AgentScopeReActExecutor {
     private static final String KB_IRRELEVANT_NOTE =
             "> ⚠️ 注意：用户问题经判断与所选知识库**不相关**，已跳过知识库检索。请不要尝试使用 rag_search 工具，"
             + "也不要输出任何 [^chunk_{id}] 引用标记。";
-    private static final String KB_RELEVANT_NOTE =
-            "> ⚠️ 用户已选择知识库且问题与知识库相关。**你的第一轮行动必须调用 rag_search 工具检索知识库**，然后基于检索结果回答。不得仅凭自身知识直接回答。";
     private static final String SEARCH_PRIORITY_WITH_RAG = "先 `rag_search`，不够再 `web-search` 或其他";
     private static final String SEARCH_PRIORITY_WITHOUT_RAG = "使用可用工具搜索相关数据";
 
@@ -949,13 +947,11 @@ public class AgentScopeReActExecutor {
         }
 
         String kbContext = StrUtil.isNotBlank(ctx.getKbContext()) ? ctx.getKbContext() : NO_KB_TEXT;
-        String relevanceNote = "";
         boolean hasRagSearch = toolNames.contains("rag_search");
-        if (!ctx.isKbRelevant() && StrUtil.isBlank(ctx.getKbContext())) {
-            relevanceNote = KB_IRRELEVANT_NOTE;
-        } else if (ctx.isKbRelevant() && StrUtil.isBlank(ctx.getKbContext()) && hasRagSearch) {
-            relevanceNote = KB_RELEVANT_NOTE;
-        }
+        // 「已选知识库且相关，必须强制检索」的强指令统一由 agent-reminder 的 kb_forced section 下发
+        //（可在后管「提示词管理」页编辑），此处只负责"不相关"场景的负向提示，避免同一约束双份注入
+        String relevanceNote = (!ctx.isKbRelevant() && StrUtil.isBlank(ctx.getKbContext()))
+                ? KB_IRRELEVANT_NOTE : "";
         String searchPriorityRule = hasRagSearch ? SEARCH_PRIORITY_WITH_RAG : SEARCH_PRIORITY_WITHOUT_RAG;
 
         String filled = PromptTemplateUtils.fillSlots(template, Map.of(
@@ -995,7 +991,7 @@ public class AgentScopeReActExecutor {
         if (hasHistoryImage) {
             reminder.append("\n\n").append(templateLoader.loadSection(AGENT_REMINDER_PATH, "image_history"));
         }
-        if (ctx.isKbRelevant() && !ctx.getKnowledgeBaseIds().isEmpty()) {
+        if (ctx.isKbRelevant() && hasRagSearch) {
             reminder.append("\n\n").append(templateLoader.loadSection(AGENT_REMINDER_PATH, "kb_forced"));
         }
         if (reminder.length() > 0) {
