@@ -7,6 +7,7 @@ import com.byteq.ai.ragstudio.admin.service.DashboardService;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,7 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
  * @see DashboardTrendsVO
  */
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 @RequestMapping("/admin/dashboard")
 public class DashboardController {

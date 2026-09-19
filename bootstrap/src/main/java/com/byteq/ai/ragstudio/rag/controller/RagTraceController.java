@@ -1,6 +1,8 @@
 package com.byteq.ai.ragstudio.rag.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
@@ -27,8 +29,13 @@ import java.util.List;
  * 提供 RAG 链路追踪（Trace）记录的查询接口，包括分页查询运行记录、
  * 查询链路详情以及查询链路节点信息等。
  * </p>
+ *
+ * <p>
+ * 权限边界：链路追踪属于系统运维数据，仅 admin 角色可访问（含查询、删除、标记失败）。
+ * </p>
  */
 @RestController
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 public class RagTraceController {
 

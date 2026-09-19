@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.admin.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphBuildLogVO;
 import com.byteq.ai.ragstudio.admin.controller.vo.GraphEntityVO;
@@ -34,7 +35,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 @RequestMapping("/admin/graph")
 public class GraphAdminController {

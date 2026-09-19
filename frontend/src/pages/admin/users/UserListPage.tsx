@@ -13,17 +13,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { PageResult, UserItem, UserCreatePayload, UserUpdatePayload } from "@/services/userService";
 import { createUser, deleteUser, getUsersPage, updateUser } from "@/services/userService";
+import type { UserRole } from "@/types";
 import { getErrorMessage } from "@/utils/error";
 import { formatDateTime as formatDate } from "@/utils/datetime";
+import { normalizeUserRole, USER_ROLE_LABELS, USER_ROLE_OPTIONS } from "@/utils/role";
 
 const PAGE_SIZE = 10;
 
-const roleOptions = [
-  { value: "admin", label: "管理员" },
-  { value: "user", label: "成员" }
-];
+interface UserForm {
+  username: string;
+  password: string;
+  role: UserRole;
+  avatar: string;
+}
 
-const buildEmptyForm = () => ({
+const buildEmptyForm = (): UserForm => ({
   username: "",
   password: "",
   role: "user",
@@ -99,7 +103,7 @@ export function UserListPage() {
     setForm({
       username: user.username || "",
       password: "",
-      role: user.role || "user",
+      role: normalizeUserRole(user.role),
       avatar: user.avatar || ""
     });
     setDialogState({ open: true, mode: "edit", user });
@@ -123,7 +127,7 @@ export function UserListPage() {
         const payload: UserCreatePayload = {
           username: trimmedUsername,
           password: trimmedPassword,
-          role: form.role || "user",
+          role: form.role,
           avatar: form.avatar?.trim() || undefined
         };
         await createUser(payload);
@@ -133,7 +137,7 @@ export function UserListPage() {
       } else if (dialogState.user) {
         const payload: UserUpdatePayload = {
           username: trimmedUsername,
-          role: form.role || "user",
+          role: form.role,
           avatar: form.avatar?.trim() || undefined,
           password: trimmedPassword || undefined
         };
@@ -200,7 +204,7 @@ export function UserListPage() {
               <TableBody>
                 {users.map((user) => {
                   const isProtected = isProtectedAdmin(user);
-                  const roleLabel = user.role === "admin" ? "管理员" : "成员";
+                  const roleLabel = USER_ROLE_LABELS[normalizeUserRole(user.role)];
                   return (
                     <TableRow key={user.id}>
                       <TableCell>
@@ -300,12 +304,12 @@ export function UserListPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">角色</label>
-              <Select value={form.role} onValueChange={(value) => setForm((prev) => ({ ...prev, role: value }))}>
+              <Select value={form.role} onValueChange={(value) => setForm((prev) => ({ ...prev, role: normalizeUserRole(value) }))}>
                 <SelectTrigger>
                   <SelectValue placeholder="请选择角色" />
                 </SelectTrigger>
                 <SelectContent>
-                  {roleOptions.map((option) => (
+                  {USER_ROLE_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>

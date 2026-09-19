@@ -9,6 +9,7 @@ import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.ingestion.service.IngestionPipelineService;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * </p>
  */
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 @Validated
 public class IngestionPipelineController {

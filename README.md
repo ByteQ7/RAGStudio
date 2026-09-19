@@ -225,7 +225,7 @@ cd bootstrap && mvn spring-boot:run   # → http://localhost:9090/api/ragstudio
 cd frontend && npm install && npm run dev   # → http://localhost:51023
 ```
 
-> **注意：** 后端 context-path 为 `/api/ragstudio`，前端的 Vite 代理配置会将 `/api` 请求转发到 `localhost:9090`，开发环境下无需跨域配置。前端 dev server 固定端口 **51023**（`strictPort`，避免多项目并存时端口漂移）。默认管理员账号 `admin / admin`，首次登录后请修改密码。
+> **注意：** 后端 context-path 为 `/api/ragstudio`，前端的 Vite 代理配置会将 `/api` 请求转发到 `localhost:9090`，开发环境下无需跨域配置。前端 dev server 固定端口 **51023**（`strictPort`，避免多项目并存时端口漂移）。默认测试账号：管理员 `admin / admin`、普通用户 `user / user`，首次登录后请修改密码。
 
 ---
 

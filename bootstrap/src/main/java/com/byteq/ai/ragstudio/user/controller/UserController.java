@@ -1,6 +1,6 @@
 package com.byteq.ai.ragstudio.user.controller;
 
-import cn.dev33.satoken.stp.StpUtil;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.byteq.ai.ragstudio.user.controller.request.ChangePasswordRequest;
 import com.byteq.ai.ragstudio.user.controller.request.UserCreateRequest;
@@ -16,6 +16,7 @@ import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.rag.constant.RAGConstant;
 import com.byteq.ai.ragstudio.rag.dto.StoredFileDTO;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import com.byteq.ai.ragstudio.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,12 +37,12 @@ import org.springframework.web.multipart.MultipartFile;
  * <p>
  * 提供当前登录用户信息查询、用户 CRUD 管理以及密码修改等 RESTful 接口。
  * 用户管理类接口（如分页查询、创建、更新、删除）需要 admin 角色权限，
- * 通过 Sa-Token 的 {@link StpUtil#checkRole} 进行权限校验。
+ * 通过 Sa-Token 的 {@link SaCheckRole} 注解进行权限校验。
  * </p>
  *
  * @see UserService
  * @see UserContext
- * @see StpUtil
+ * @see SaCheckRole
  */
 @Slf4j
 @RestController
@@ -91,8 +92,8 @@ public class UserController {
      * @return 用户分页列表
      */
     @GetMapping("/users")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<IPage<UserVO>> pageQuery(UserPageRequest requestParam) {
-        StpUtil.checkRole("admin");
         IPage<UserVO> page = userService.pageQuery(requestParam);
         // 将 s3:// 内部 URL 转换为前端可访问的 HTTP URL
         for (UserVO vo : page.getRecords()) {
@@ -118,8 +119,8 @@ public class UserController {
      * @return 统一响应结果，data 字段为新创建用户的ID
      */
     @PostMapping("/users")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<String> create(@RequestBody UserCreateRequest requestParam) {
-        StpUtil.checkRole("admin");
         return Results.success(userService.create(requestParam));
     }
 
@@ -134,8 +135,8 @@ public class UserController {
      * @return 统一响应结果
      */
     @PutMapping("/users/{id}")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<Void> update(@PathVariable String id, @RequestBody UserUpdateRequest requestParam) {
-        StpUtil.checkRole("admin");
         userService.update(id, requestParam);
         return Results.success();
     }
@@ -150,8 +151,8 @@ public class UserController {
      * @return 统一响应结果
      */
     @DeleteMapping("/users/{id}")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<Void> delete(@PathVariable String id) {
-        StpUtil.checkRole("admin");
         userService.delete(id);
         return Results.success();
     }

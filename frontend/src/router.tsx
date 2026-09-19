@@ -7,6 +7,7 @@ import { NotFoundPage } from "@/pages/NotFoundPage";
 import { AdminLayout } from "@/pages/admin/AdminLayout";
 import { useAuthStore } from "@/stores/authStore";
 import { Loading } from "@/components/common/Loading";
+import { isAdminRole } from "@/utils/role";
 
 const lazyPage = <T extends Record<string, unknown>, K extends keyof T>(importer: () => Promise<T>, namedExport: K) =>
   lazy(() => importer().then((m) => ({ default: m[namedExport] as unknown as React.ComponentType<unknown> })));
@@ -63,7 +64,7 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (user?.role !== "admin") {
+  if (!isAdminRole(user?.role)) {
     return <Navigate to="/chat" replace />;
   }
 

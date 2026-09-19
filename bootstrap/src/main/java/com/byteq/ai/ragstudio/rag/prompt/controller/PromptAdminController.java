@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.rag.prompt.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.rag.prompt.config.PromptConfigService;
@@ -28,7 +29,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 @RequestMapping("/admin/prompts")
 public class PromptAdminController {

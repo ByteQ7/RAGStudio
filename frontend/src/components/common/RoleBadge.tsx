@@ -1,28 +1,23 @@
-type Role = "admin" | "user";
+import type { UserRole } from "@/types";
+import { normalizeUserRole, USER_ROLE_LABELS } from "@/utils/role";
 
 interface RoleBadgeProps {
-  role: Role;
+  role: UserRole;
   className?: string;
 }
 
-const roleConfig: Record<Role, { label: string; className: string }> = {
-  admin: {
-    label: "管理员",
-    className: "bg-primary/10 text-primary border border-primary/20"
-  },
-  user: {
-    label: "成员",
-    className: "bg-[var(--color-fill-quaternary)] text-[var(--color-text-secondary)] border border-[var(--color-border-secondary)]"
-  }
+const roleStyles: Record<UserRole, string> = {
+  admin: "bg-primary/10 text-primary border border-primary/20",
+  user: "bg-[var(--color-fill-quaternary)] text-[var(--color-text-secondary)] border border-[var(--color-border-secondary)]"
 };
 
 export function RoleBadge({ role, className = "" }: RoleBadgeProps) {
-  const config = roleConfig[role];
+  const normalized = normalizeUserRole(role);
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 ${config.className} ${className}`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 ${roleStyles[normalized]} ${className}`}
     >
-      {config.label}
+      {USER_ROLE_LABELS[normalized]}
     </span>
   );
 }

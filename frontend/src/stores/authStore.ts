@@ -6,6 +6,7 @@ import { getCurrentUser, login as loginRequest, logout as logoutRequest } from "
 import { setAuthToken } from "@/services/api";
 import { useChatStore } from "@/stores/chatStore";
 import { storage } from "@/utils/storage";
+import { normalizeUserRole } from "@/utils/role";
 
 interface AuthState {
   user: User | null;
@@ -19,8 +20,10 @@ interface AuthState {
   updateAvatar: (avatarUrl: string) => void;
 }
 
+const storedUser = storage.getUser();
+
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: storage.getUser(),
+  user: storedUser ? { ...storedUser, role: normalizeUserRole(storedUser.role) } : null,
   token: storage.getToken(),
   isAuthenticated: Boolean(storage.getToken()),
   isLoading: false,
@@ -31,7 +34,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = {
         userId: data.userId,
         username: data.username || username,
-        role: data.role,
+        role: normalizeUserRole(data.role),
         token: data.token,
         avatar: data.avatar
       };
@@ -99,7 +102,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!token) return;
     try {
       const data = await getCurrentUser();
-      const nextUser = { ...data, token };
+      const nextUser = { ...data, role: normalizeUserRole(data.role), token };
       storage.setUser(nextUser);
       set({ user: nextUser, token, isAuthenticated: true });
     } catch {

@@ -10,6 +10,7 @@ import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.ingestion.domain.result.IngestionResult;
 import com.byteq.ai.ragstudio.ingestion.service.IngestionTaskService;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.springframework.http.MediaType;
@@ -33,7 +34,7 @@ import java.util.List;
  * </p>
  */
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 @Validated
 public class IngestionTaskController {

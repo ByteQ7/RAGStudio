@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.user.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -105,6 +106,7 @@ public class UserServiceImpl implements UserService {
      * 1. 加载目标用户并校验非默认管理员
      * 2. 按需更新用户名（校验唯一性和合法性）、角色、头像和密码
      * 3. 调用 Mapper 持久化更新
+     * 4. 角色或密码发生变更时，强制目标用户下线重新登录
      * </p>
      */
     @Override
@@ -112,6 +114,8 @@ public class UserServiceImpl implements UserService {
         Assert.notNull(requestParam, () -> new ClientException("请求不能为空"));
         UserDO record = loadById(id);
         ensureNotDefaultAdmin(record);
+
+        boolean credentialChanged = false;
 
         if (requestParam.getUsername() != null) {
             String username = StrUtil.trimToNull(requestParam.getUsername());
@@ -126,7 +130,9 @@ public class UserServiceImpl implements UserService {
         }
 
         if (requestParam.getRole() != null) {
-            record.setRole(normalizeRole(requestParam.getRole()));
+            String role = normalizeRole(requestParam.getRole());
+            credentialChanged = !role.equals(record.getRole());
+            record.setRole(role);
         }
 
         if (requestParam.getAvatar() != null) {
@@ -137,19 +143,25 @@ public class UserServiceImpl implements UserService {
             String password = StrUtil.trimToNull(requestParam.getPassword());
             Assert.notBlank(password, () -> new ClientException("新密码不能为空"));
             record.setPassword(PasswordHasher.hash(password));
+            credentialChanged = true;
         }
 
         userMapper.updateById(record);
+
+        if (credentialChanged) {
+            StpUtil.logout(record.getId());
+        }
     }
 
     /**
-     * 删除用户，默认管理员不允许删除
+     * 删除用户，默认管理员不允许删除；删除后注销其全部登录态
      */
     @Override
     public void delete(String id) {
         UserDO record = loadById(id);
         ensureNotDefaultAdmin(record);
         userMapper.deleteById(record.getId());
+        StpUtil.logout(record.getId());
     }
 
     /**
@@ -182,6 +194,7 @@ public class UserServiceImpl implements UserService {
         }
         record.setPassword(PasswordHasher.hash(next));
         userMapper.updateById(record);
+        kickOtherSessions(loginUser.getUserId());
     }
 
     /**
@@ -197,6 +210,16 @@ public class UserServiceImpl implements UserService {
         Assert.notNull(record, () -> new ClientException("用户不存在", UserErrorCode.USER_NOT_FOUND));
         record.setAvatar(iconUrl);
         userMapper.updateById(record);
+    }
+
+    // 除当前会话外，注销该用户的其他登录态（密码变更后旧会话不应继续有效）
+    private void kickOtherSessions(String userId) {
+        String currentToken = StpUtil.getTokenValue();
+        for (String token : StpUtil.getTokenValueListByLoginId(userId)) {
+            if (!token.equals(currentToken)) {
+                StpUtil.logoutByTokenValue(token);
+            }
+        }
     }
 
     // 根据 ID 查询未删除的用户记录，不存在时抛出异常

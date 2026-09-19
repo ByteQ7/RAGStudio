@@ -332,7 +332,7 @@ export function AdminLayout() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" sideOffset={6} className="w-44 p-1">
                   <div className="px-3 py-1.5 text-xs flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
-                    {user?.username} · <RoleBadge role={(user?.role as "admin" | "user") || "admin"} />
+                    {user?.username} · <RoleBadge role={user?.role ?? "user"} />
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => fileInputRefAvatar.current?.click()} className="rounded-lg text-xs">

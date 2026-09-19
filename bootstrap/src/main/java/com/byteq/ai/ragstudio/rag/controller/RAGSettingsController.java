@@ -18,6 +18,7 @@ import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.DefaultSettings
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.MemorySettings;
 import com.byteq.ai.ragstudio.rag.core.agent.ToolRetriever;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,7 +40,7 @@ import java.util.stream.Collectors;
  * </p>
  */
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 @Slf4j
 public class RAGSettingsController {

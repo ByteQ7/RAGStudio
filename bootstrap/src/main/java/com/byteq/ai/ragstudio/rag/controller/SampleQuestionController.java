@@ -2,6 +2,7 @@ package com.byteq.ai.ragstudio.rag.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.rag.controller.request.SampleQuestionCreateRequest;
@@ -25,6 +26,11 @@ import java.util.List;
  * <p>
  * 提供示例问题（欢迎页展示）的管理接口，包括随机获取、分页查询、创建、更新和删除等操作。
  * 示例问题用于对话界面欢迎页向用户推荐常见问题，引导用户快速开始对话。
+ * </p>
+ *
+ * <p>
+ * 权限边界：随机获取接口（/rag/sample-questions）仅需登录，供欢迎页使用；
+ * 管理接口（分页查询、详情、创建、更新、删除）需要 admin 角色。
  * </p>
  */
 @RestController
@@ -53,6 +59,7 @@ public class SampleQuestionController {
      * @return 分页的示例问题列表
      */
     @GetMapping("/sample-questions")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<IPage<SampleQuestionVO>> pageQuery(SampleQuestionPageRequest requestParam) {
         return Results.success(sampleQuestionService.pageQuery(requestParam));
     }
@@ -64,6 +71,7 @@ public class SampleQuestionController {
      * @return 示例问题详情视图对象
      */
     @GetMapping("/sample-questions/{id}")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<SampleQuestionVO> queryById(@PathVariable String id) {
         return Results.success(sampleQuestionService.queryById(id));
     }
@@ -75,7 +83,7 @@ public class SampleQuestionController {
      * @return 新创建的示例问题 ID
      */
     @PostMapping("/sample-questions")
-    @SaCheckRole("admin")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<String> create(@RequestBody SampleQuestionCreateRequest requestParam) {
         return Results.success(sampleQuestionService.create(requestParam));
     }
@@ -88,7 +96,7 @@ public class SampleQuestionController {
      * @return 操作结果
      */
     @PutMapping("/sample-questions/{id}")
-    @SaCheckRole("admin")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<Void> update(@PathVariable String id, @RequestBody SampleQuestionUpdateRequest requestParam) {
         sampleQuestionService.update(id, requestParam);
         return Results.success();
@@ -101,7 +109,7 @@ public class SampleQuestionController {
      * @return 操作结果
      */
     @DeleteMapping("/sample-questions/{id}")
-    @SaCheckRole("admin")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<Void> delete(@PathVariable String id) {
         sampleQuestionService.delete(id);
         return Results.success();

@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
 import { RoleBadge } from "@/components/common/RoleBadge";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { isAdminRole } from "@/utils/role";
 
 import {
   AlertDialog,
@@ -714,7 +715,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           <span className="flex-1 text-[14px] font-bold" style={{ color: "var(--color-text)" }}>
             知识助手
           </span>
-          {user?.role === "admin" ? (
+          {isAdminRole(user?.role) ? (
             <div className="relative group">
               <button
                 type="button"
@@ -1039,7 +1040,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                         return /^\d+$/.test(fallback) ? "用户" : fallback;
                       })()}
                     </div>
-                    <RoleBadge role={(user?.role as "admin" | "user") || "user"} />
+                    <RoleBadge role={user?.role ?? "user"} />
                   </div>
                   <MoreHorizontal
                     className="h-3.5 w-3.5 shrink-0"

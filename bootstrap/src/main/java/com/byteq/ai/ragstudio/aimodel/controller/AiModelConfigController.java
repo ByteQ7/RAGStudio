@@ -18,6 +18,7 @@ import com.byteq.ai.ragstudio.rag.service.FileStorageService;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import jakarta.validation.Valid;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -43,7 +44,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequestMapping("/ai-model-config")
 @RequiredArgsConstructor
 public class AiModelConfigController {

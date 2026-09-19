@@ -11,6 +11,7 @@ import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeBaseService;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,9 +30,16 @@ import java.util.List;
  * 提供知识库的创建、查询、修改、删除等基础管理操作接口，
  * 以及查询系统支持的分块策略列表功能。
  * 所有接口统一返回 {@link Result} 格式的响应体。
+ * </p>
+ *
+ * <p>
+ * 权限边界：
+ * <ul>
+ *   <li>查询类接口（分页列表、详情、分块策略）仅需登录，供对话页选择知识库使用</li>
+ *   <li>写操作（创建、重命名、删除）需要 admin 角色</li>
+ * </ul>
  */
 @RestController
-@SaCheckRole("admin")
 @RequiredArgsConstructor
 public class KnowledgeBaseController {
 
@@ -45,6 +53,7 @@ public class KnowledgeBaseController {
      * @return 包含知识库 ID 的成功响应
      */
     @PostMapping("/knowledge-base")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<String> createKnowledgeBase(@RequestBody KnowledgeBaseCreateRequest requestParam) {
         return Results.success(knowledgeBaseService.create(requestParam));
     }
@@ -58,6 +67,7 @@ public class KnowledgeBaseController {
      * @return 空成功响应
      */
     @PutMapping("/knowledge-base/{kb-id}")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<Void> renameKnowledgeBase(@PathVariable("kb-id") String kbId,
                                             @RequestBody KnowledgeBaseUpdateRequest requestParam) {
         requestParam.setId(kbId);
@@ -73,6 +83,7 @@ public class KnowledgeBaseController {
      * @return 空成功响应
      */
     @DeleteMapping("/knowledge-base/{kb-id}")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<Void> deleteKnowledgeBase(@PathVariable("kb-id") String kbId) {
         knowledgeBaseService.delete(kbId);
         return Results.success();

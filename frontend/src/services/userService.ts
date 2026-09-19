@@ -1,9 +1,10 @@
 import { api } from "@/services/api";
+import type { UserRole } from "@/types";
 
 export interface UserItem {
   id: string;
   username: string;
-  role: string;
+  role: UserRole;
   avatar?: string | null;
   createTime?: string | null;
   updateTime?: string | null;
@@ -20,14 +21,14 @@ export interface PageResult<T> {
 export interface UserCreatePayload {
   username: string;
   password: string;
-  role?: string;
+  role?: UserRole;
   avatar?: string | null;
 }
 
 export interface UserUpdatePayload {
   username?: string;
   password?: string;
-  role?: string;
+  role?: UserRole;
   avatar?: string | null;
 }
 

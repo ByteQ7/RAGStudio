@@ -12,6 +12,7 @@ import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeDocumentService;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
@@ -37,7 +38,7 @@ import java.util.List;
  * 文档来源支持本地文件上传和远程 URL 获取两种方式，上传后可异步执行文本提取、分块和向量嵌入。
  */
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 @Validated
 public class KnowledgeDocumentController {

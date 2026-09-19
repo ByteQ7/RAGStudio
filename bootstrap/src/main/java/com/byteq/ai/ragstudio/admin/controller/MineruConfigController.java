@@ -1,10 +1,11 @@
 package com.byteq.ai.ragstudio.admin.controller;
 
-import cn.dev33.satoken.stp.StpUtil;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import com.byteq.ai.ragstudio.core.parser.mineru.MineruConfigService;
 import com.byteq.ai.ragstudio.core.parser.mineru.MineruConfigVO;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,8 +31,8 @@ public class MineruConfigController {
      * 读取 MinerU 配置
      */
     @GetMapping("/config")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<MineruConfigVO> getConfig() {
-        StpUtil.checkRole("admin");
         return Results.success(mineruConfigService.loadVO());
     }
 
@@ -39,8 +40,8 @@ public class MineruConfigController {
      * 保存 MinerU 配置
      */
     @PutMapping("/config")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<Void> saveConfig(@RequestBody MineruConfigVO vo) {
-        StpUtil.checkRole("admin");
         mineruConfigService.saveVO(vo);
         return Results.success();
     }
@@ -49,8 +50,8 @@ public class MineruConfigController {
      * 连通性探测：实时反馈本地/远程端点的可达性
      */
     @PostMapping("/config/ping")
+    @SaCheckRole(RoleConstant.ADMIN)
     public Result<MineruConfigVO> ping() {
-        StpUtil.checkRole("admin");
         return Results.success(mineruConfigService.probe());
     }
 }

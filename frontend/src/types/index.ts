@@ -1,5 +1,8 @@
 export type Role = "user" | "assistant" | "tool" | "observation";
 
+/** 账号角色：admin=管理员，user=普通用户 */
+export type UserRole = "admin" | "user";
+
 export type FeedbackValue = "like" | "dislike" | null;
 
 export type MessageStatus = "streaming" | "done" | "cancelled" | "error";
@@ -15,7 +18,7 @@ export interface UserChoiceData {
 export interface User {
   userId: string;
   username?: string;
-  role: string;
+  role: UserRole;
   token: string;
   avatar?: string;
 }

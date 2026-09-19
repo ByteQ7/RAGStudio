@@ -11,6 +11,7 @@ import com.byteq.ai.ragstudio.knowledge.service.KnowledgeBaseService;
 import com.byteq.ai.ragstudio.knowledge.service.KnowledgeDocumentService;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.rag.service.FileStorageService;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
@@ -26,6 +27,7 @@ import java.io.InputStream;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -59,10 +61,8 @@ public class DocumentPreviewController {
         }
         String role = UserContext.getRole();
         String username = UserContext.getUsername();
-        if (!"admin".equals(role)) {
-            if (!kb.getCreatedBy().equals(username)) {
-                throw new ServiceException("无权预览该文档");
-            }
+        if (!RoleConstant.ADMIN.equals(role) && !Objects.equals(kb.getCreatedBy(), username)) {
+            throw new ServiceException("无权预览该文档");
         }
     }
 

@@ -1265,13 +1265,16 @@ CREATE INDEX IF NOT EXISTS idx_prompt_history_prompt
 -- ============================================================
 
 -- ============================================
--- 默认管理员账号 (UserDO: @TableName="t_user")
+-- 默认账号 (UserDO: @TableName="t_user")
+-- 仅用于全新部署：admin/admin（管理员）、user/user（普通用户）
+-- 均为测试账号，首次登录后请修改密码
 -- ============================================
 
 
 INSERT INTO t_user (id, username, password, avatar, role, deleted, create_time, update_time) VALUES
-('2001523723396308993', 'admin', 'admin', NULL, 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-ON CONFLICT (id) DO NOTHING;
+('2001523723396308993', 'admin', 'admin', NULL, 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2001523723396308994', 'user', 'user', NULL, 'user', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT DO NOTHING;
 
 -- ============================================
 -- AI Provider（22 家）

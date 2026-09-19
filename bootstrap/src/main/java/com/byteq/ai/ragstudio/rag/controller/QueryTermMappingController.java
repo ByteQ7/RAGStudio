@@ -9,6 +9,7 @@ import com.byteq.ai.ragstudio.rag.controller.request.QueryTermMappingUpdateReque
 import com.byteq.ai.ragstudio.rag.controller.vo.QueryTermMappingVO;
 import com.byteq.ai.ragstudio.rag.service.QueryTermMappingAdminService;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  * </p>
  */
 @RestController
-@SaCheckRole("admin")
+@SaCheckRole(RoleConstant.ADMIN)
 @RequiredArgsConstructor
 public class QueryTermMappingController {
 
