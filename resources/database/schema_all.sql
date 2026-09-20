@@ -33,9 +33,10 @@ CREATE TABLE t_user (
     role        VARCHAR(32)  NOT NULL,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted     SMALLINT    DEFAULT 0,
-    CONSTRAINT uk_user_username UNIQUE (username)
+    deleted     SMALLINT    NOT NULL DEFAULT 0
 );
+-- 仅约束未删除用户：软删后用户名可复用
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_username ON t_user (username) WHERE deleted = 0;
 COMMENT ON TABLE t_user IS '系统用户表';
 COMMENT ON COLUMN t_user.id IS '主键ID';
 COMMENT ON COLUMN t_user.username IS '用户名，唯一';
@@ -135,7 +136,6 @@ CREATE TABLE t_message (
     deleted           SMALLINT    DEFAULT 0
 );
 CREATE INDEX idx_conversation_user_time ON t_message (conversation_id, user_id, create_time);
-CREATE INDEX idx_conversation_summary ON t_message (conversation_id, user_id, create_time);
 COMMENT ON TABLE t_message IS '会话消息记录表';
 COMMENT ON COLUMN t_message.id IS '主键ID';
 COMMENT ON COLUMN t_message.conversation_id IS '会话ID';
@@ -232,7 +232,7 @@ COMMENT ON COLUMN t_knowledge_base.updated_by IS '修改人';
 COMMENT ON COLUMN t_knowledge_base.create_time IS '创建时间';
 COMMENT ON COLUMN t_knowledge_base.update_time IS '更新时间';
 
--- Entity: KnowledgeDocumentDO (@TableName="t_knowledge_document", @TableId=ASSIGN_ID, @TableLogic)
+-- Entity: KnowledgeDocumentDO (@TableName="t_knowledge_document", @TableId=ASSIGN_ID)
 -- chunk_config uses JsonbTypeHandler
 CREATE TABLE t_knowledge_document (
     id               VARCHAR(64)   NOT NULL PRIMARY KEY,
@@ -576,9 +576,10 @@ CREATE TABLE t_ingestion_pipeline (
     updated_by  VARCHAR(64) DEFAULT '',
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted     SMALLINT    NOT NULL DEFAULT 0,
-    CONSTRAINT uk_ingestion_pipeline_name UNIQUE (name, deleted)
+    deleted     SMALLINT    NOT NULL DEFAULT 0
 );
+-- 仅约束未删除流水线：软删重建后再删除不会与历史行冲突
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ingestion_pipeline_name ON t_ingestion_pipeline (name) WHERE deleted = 0;
 COMMENT ON TABLE t_ingestion_pipeline IS '摄取流水线表';
 COMMENT ON COLUMN t_ingestion_pipeline.id IS 'ID';
 COMMENT ON COLUMN t_ingestion_pipeline.name IS '流水线名称';
@@ -605,10 +606,11 @@ CREATE TABLE t_ingestion_pipeline_node (
     updated_by     VARCHAR(64) DEFAULT '',
     create_time    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted        SMALLINT    NOT NULL DEFAULT 0,
-    CONSTRAINT uk_ingestion_pipeline_node UNIQUE (pipeline_id, node_id, deleted)
+    deleted        SMALLINT    NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_ingestion_pipeline_node_pipeline ON t_ingestion_pipeline_node (pipeline_id);
+-- 仅约束未删除节点：全量替换节点时会产生多批 deleted=1 的历史行，唯一约束若包含 deleted 会在第二次更新时冲突
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ingestion_pipeline_node ON t_ingestion_pipeline_node (pipeline_id, node_id) WHERE deleted = 0;
 COMMENT ON TABLE t_ingestion_pipeline_node IS '摄取流水线节点表';
 COMMENT ON COLUMN t_ingestion_pipeline_node.id IS 'ID';
 COMMENT ON COLUMN t_ingestion_pipeline_node.branches_json IS '排他分支 JSON（画布编译产物，可空）';
@@ -759,9 +761,10 @@ CREATE TABLE t_mcp_server (
     updated_by      VARCHAR(64),
     create_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted         SMALLINT     NOT NULL DEFAULT 0,
-    CONSTRAINT uk_mcp_server_name UNIQUE (name, deleted)
+    deleted         SMALLINT     NOT NULL DEFAULT 0
 );
+-- 仅约束未删除服务：软删重建后再删除不会与历史行冲突
+CREATE UNIQUE INDEX IF NOT EXISTS uk_mcp_server_name ON t_mcp_server (name) WHERE deleted = 0;
 COMMENT ON TABLE t_mcp_server IS 'MCP Server 动态配置表';
 COMMENT ON COLUMN t_mcp_server.id IS '主键 ID';
 COMMENT ON COLUMN t_mcp_server.name IS '服务名称（唯一）';
@@ -797,9 +800,10 @@ CREATE TABLE t_ai_provider (
     api_protocol VARCHAR(32)  DEFAULT 'openai',
     create_time  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted      SMALLINT     NOT NULL DEFAULT 0,
-    CONSTRAINT uk_ai_provider_name UNIQUE (name, deleted)
+    deleted      SMALLINT     NOT NULL DEFAULT 0
 );
+-- 仅约束未删除供应商：软删重建后再删除不会与历史行冲突
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_provider_name ON t_ai_provider (name) WHERE deleted = 0;
 COMMENT ON TABLE t_ai_provider IS 'AI模型供应商表';
 COMMENT ON COLUMN t_ai_provider.id IS '主键ID';
 COMMENT ON COLUMN t_ai_provider.name IS '供应商标识';
@@ -833,9 +837,10 @@ CREATE TABLE t_ai_model (
     api_protocol      VARCHAR(32),
     create_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted           SMALLINT     NOT NULL DEFAULT 0,
-    CONSTRAINT uk_ai_model_model_id UNIQUE (model_id, deleted)
+    deleted           SMALLINT     NOT NULL DEFAULT 0
 );
+-- 仅约束未删除模型：软删重建后再删除不会与历史行冲突
+CREATE UNIQUE INDEX IF NOT EXISTS uk_ai_model_model_id ON t_ai_model (model_id) WHERE deleted = 0;
 CREATE INDEX idx_ai_model_provider ON t_ai_model (provider_id);
 CREATE INDEX idx_ai_model_capability ON t_ai_model (capability);
 COMMENT ON TABLE t_ai_model IS 'AI模型配置表';
@@ -871,7 +876,7 @@ CREATE TABLE t_default_model_config (
 );
 COMMENT ON TABLE t_default_model_config IS '场景默认模型配置表';
 COMMENT ON COLUMN t_default_model_config.id IS '主键ID';
-COMMENT ON COLUMN t_default_model_config.config_key IS '配置键: chat/summary/title/multimodal/doc_image/rerank';
+COMMENT ON COLUMN t_default_model_config.config_key IS '配置键: chat/summary/title/multimodal/doc_image/tool_selector/rerank；graph_extract 由图谱页按需写入';
 COMMENT ON COLUMN t_default_model_config.model_id IS '关联 t_ai_model.modelId';
 COMMENT ON COLUMN t_default_model_config.create_time IS '创建时间';
 COMMENT ON COLUMN t_default_model_config.update_time IS '更新时间';
@@ -942,13 +947,13 @@ COMMENT ON COLUMN t_mineru_config.remote_base_url IS '远程 MinerU base URL';
 COMMENT ON COLUMN t_mineru_config.remote_api_key IS '远程 MinerU API Key（可选）';
 
 -- ============================================================================
--- 第二部分：V3 增量（MinerU 解析引擎；列已在 Schema 定义，IF NOT EXISTS 自动跳过）
+-- 第二部分：V3 增量（MinerU 解析引擎；表/列已在第一部分 Schema 定义，此处仅补充注释与默认行）
 -- ============================================================================
 -- ============================================================================
 -- MinerU PDF 智能解析接入 - 增量迁移脚本
 -- 1. t_knowledge_base 增加 parse_engine 列（知识库级解析引擎）
 -- 2. t_knowledge_document 增加 parse_engine 列（文档级解析引擎覆盖）
--- 3. 新增 t_mineru_config 表（本地/远程 MinerU 服务端点配置）
+-- 3. t_mineru_config 表已在第一部分创建，此处补充列注释
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -968,26 +973,8 @@ ALTER TABLE t_knowledge_document
 COMMENT ON COLUMN t_knowledge_document.parse_engine IS '文档级解析引擎覆盖（NULL 沿用知识库级）';
 
 -- ---------------------------------------------------------------------------
--- 3. MinerU 服务端点配置表
+-- 3. MinerU 服务端点配置表（表结构见上方「MinerU 解析服务端点配置表」，此处仅补充列注释）
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS t_mineru_config (
-    id              VARCHAR(64)   PRIMARY KEY,
-    -- 本地 MinerU
-    local_enabled   BOOLEAN       NOT NULL DEFAULT FALSE,
-    local_base_url  VARCHAR(512),
-    local_backend   VARCHAR(32)   NOT NULL DEFAULT 'pipeline',
-    local_lang      VARCHAR(32)   DEFAULT 'ch',
-    local_extra     VARCHAR(1024),
-    -- 远程 MinerU
-    remote_enabled  BOOLEAN       NOT NULL DEFAULT FALSE,
-    remote_base_url VARCHAR(512),
-    remote_api_key  VARCHAR(512),
-    remote_backend  VARCHAR(32)   NOT NULL DEFAULT 'pipeline',
-    remote_lang     VARCHAR(32)   DEFAULT 'ch',
-    remote_extra    VARCHAR(1024),
-    updated_by      VARCHAR(64),
-    update_time     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 
 COMMENT ON TABLE  t_mineru_config IS 'MinerU 文档解析服务端点配置（本地/远程）';
 COMMENT ON COLUMN t_mineru_config.id              IS '主键（固定单行，如 single）';
@@ -1047,7 +1034,6 @@ CREATE TABLE t_graph_entity (
     create_time     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_graph_entity_kb_name UNIQUE (kb_id, canonical_name)
 );
-CREATE INDEX idx_graph_entity_kb ON t_graph_entity (kb_id);
 CREATE INDEX idx_graph_entity_type ON t_graph_entity (kb_id, entity_type);
 COMMENT ON TABLE t_graph_entity IS '知识图谱实体表';
 COMMENT ON COLUMN t_graph_entity.id IS '主键 ID';
@@ -1081,7 +1067,6 @@ CREATE TABLE t_graph_relation (
 );
 CREATE INDEX idx_graph_rel_src ON t_graph_relation (source_entity_id);
 CREATE INDEX idx_graph_rel_tgt ON t_graph_relation (target_entity_id);
-CREATE INDEX idx_graph_rel_kb ON t_graph_relation (kb_id);
 CREATE INDEX idx_graph_rel_doc ON t_graph_relation (kb_id, doc_id);
 CREATE INDEX idx_graph_rel_chunk ON t_graph_relation (source_chunk_id);
 COMMENT ON TABLE t_graph_relation IS '知识图谱关系表';
@@ -1256,13 +1241,13 @@ CREATE INDEX IF NOT EXISTS idx_prompt_history_prompt
 -- PostgreSQL Initial Data for RAGStudio
 -- ============================================================
 -- 说明：本脚本为「全新部署」种子数据。
---   - 供应商：17 家（全部默认禁用，api_key 为 NULL，需在管理后台配置密钥后手动启用）
---   - 模型：46 条（全部默认禁用，与供应商一致：未配置 API Key 前不可用）
+--   - 供应商：22 家（全部默认禁用，api_key 为 NULL，需在管理后台配置密钥后手动启用）
+--   - 模型：55 条（全部默认禁用，与供应商一致：未配置 API Key 前不可用）
 --   - 默认模型配置：7 个场景（chat / summary / title / doc_image / multimodal / tool_selector / rerank，
 --     指向默认模型，管理员启用对应模型后生效）
 --   - 知识库/文档：不预置（Embedding 模型未启用，无法摄入文档）
 --   - 示例问题：3 条
---   - MCP Server：3 个（全部默认禁用，headers 含认证信息，需配置后手动启用）
+--   - MCP Server：3 个（全部默认禁用，headers 为 NULL，需配置认证信息后手动启用）
 --   - 告警配置：1 条（默认禁用，SMTP 为示例占位值，需配置后手动启用）
 --   - 通用文档摄入流水线：1 条（4 节点）
 -- 安全策略：api_key、MCP headers、SMTP 密码等敏感字段一律为 NULL，部署后需手动配置。
@@ -1361,7 +1346,7 @@ INSERT INTO t_ai_model (id, provider_id, model_id, model_name, capability, is_de
 ('2080329083158241280', '1821609200879403008', 'doubao-embedding-large-text-250515', 'doubao-embedding-large-text-250515', 'EMBEDDING', 0, 100, 0, 0, 0, '[1536]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('2080575030685585408', '1821609200896180224', 'text-embedding-v3', 'Text-Embedding-V3', 'EMBEDDING', 0, 100, 0, 0, 0, '[1024,768,512,256,128,64]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('2081933747104677888', '1821609200896180224', 'qwen3-vl-embedding', 'Qwen3-VL-Embedding', 'EMBEDDING', 0, 99, 0, 0, 1, '[2048,1536,1024,768,512,256,128,64]', NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-('2080340695344721920', '1821609200896180224', 'text-embedding-v4', 'Text-Embedding-V4', 'EMBEDDING', 0, 100, 0, 0, 0, '[2048,1536,1024,768,512,256,128,64]', 'https://llm-nei1m03l1jpqle1c.cn-beijing.maas.aliyuncs.com', 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+('2080340695344721920', '1821609200896180224', 'text-embedding-v4', 'Text-Embedding-V4', 'EMBEDDING', 0, 100, 0, 0, 0, '[2048,1536,1024,768,512,256,128,64]', NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('2083045145763516416', '1821609200891985920', 'Qwen/Qwen3-VL-Reranker-8B', 'Qwen/Qwen3-VL-Reranker-8B', 'RERANK', 0, 2, 0, 0, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('2083210690620817408', '1821609200896180224', 'qwen3-vl-rerank', 'Qwen3-VL-Rerank', 'RERANK', 0, 100, 0, 0, 1, NULL, NULL, 0, 'dashscope', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('1831609201722392640', '1821609200917151744', 'claude-sonnet-4-5', 'claude-sonnet-4-5', 'CHAT', 0, 1, 0, 1, 1, NULL, NULL, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
@@ -1479,7 +1464,6 @@ CREATE TABLE IF NOT EXISTS t_skill_version (
     create_time  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (skill_id, version)
 );
-CREATE INDEX IF NOT EXISTS idx_skill_version_skill ON t_skill_version (skill_id, version DESC);
 
 CREATE TABLE IF NOT EXISTS t_skill_file (
     id         BIGSERIAL    PRIMARY KEY,
@@ -1491,7 +1475,6 @@ CREATE TABLE IF NOT EXISTS t_skill_file (
     blob_hash  VARCHAR(64)  NOT NULL,
     UNIQUE (version_id, file_path)
 );
-CREATE INDEX IF NOT EXISTS idx_skill_file_version ON t_skill_file (version_id);
 
 CREATE TABLE IF NOT EXISTS t_skill_blob (
     sha256      VARCHAR(64) PRIMARY KEY,
