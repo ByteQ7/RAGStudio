@@ -25,10 +25,14 @@
 | Capability | Description |
 |------------|-------------|
 | **AgentScope Agent Engine** | ReActAgent (native tool calling) with streaming event bus mapped to SSE; tool results injected as observations |
+| **Modular Harness** | Context / tool registry / prompts / constraints / steps / streaming split into dedicated packages; a dynamic-context middleware rebuilds the system message every iteration; tool sources assembled by `ToolRegistryAssembler` (built-ins + MCP + SKILL + extension point) |
 | **Official SDK Model Layer** | Vendor official SDKs first (DashScope / Zhipu / VolcEngine ark / OpenAI / Anthropic), OpenAI/Anthropic-compatible strategy for the rest — sync / streaming / deep-thinking params |
-| **22 Providers Ready** | Seed config for 22 providers (BaiLian, DeepSeek, SiliconFlow, Zhipu, Moonshot, xAI, Xiaomi MiMo, iFlytek Spark, 360 Brain, …) with 54 preset models |
+| **22 Providers Ready** | Seed config for 22 providers (BaiLian, DeepSeek, SiliconFlow, Zhipu, Moonshot, xAI, Xiaomi MiMo, iFlytek Spark, 360 Brain, …) with 55 preset models |
 | **Structured Output Fallback** | LLM structured output degrades gracefully: JSON Schema → JSON Output → prompt-only, per-model capability aware |
 | **Unified Tool Discovery** | `tool_reader` enumerates MCP + SKILL registries so the LLM discovers and invokes any tool at runtime |
+| **Workflow Distillation & Recall** | Extract multi-step procedures from conversations → confirm via card (confirm / cancel / refine) → save for reuse; low-threshold vector recall injects names + descriptions only, then steps are loaded on demand and other candidates cleared |
+| **Canvas Orchestration** | React Flow canvases for workflows and ingestion pipelines: drag nodes/edges, condition branches, auto layout, undo/redo, live validation; graphs compile into runtime steps / node configs |
+| **Role-Based Access** | Normalized `admin` / `user` roles; admin APIs guarded consistently, regular users get chat only |
 | **Multi-Model Routing** | DB-driven dynamic config; automatic failover when a provider fails |
 | **Hybrid Search** | pgvector semantic + pg_trgm keyword, fused via RRF (Reciprocal Rank Fusion) |
 | **Graph RAG** | LLM entity/relation extraction per chunk + local subgraph retrieval channel fused into RRF; admin knowledge-graph visualization |
@@ -37,9 +41,9 @@
 | **Multi-Modal Chat** | Image upload (paste/file), S3 storage, presigned HTTP URLs; multimodal knowledge base with IMAGE chunks retrieved as vectors |
 | **Conversation Groups** | Group conversations with per-group instructions auto-injected into the pipeline |
 | **Retrieval Quality** | Embedding-based KB semantic selection + score-cluster dynamic TopK + multimodal Rerank (images sent as base64 data URIs) — **97% answer accuracy** on a 100-question eval set |
-| **SKILL System** | `SKILL.md` + optional `skill.yaml`, versioned in DB (history/diff/import/rollback) — no Java or MCP server required |
+| **SKILL System** | `SKILL.md` + optional `skill.yaml`, versioned in DB (history/diff/import/rollback) — no Java or MCP server required; all http/script/command skills run in a unified Docker sandbox |
 | **Full-Chain Tracing** | Lightweight distributed tracing for every pipeline stage |
-| **Ingestion Pipeline** | Visual document processing pipeline: fetch → parse → chunk → enhance → index |
+| **Ingestion Pipeline** | Canvas-orchestrated deterministic engine: fetch → parse → chunk → enhance → index, supporting exclusive-branch DAGs while staying compatible with legacy linear chains |
 | **Dashboard & Monitoring** | Admin dashboard with real-time KPI, request trends, model usage stats |
 
 ---
@@ -48,63 +52,121 @@
 
 ### Chat
 
-| Welcome screen (sample questions · KB picker · deep-thinking toggle) | KB-grounded answer (streaming · inline citations · source panel) |
-|---|---|
-| <img src="docs/assets/screenshots/chat.png" width="490"/> | <img src="docs/assets/screenshots/chat-session.png" width="490"/> |
+**Welcome screen (sample questions · KB picker · deep-thinking toggle)**
 
-| Login | Admin dashboard (KPI · traffic · AI performance · quality snapshot) |
-|---|---|
-| <img src="docs/assets/screenshots/login.png" width="490"/> | <img src="docs/assets/screenshots/dashboard.png" width="490"/> |
+<img src="docs/assets/screenshots/chat.png" width="100%"/>
+
+**KB-grounded answer (streaming · inline citations · source panel)**
+
+<img src="docs/assets/screenshots/chat-session.png" width="100%"/>
+
+**Workflow extraction confirmation (step preview · confirm/cancel/refine · decision receipt)**
+
+<img src="docs/assets/screenshots/chat-workflow-confirm.png" width="100%"/>
+
+**Login**
+
+<img src="docs/assets/screenshots/login.png" width="100%"/>
+
+### Workflows & Canvas Orchestration
+
+**Workflow management (conversation extraction · vector recall index · enable/rebuild)**
+
+<img src="docs/assets/screenshots/workflows.png" width="100%"/>
+
+**Workflow canvas (branches · drag & connect · auto layout · undo/redo)**
+
+<img src="docs/assets/screenshots/workflow-canvas.png" width="100%"/>
+
+**Ingestion pipelines (pipeline management · task execution)**
+
+<img src="docs/assets/screenshots/ingestion.png" width="100%"/>
+
+**Pipeline canvas (exclusive-branch DAG · node config · live validation)**
+
+<img src="docs/assets/screenshots/ingestion-canvas.png" width="100%"/>
 
 ### Knowledge Base & Documents
 
-| Knowledge base management (embedding model · parser · doc stats) | Document management (multi-format upload · status · chunk counts) |
-|---|---|
-| <img src="docs/assets/screenshots/knowledge-list.png" width="490"/> | <img src="docs/assets/screenshots/knowledge-documents.png" width="490"/> |
+**Knowledge base management (embedding model · parser · doc stats)**
 
-| Chunk management (edit · enable/disable · token stats) | Knowledge graph · entity management (extraction · merge · build logs) |
-|---|---|
-| <img src="docs/assets/screenshots/knowledge-chunks.png" width="490"/> | <img src="docs/assets/screenshots/knowledge-graph.png" width="490"/> |
+<img src="docs/assets/screenshots/knowledge-list.png" width="100%"/>
 
-### Graph RAG & Ingestion
+**Document management (multi-format upload · status · chunk counts)**
 
-| Graph RAG control (retrieval switch · extraction model · per-KB status) | Data pipeline (visual document processing orchestration) |
-|---|---|
-| <img src="docs/assets/screenshots/graph-rag.png" width="490"/> | <img src="docs/assets/screenshots/ingestion.png" width="490"/> |
+<img src="docs/assets/screenshots/knowledge-documents.png" width="100%"/>
+
+**Chunk management (edit · enable/disable · token stats)**
+
+<img src="docs/assets/screenshots/knowledge-chunks.png" width="100%"/>
+
+### Graph RAG
+
+**Graph RAG control (retrieval switch · extraction model · per-KB status)**
+
+<img src="docs/assets/screenshots/graph-rag.png" width="100%"/>
+
+**Knowledge graph · entity management (extraction · merge · build logs)**
+
+<img src="docs/assets/screenshots/knowledge-graph.png" width="100%"/>
 
 ### Observability
 
-| Traces (success rate · avg/P95 latency · run list) | Trace detail (node-level execution waterfall) |
-|---|---|
-| <img src="docs/assets/screenshots/traces.png" width="490"/> | <img src="docs/assets/screenshots/trace-detail.png" width="490"/> |
+**Admin dashboard (KPI · traffic · AI performance · quality snapshot)**
+
+<img src="docs/assets/screenshots/dashboard.png" width="100%"/>
+
+**Traces (success rate · avg/P95 latency · run list)**
+
+<img src="docs/assets/screenshots/traces.png" width="100%"/>
+
+**Trace detail (node-level execution timing · incl. workflow recall stage)**
+
+<img src="docs/assets/screenshots/trace-detail.png" width="100%"/>
 
 ### Models & Tools
 
-| Model management (22 providers · API config · connectivity check) | Default models (per-scenario chat/summary/rerank/embedding routing) |
-|---|---|
-| <img src="docs/assets/screenshots/ai-models.png" width="490"/> | <img src="docs/assets/screenshots/default-models.png" width="490"/> |
+**Model management (22 providers · API config · connectivity check)**
 
-| MCP servers (runtime registration · connection status · tool counts) | SKILL management (versioned skills · sync status) |
-|---|---|
-| <img src="docs/assets/screenshots/mcp-servers.png" width="490"/> | <img src="docs/assets/screenshots/skills.png" width="490"/> |
+<img src="docs/assets/screenshots/ai-models.png" width="100%"/>
 
-| Prompt management (full-chain Agent prompts, live edit & hot reload) |
-|---|
-| <img src="docs/assets/screenshots/prompts.png" width="490"/> |
+**Default models (per-scenario chat/summary/rerank/embedding routing)**
+
+<img src="docs/assets/screenshots/default-models.png" width="100%"/>
+
+**MCP servers (runtime registration · connection status · tool counts)**
+
+<img src="docs/assets/screenshots/mcp-servers.png" width="100%"/>
+
+**SKILL management (versioned skills · sync status)**
+
+<img src="docs/assets/screenshots/skills.png" width="100%"/>
+
+**Prompt management (full-chain Agent prompts, live edit & hot reload)**
+
+<img src="docs/assets/screenshots/prompts.png" width="100%"/>
 
 ### System Administration
 
-| Users | System settings (vector space · MinerU parsing service) |
-|---|---|
-| <img src="docs/assets/screenshots/users.png" width="490"/> | <img src="docs/assets/screenshots/settings.png" width="490"/> |
+**Users**
 
-| Alert settings (email alerts · circuit-breaker threshold) | Sample questions (welcome-page recommended prompts) |
-|---|---|
-| <img src="docs/assets/screenshots/alert-settings.png" width="490"/> | <img src="docs/assets/screenshots/sample-questions.png" width="490"/> |
+<img src="docs/assets/screenshots/users.png" width="100%"/>
 
-| Query term mapping (query normalization rules, scoped per KB) |
-|---|
-| <img src="docs/assets/screenshots/query-term-mapping.png" width="490"/> |
+**System settings (vector space · MinerU parsing service)**
+
+<img src="docs/assets/screenshots/settings.png" width="100%"/>
+
+**Alert settings (email alerts · circuit-breaker threshold)**
+
+<img src="docs/assets/screenshots/alert-settings.png" width="100%"/>
+
+**Sample questions (welcome-page recommended prompts)**
+
+<img src="docs/assets/screenshots/sample-questions.png" width="100%"/>
+
+**Query term mapping (query normalization rules, scoped per KB)**
+
+<img src="docs/assets/screenshots/query-term-mapping.png" width="100%"/>
 
 ---
 
@@ -119,9 +181,10 @@
 │  Vite / Zustand  │                        │  Controllers ──► StreamChatPipeline          │
 └──────────────────┘                        │                      │                       │
                                             │                      ▼                       │
-                                            │  AgentScope ReActAgent loop                  │
+                                            │  AgentScope ReActAgent loop (Harness)        │
                                             │   ├─ rag_search ──► Hybrid Retrieval (RRF)   │
                                             │   ├─ tool_reader ─► MCP / SKILL registries   │
+                                            │   ├─ workflow_* ──► extract/save/recall      │
                                             │   └─ FINISH ──────► streamed answer + [^N]   │
                                             └────────┬─────────────────────┬───────────────┘
                                                      │                     │
@@ -149,8 +212,9 @@ StreamChatPipeline
   ├─ 2. Strong Entity ID Detection — ID-like queries skip rewrite/KB-select
   ├─ 3. Query Rewrite — multi-turn rewriting + question splitting
   ├─ 4. KB Semantic Selection — embedding-based, filters irrelevant KBs
-  └─ 5. Agent Loop — iterate until FINISH
-        ├─ Tools: rag_search / MCP / SKILL (retrieval runs inside the loop)
+  ├─ 5. Workflow Recall — low-threshold cosine candidates (name + description only)
+  └─ 6. Agent Loop — iterate until FINISH
+        ├─ Tools: rag_search / MCP / SKILL / workflow_* (retrieval runs inside the loop)
         ├─ Thought → Action → Observation → continue
         └─ Thought → FINISH → Final Answer (streaming, [^chunk_N] citations)
 ```
@@ -162,7 +226,7 @@ StreamChatPipeline
 | Backend | Java 17, Spring Boot 3.5, MyBatis-Plus, RocketMQ, Sa-Token |
 | AI Engine | AgentScope ReActAgent + official SDK gateways (OpenAI / DashScope / Anthropic / VolcEngine / Zhipu, OpenAI/Anthropic-compatible fallback) |
 | Vector Store | PostgreSQL + pgvector (HNSW index) + pg_trgm (GIN index) |
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, AntV G6 (graph view), Mermaid |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, AntV G6 (graph view), React Flow + dagre (canvas orchestration), Mermaid |
 | Infrastructure | Redis, Docker sandbox (SKILL isolation), S3 storage (MinIO / RustFS) |
 
 ### Module Structure
@@ -180,12 +244,14 @@ Key packages inside `bootstrap` (`com.byteq.ai.ragstudio`):
 
 | Package | Responsibility |
 |---------|----------------|
-| `rag/service/pipeline` | `StreamChatPipeline` orchestration (memory → rewrite → KB selection → agent loop) |
-| `rag/core/agent` | AgentScope ReActAgent integration, tool registration (`rag_search`, `tool_reader`) |
+| `rag/service/pipeline` | `StreamChatPipeline` orchestration (memory → rewrite → KB selection → workflow recall → agent loop) |
+| `rag/core/harness` | Agent harness: dynamic context (`context/`), tool assembly (`tool/`), prompts (`prompt/`), constraints (`constraint/`), steps & streaming |
+| `rag/core/agent` | AgentScope ReActAgent loop engine (model selection, event→SSE, citations, tracing) |
 | `rag/core/retrieve` | Retrieval channels (pgvector + pg_trgm) fused via RRF; `postprocessor/` Rerank + dynamic TopK |
 | `rag/core/memory` / `core/rewrite` | Conversation memory (history/summary/compression); multi-turn query rewriting |
+| `rag/workflow` | Workflows: conversation extraction/confirmation/save, vector recall, graph validation & compilation, admin endpoints |
 | `knowledge/` | Knowledge base & document management, MQ consumers, scheduled sync |
-| `ingestion/` | Document pipeline: fetch → parse → chunk → enhance → index |
+| `ingestion/` | Document pipeline: fetch → parse → chunk → enhance → index; graph validation/compilation and exclusive-branch execution |
 | `graph/` | Graph RAG: LLM entity/relation extraction + local subgraph retrieval channel |
 | `aimodel/` | Model config, multi-model routing and failover |
 | `mcp/` / `skillstore/` | MCP server registry; DB-versioned SKILL storage & sandbox execution |
@@ -248,11 +314,33 @@ Iteration 2:  Thought → information sufficient
 ```
 
 - **Native Tool Calling**: AgentScope ReActAgent drives the loop with native function calling; tool results are injected as observations (isolated role, no confusion with user speech)
-- **Tools**: `rag_search` (hybrid retrieval) + `tool_reader` (MCP/SKILL discovery) + skills + MCP — all registered in the Toolkit
+- **Modular Harness**: context, tools, prompts, constraints, steps and streaming converge under `rag/core/harness/`; `DynamicContextMiddleware` rebuilds the system message every iteration, enabling "use once, then clear" dynamic context
+- **Tools**: `rag_search` (hybrid retrieval) + `tool_reader` (MCP/SKILL discovery) + skills + MCP + `workflow_*` — all registered in the Toolkit, assembled by `ToolRegistryAssembler`
 - **KB Semantic Selection**: embedding similarity decides which KBs to search, with tie-band protection and threshold gating — irrelevant questions (chitchat) trigger no retrieval at all
 - **Query Rewrite**: multi-turn rewriting with question splitting; simple questions skip the LLM via rules; strong entity IDs (order numbers, doc IDs) bypass rewrite/selection and hit exact retrieval
 - **Structured Output Fallback**: JSON Schema → JSON Output → prompt-only, chosen per model capability; capability mislabels degrade-and-retry automatically
 - **Citations**: answers carry `[^chunk_N]` numbered citations resolved to source KB documents
+
+### Workflows
+
+Distill multi-step, branching solutions into reusable workflows so the Agent does not re-reason every time:
+
+- **Extraction**: `workflow_extract` drafts a workflow from the current conversation (structured steps + branches) without persisting anything
+- **Card confirmation**: the `WorkflowConfirm` card previews steps and overwrite warnings, offering confirm / cancel / refine; the server only allows `workflow_save` when a draft exists and the user reply is affirmative
+- **Recall injection**: a low-threshold vector recall stage (default 0.25, TopK 8) injects names + descriptions only — better to over-recall than miss
+- **Progressive disclosure**: `workflow_use` loads full steps and branch conditions on demand, then clears other candidates via the dynamic-context middleware
+- **Admin**: list / detail / enable / rebuild index, with both canvas and linear quick editing
+
+### Canvas Orchestration
+
+Both workflows and ingestion pipelines have React Flow canvases (`@xyflow/react` + dagre auto layout):
+
+| Dimension | Workflow canvas | Pipeline canvas |
+|-----------|-----------------|-----------------|
+| Execution | LLM soft execution (graph compiles to natural-language steps + `when`) | Deterministic engine (graph compiles to node configs + exclusive branches) |
+| Node kinds | start / step / condition / end | start / processor (7 types) / condition gateway / end |
+| Branches | condition-node edge labels | structured edge conditions evaluated at runtime (first match wins, unconditional edge as fallback) |
+| Capabilities | drag & connect (cycle guarded), property panel, auto layout, undo/redo, dirty check, dark mode | same + shared node config forms, legacy linear chains auto-converted |
 
 ### Deep Thinking
 
@@ -321,7 +409,7 @@ description: "Query internal API. Use when the user asks about xxx."
 - `name`/`description` live in the SKILL.md frontmatter (Agent Skills open standard — portable across agents)
 - Types: `http` (REST API), `script` (shell scripts), `command` (executables); skills without execution config are knowledge-only (activated via `tool_reader`)
 - **DB-versioned storage**: skills are stored in the database (`t_skill` / `t_skill_version` / `t_skill_file` / `t_skill_blob`) with version history, file-level diff, rollback, zip import/export and GitHub import; the `skills/` directory acts as a workspace reconciled from DB at startup (legacy dirs are auto-imported)
-- `script`/`command` run in Docker sandbox (`--read-only`, `--cap-drop=ALL`, `--network=none`, 30s timeout)
+- All `http`/`script`/`command` skills run in a unified Docker sandbox (read-only filesystem, dropped capabilities, timeout); sandbox containers are pooled with fixed DNS and network enabled by default (per-skill override via `config.network`)
 - Admin Skills page: version management, diff view, diagnostics for load failures
 
 ### Tracing & Monitoring
@@ -343,8 +431,14 @@ Key application config (`bootstrap/src/main/resources/application.yaml`):
 | `rag.skills.dir` | `${ragstudio.data-dir}/skills` | SKILL workspace directory |
 | `rag.skills.max-versions` | `0` | Skill version retention (0 = unlimited) |
 | `rag.skills.allowed-commands` | `""` | Skill command whitelist (empty = command type disabled) |
-| `rag.skills.sandbox.enabled` | `true` | Docker sandbox isolation for script/command skills |
+| `rag.skills.sandbox.enabled` | `true` | Docker sandbox isolation for http/script/command skills |
+| `rag.skills.sandbox.network-enabled` | `true` | Network access inside the sandbox (per-skill override via `config.network`) |
+| `rag.skills.sandbox.pool-size` | `1` | Persistent sandbox pool size (0 = create per execution) |
 | `rag.skills.script-timeout-ms` | `30000` | Script execution timeout (ms) |
+| `rag.workflow.enabled` | `true` | Workflow feature master switch (extract/save/recall) |
+| `rag.workflow.recall-threshold` | `0.25` | Workflow recall cosine threshold (low = recall-biased) |
+| `rag.workflow.recall-top-k` | `8` | Max recall candidates per turn |
+| `rag.workflow.draft-ttl-minutes` | `30` | Draft TTL for confirmation (minutes) |
 | `rag.query-rewrite.enabled` | `true` | Multi-turn query rewriting (simple questions handled by rules) |
 | `rag.search.default-top-k` | `10` | Top-K retrieval results |
 | `rag.search.max-final-chunks` | `5` | Baseline chunk count after rerank (dynamic TopK target) |

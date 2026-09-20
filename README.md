@@ -25,10 +25,14 @@
 | 能力 | 说明 |
 |------|------|
 | **AgentScope ReActAgent** | 基于 AgentScope 编排框架的原生工具调用 ReACT 循环，事件流实时透传 SSE，工具结果以观察角色注入 |
+| **Harness 模块化** | 上下文 / 工具注册 / 提示词 / 约束 / 步骤 / 流式按职责分包；动态上下文中间件每轮重建 system message，工具来源统一走 `ToolRegistryAssembler`（内置 + MCP + SKILL + 扩展点） |
 | **官方 SDK 模型调用层** | 厂商官方 SDK 优先（DashScope SDK / 智谱 zai-sdk / 火山 ark / OpenAI / Anthropic），无 SDK 厂商走 OpenAI/Anthropic 兼容策略，支持同步/流式/深度思考参数 |
-| **22 家供应商预置** | 种子配置内置 22 家供应商（百炼、DeepSeek、SiliconFlow、智谱、Moonshot、xAI、小米 MiMo、讯飞星火、360智脑等）54 个默认模型 |
+| **22 家供应商预置** | 种子配置内置 22 家供应商（百炼、DeepSeek、SiliconFlow、智谱、Moonshot、xAI、小米 MiMo、讯飞星火、360智脑等）55 个预置模型 |
 | **结构化输出降级链** | LLM 结构化输出按模型能力自动降级：JSON Schema → JSON Output → 纯提示词 |
 | **统一工具发现** | `tool_reader` 遍历 MCP + SKILL 注册表，LLM 运行态自主发现和调用任意工具 |
+| **工作流沉淀与召回** | 从对话中提取多步流程 → 前端确认卡片（确认/取消/补充说明）→ 入库复用；相似问题低阈值向量召回候选（仅名称+描述），选中后按需加载步骤并清除其余候选 |
+| **画布编排** | 工作流与文档摄入流水线支持 React Flow 画布：拖拽节点/连线、条件分支、自动布局、撤销重做、实时校验；图编译为运行态步骤 / 节点配置 |
+| **角色权限** | admin / user 两类角色规范化，管理端接口统一鉴权，普通用户仅可访问问答 |
 | **多模型路由** | 数据库驱动动态配置，供应商故障自动切换 |
 | **混合检索** | pgvector 语义 + pg_trgm 关键词，RRF 融合排序 |
 | **Graph RAG** | LLM 逐 chunk 抽取实体关系 + 图谱局部检索通道接入 RRF 融合，管理后台知识图谱可视化 |
@@ -37,9 +41,9 @@
 | **多模态知识库** | 图片/PDF/Office 文档多模态分块与嵌入，IMAGE chunk 独立向量检索，检索结果图片直通多模态 LLM |
 | **会话分组** | 会话分组管理，分组专属指令自动注入对话管线 |
 | **检索质量优化** | 嵌入语义选库防误杀 + 分数簇感知动态 TopK + 多模态 Rerank（图片 base64 直传），100 题评测集问答准确率 97% |
-| **SKILL 技能系统** | `SKILL.md` + 可选 `skill.yaml`，数据库版本化管理（历史/diff/导入/回滚），零代码接入 Agent 循环 |
+| **SKILL 技能系统** | `SKILL.md` + 可选 `skill.yaml`，数据库版本化管理（历史/diff/导入/回滚），零代码接入 Agent 循环；http/script/command 三类统一 Docker 沙箱执行 |
 | **全链路追踪** | 自研轻量级分布式追踪，记录管线每个阶段耗时 |
-| **数据摄取管线** | 可视化编排的文档处理流水线：抓取 → 解析 → 分块 → 增强 → 索引 |
+| **数据摄取管线** | 画布化编排 + 确定性执行引擎：抓取 → 解析 → 分块 → 增强 → 索引，支持排他分支 DAG，兼容旧线性链 |
 | **仪表盘监控** | 管理后台实时展示系统 KPI、请求趋势、模型调用量、性能指标 |
 
 ---
@@ -48,63 +52,121 @@
 
 ### 智能问答
 
-| 对话欢迎页（示例问题 · 知识库选择 · 深度思考开关） | 知识库问答（流式回答 · 行内引用 · 引用溯源面板） |
-|---|---|
-| <img src="docs/assets/screenshots/chat.png" width="490"/> | <img src="docs/assets/screenshots/chat-session.png" width="490"/> |
+**对话欢迎页（示例问题 · 知识库选择 · 深度思考开关）**
 
-| 登录页 | 管理后台仪表盘（KPI · 流量概览 · AI 性能 · 质量快照） |
-|---|---|
-| <img src="docs/assets/screenshots/login.png" width="490"/> | <img src="docs/assets/screenshots/dashboard.png" width="490"/> |
+<img src="docs/assets/screenshots/chat.png" width="100%"/>
+
+**知识库问答（流式回答 · 行内引用 · 引用溯源面板）**
+
+<img src="docs/assets/screenshots/chat-session.png" width="100%"/>
+
+**工作流提取确认（步骤预览 · 确认/取消/补充说明 · 决策回执）**
+
+<img src="docs/assets/screenshots/chat-workflow-confirm.png" width="100%"/>
+
+**登录页**
+
+<img src="docs/assets/screenshots/login.png" width="100%"/>
+
+### 工作流与画布编排
+
+**工作流管理（对话提取 · 向量召回索引 · 启停/重建索引）**
+
+<img src="docs/assets/screenshots/workflows.png" width="100%"/>
+
+**工作流画布（分支条件 · 拖拽连线 · 自动布局 · 撤销重做）**
+
+<img src="docs/assets/screenshots/workflow-canvas.png" width="100%"/>
+
+**数据通道（流水线管理 · 任务执行）**
+
+<img src="docs/assets/screenshots/ingestion.png" width="100%"/>
+
+**流水线画布（排他分支 DAG · 节点配置 · 实时校验）**
+
+<img src="docs/assets/screenshots/ingestion-canvas.png" width="100%"/>
 
 ### 知识库与文档
 
-| 知识库管理（Embedding 模型 · 解析引擎 · 文档统计） | 文档管理（多格式上传 · 处理状态 · 分块数） |
-|---|---|
-| <img src="docs/assets/screenshots/knowledge-list.png" width="490"/> | <img src="docs/assets/screenshots/knowledge-documents.png" width="490"/> |
+**知识库管理（Embedding 模型 · 解析引擎 · 文档统计）**
 
-| 分块管理（Chunk 编辑 · 启停 · Token 统计） | 知识图谱 · 实体管理（实体/关系抽取 · 合并 · 构建日志） |
-|---|---|
-| <img src="docs/assets/screenshots/knowledge-chunks.png" width="490"/> | <img src="docs/assets/screenshots/knowledge-graph.png" width="490"/> |
+<img src="docs/assets/screenshots/knowledge-list.png" width="100%"/>
 
-### Graph RAG 与数据通道
+**文档管理（多格式上传 · 处理状态 · 分块数）**
 
-| Graph RAG 总控（检索通道开关 · 抽取模型 · 各库图谱状态） | 数据通道（文档处理流水线编排） |
-|---|---|
-| <img src="docs/assets/screenshots/graph-rag.png" width="490"/> | <img src="docs/assets/screenshots/ingestion.png" width="490"/> |
+<img src="docs/assets/screenshots/knowledge-documents.png" width="100%"/>
+
+**分块管理（Chunk 编辑 · 启停 · Token 统计）**
+
+<img src="docs/assets/screenshots/knowledge-chunks.png" width="100%"/>
+
+### Graph RAG
+
+**Graph RAG 总控（检索通道开关 · 抽取模型 · 各库图谱状态）**
+
+<img src="docs/assets/screenshots/graph-rag.png" width="100%"/>
+
+**知识图谱 · 实体管理（实体/关系抽取 · 合并 · 构建日志）**
+
+<img src="docs/assets/screenshots/knowledge-graph.png" width="100%"/>
 
 ### 可观测性
 
-| 链路追踪（成功率 · 平均/P95 耗时 · 运行列表） | 链路详情（节点级执行时序瀑布图） |
-|---|---|
-| <img src="docs/assets/screenshots/traces.png" width="490"/> | <img src="docs/assets/screenshots/trace-detail.png" width="490"/> |
+**管理后台仪表盘（KPI · 流量概览 · AI 性能 · 质量快照）**
+
+<img src="docs/assets/screenshots/dashboard.png" width="100%"/>
+
+**链路追踪（成功率 · 平均/P95 耗时 · 运行列表）**
+
+<img src="docs/assets/screenshots/traces.png" width="100%"/>
+
+**链路详情（节点级执行时序 · 含工作流召回阶段）**
+
+<img src="docs/assets/screenshots/trace-detail.png" width="100%"/>
 
 ### 模型与工具
 
-| 模型管理（22 家供应商 · API 配置 · 连通性检查） | 默认模型（按场景分配对话/摘要/重排/嵌入模型） |
-|---|---|
-| <img src="docs/assets/screenshots/ai-models.png" width="490"/> | <img src="docs/assets/screenshots/default-models.png" width="490"/> |
+**模型管理（22 家供应商 · API 配置 · 连通性检查）**
 
-| MCP 服务（运行时注册 · 连接状态 · 工具数） | SKILL 管理（版本化技能 · 同步状态） |
-|---|---|
-| <img src="docs/assets/screenshots/mcp-servers.png" width="490"/> | <img src="docs/assets/screenshots/skills.png" width="490"/> |
+<img src="docs/assets/screenshots/ai-models.png" width="100%"/>
 
-| 提示词管理（Agent 全链路提示词在线编辑 · 热重载） |
-|---|
-| <img src="docs/assets/screenshots/prompts.png" width="490"/> |
+**默认模型（按场景分配对话/摘要/重排/嵌入模型）**
+
+<img src="docs/assets/screenshots/default-models.png" width="100%"/>
+
+**MCP 服务（运行时注册 · 连接状态 · 工具数）**
+
+<img src="docs/assets/screenshots/mcp-servers.png" width="100%"/>
+
+**SKILL 管理（版本化技能 · 同步状态）**
+
+<img src="docs/assets/screenshots/skills.png" width="100%"/>
+
+**提示词管理（Agent 全链路提示词在线编辑 · 热重载）**
+
+<img src="docs/assets/screenshots/prompts.png" width="100%"/>
 
 ### 系统管理
 
-| 用户管理 | 系统设置（向量空间 · MinerU 解析服务） |
-|---|---|
-| <img src="docs/assets/screenshots/users.png" width="490"/> | <img src="docs/assets/screenshots/settings.png" width="490"/> |
+**用户管理**
 
-| 告警设置（邮件告警 · 熔断阈值） | 示例问题（欢迎页推荐问法配置） |
-|---|---|
-| <img src="docs/assets/screenshots/alert-settings.png" width="490"/> | <img src="docs/assets/screenshots/sample-questions.png" width="490"/> |
+<img src="docs/assets/screenshots/users.png" width="100%"/>
 
-| 关键词映射（查询归一化规则，按知识库关联） |
-|---|
-| <img src="docs/assets/screenshots/query-term-mapping.png" width="490"/> |
+**系统设置（向量空间 · MinerU 解析服务）**
+
+<img src="docs/assets/screenshots/settings.png" width="100%"/>
+
+**告警设置（邮件告警 · 熔断阈值）**
+
+<img src="docs/assets/screenshots/alert-settings.png" width="100%"/>
+
+**示例问题（欢迎页推荐问法配置）**
+
+<img src="docs/assets/screenshots/sample-questions.png" width="100%"/>
+
+**关键词映射（查询归一化规则，按知识库关联）**
+
+<img src="docs/assets/screenshots/query-term-mapping.png" width="100%"/>
 
 ---
 
@@ -119,9 +181,10 @@
 │  Vite / Zustand  │                        │  Controllers ──► StreamChatPipeline          │
 └──────────────────┘                        │                      │                       │
                                             │                      ▼                       │
-                                            │  AgentScope ReActAgent 循环                  │
-                                            │   ├─ rag_search ──► 混合检索（RRF 融合）      │
+                                            │  AgentScope ReActAgent 循环（Harness 模块）  │
+                                            │   ├─ rag_search ──► 混合检索（RRF 融合）     │
                                             │   ├─ tool_reader ─► MCP / SKILL 注册表       │
+                                            │   ├─ workflow_* ──► 工作流提取/保存/召回     │
                                             │   └─ FINISH ──────► 流式回答 + [^N] 引用     │
                                             └────────┬─────────────────────┬───────────────┘
                                                      │                     │
@@ -149,8 +212,9 @@ StreamChatPipeline
   ├─ 2. 强实体 ID 检测 — 订单号/单据号类问题跳过改写与选库
   ├─ 3. 查询改写 — 多轮改写 + 问题拆分
   ├─ 4. 知识库语义选择 — 嵌入相似度过滤无关知识库
-  └─ 5. Agent Loop — 迭代至 FINISH
-        ├─ 工具：rag_search / MCP / SKILL（检索在循环内执行）
+  ├─ 5. 工作流召回 — 低阈值余弦召回候选（仅注入名称+描述）
+  └─ 6. Agent Loop — 迭代至 FINISH
+        ├─ 工具：rag_search / MCP / SKILL / workflow_*（检索在循环内执行）
         ├─ Thought → Action → Observation → 继续
         └─ Thought → FINISH → Final Answer（流式推送，[^chunk_N] 引用）
 ```
@@ -162,7 +226,7 @@ StreamChatPipeline
 | 后端 | Java 17, Spring Boot 3.5, MyBatis-Plus, RocketMQ, Sa-Token |
 | AI 引擎 | AgentScope ReActAgent 编排 + 厂商官方 SDK 网关（OpenAI / DashScope / Anthropic / 火山 ark / 智谱，OpenAI/Anthropic 兼容策略兜底） |
 | 向量存储 | PostgreSQL + pgvector (HNSW) + pg_trgm (GIN) |
-| 前端 | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, AntV G6（图谱可视化）, Mermaid |
+| 前端 | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, AntV G6（图谱可视化）, React Flow + dagre（画布编排）, Mermaid |
 | 基础设施 | Redis, Docker 沙箱, S3 对象存储（MinIO / RustFS） |
 
 ### 模块结构
@@ -180,12 +244,14 @@ ragstudio
 
 | 包 | 职责 |
 |----|------|
-| `rag/service/pipeline` | `StreamChatPipeline` 编排（记忆 → 改写 → 选库 → Agent 循环） |
-| `rag/core/agent` | AgentScope ReActAgent 集成，工具注册（`rag_search`、`tool_reader`） |
+| `rag/service/pipeline` | `StreamChatPipeline` 编排（记忆 → 改写 → 选库 → 工作流召回 → Agent 循环） |
+| `rag/core/harness` | Agent Harness：动态上下文（`context/`）、工具组装（`tool/`）、提示词（`prompt/`）、约束（`constraint/`）、步骤与流式 |
+| `rag/core/agent` | AgentScope ReActAgent 循环引擎（模型选择、事件→SSE、引用溯源、trace） |
 | `rag/core/retrieve` | 检索通道（pgvector + pg_trgm）经 RRF 融合；`postprocessor/` Rerank + 动态 TopK |
 | `rag/core/memory` / `core/rewrite` | 会话记忆（历史/摘要/压缩）；多轮查询改写 |
+| `rag/workflow` | 工作流：对话提取/确认/保存、向量召回、画布图校验与编译、管理端点 |
 | `knowledge/` | 知识库与文档管理、MQ 消费、定时同步 |
-| `ingestion/` | 文档摄入流水线：fetch → parse → chunk → enhance → index |
+| `ingestion/` | 文档摄入流水线：fetch → parse → chunk → enhance → index；图模型校验/编译与排他分支执行 |
 | `graph/` | Graph RAG：LLM 实体/关系抽取 + 局部子图检索通道 |
 | `aimodel/` | 模型配置、多模型路由与故障转移 |
 | `mcp/` / `skillstore/` | MCP 服务注册；数据库版本化 SKILL 存储与沙箱执行 |
@@ -245,11 +311,33 @@ cd frontend && npm install && npm run dev   # → http://localhost:51023
 ```
 
 - **AgentScope 原生工具调用**：ReActAgent 驱动循环，工具定义自动转为各厂商 function calling 格式，工具结果以独立观察角色注入（不与用户发言混淆）
-- **工具全量注册**：`rag_search`（混合检索）+ `tool_reader`（MCP/SKILL 发现）+ SKILL + MCP 全部注册到 Toolkit
+- **Harness 模块化**：上下文、工具、提示词、约束、步骤、流式收敛到 `rag/core/harness/`；`DynamicContextMiddleware` 每轮重建 system message，支持"用了就清除"的动态上下文
+- **工具全量注册**：`rag_search`（混合检索）+ `tool_reader`（MCP/SKILL 发现）+ SKILL + MCP + `workflow_*`（工作流）全部注册到 Toolkit，来源统一由 `ToolRegistryAssembler` 组装
 - **知识库语义选择**：嵌入相似度选库，带并列带保护与阈值门控——闲聊等明显无关问题不触发任何检索
 - **查询改写**：多轮改写 + 问题拆分；简单问题规则直通省一次 LLM 往返；强实体 ID（订单号、单据号）跳过改写/选库走精确检索
 - **结构化输出降级链**：JSON Schema → JSON Output → 纯提示词，按模型能力自动选择；能力标记错误时自动降级重试
 - **引用溯源**：回答携带 `[^chunk_N]` 编号引用，chunk 定位到具体知识库文档
+
+### 工作流（Workflow）
+
+把多步骤、带分支的问题解决方案固定为可复用工作流，Agent 不必每次重新推理：
+
+- **对话提取**：`workflow_extract` 从当前会话提取流程草稿（结构化步骤 + 分支条件），全程只生成草稿、不落库
+- **卡片确认**：前端 `WorkflowConfirm` 卡片展示步骤与覆盖警告，支持「确认保存 / 取消 / 补充说明」；服务端校验草稿存在 + 用户肯定语义才允许 `workflow_save`，防止模型擅自保存
+- **召回注入**：`StreamChatPipeline` 在工作流召回阶段做低阈值向量召回（默认阈值 0.25、TopK 8），只注入名称 + 描述，宁多勿漏
+- **渐进披露**：`workflow_use` 选中后按需加载完整步骤与分支条件，并通过动态上下文中间件清除其余候选，不污染后续迭代
+- **管理端**：列表 / 详情 / 启停 / 重建索引，支持画布编辑与线性快速编辑
+
+### 画布编排
+
+工作流与文档摄入流水线均支持 React Flow 可视化画布（`@xyflow/react` + dagre 自动布局）：
+
+| 维度 | 工作流画布 | 流水线画布 |
+|------|------------|------------|
+| 执行语义 | LLM 软执行（图编译为自然语言步骤 + `when` 条件） | 引擎确定性执行（图编译为节点配置 + 排他分支） |
+| 节点类型 | 开始 / 步骤 / 条件分支 / 结束 | 开始 / 处理节点（7 类）/ 条件网关 / 结束 |
+| 分支承载 | 条件节点出边标签 | 连线结构化条件，运行时求值（首个命中生效，无条件边兜底） |
+| 能力 | 拖拽添加/连线（防环校验）、属性面板、自动布局、撤销重做、脏检查、暗色 | 同左 + 节点配置表单复用、旧线性链自动转图 |
 
 ### 深度思考
 
@@ -318,7 +406,7 @@ description: "查询内部 API。当用户询问 xxx 时使用。"
 - `name`/`description` 写在 SKILL.md frontmatter（兼容 Agent Skills 开放标准，可跨端复用）
 - 类型：`http`（REST API）、`script`（脚本）、`command`（命令）；无执行配置则为纯知识型技能（通过 `tool_reader` 激活）
 - **数据库版本化管理**：技能存于数据库（`t_skill` / `t_skill_version` / `t_skill_file` / `t_skill_blob`），支持版本历史、文件级 diff、回滚、zip 导入导出与 GitHub 导入；`skills/` 目录作为文件工作区，启动时以数据库为准对账（存量目录自动收编）
-- `script`/`command` 在 Docker 沙箱隔离运行（只读文件系统、去权、无网络、30 秒超时）
+- `http`/`script`/`command` 三类统一在 Docker 沙箱隔离运行（只读文件系统、去权、超时）；沙箱容器池化复用并固定 DNS，网络默认开放，可按技能通过 `config.network` 显式覆盖
 - 管理后台「技能」页：版本管理、diff 查看、加载失败诊断
 
 ### 链路追踪
@@ -340,8 +428,14 @@ description: "查询内部 API。当用户询问 xxx 时使用。"
 | `rag.skills.dir` | `${ragstudio.data-dir}/skills` | SKILL 工作区目录 |
 | `rag.skills.max-versions` | `0` | 技能版本保留数（0 = 不限制） |
 | `rag.skills.allowed-commands` | `""` | SKILL 命令白名单（空=禁用 command 类型） |
-| `rag.skills.sandbox.enabled` | `true` | Docker 沙箱隔离执行 script/command |
+| `rag.skills.sandbox.enabled` | `true` | Docker 沙箱隔离执行 http/script/command 三类技能 |
+| `rag.skills.sandbox.network-enabled` | `true` | 沙箱内是否开放网络（技能可用 `config.network` 覆盖） |
+| `rag.skills.sandbox.pool-size` | `1` | 常驻沙箱池大小（0 = 每次临时创建） |
 | `rag.skills.script-timeout-ms` | `30000` | 脚本执行超时（毫秒） |
+| `rag.workflow.enabled` | `true` | 工作流功能总开关（提取/保存/召回） |
+| `rag.workflow.recall-threshold` | `0.25` | 工作流召回余弦阈值（低阈值宁多勿漏） |
+| `rag.workflow.recall-top-k` | `8` | 单次召回候选上限 |
+| `rag.workflow.draft-ttl-minutes` | `30` | 待确认草稿有效期（分钟） |
 | `rag.query-rewrite.enabled` | `true` | 多轮查询改写开关（简单问题规则直通） |
 | `rag.search.default-top-k` | `10` | 检索返回 Top-K 条数 |
 | `rag.search.max-final-chunks` | `5` | 重排后基准条数（动态 TopK 目标值） |
