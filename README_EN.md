@@ -64,9 +64,15 @@
 
 <img src="docs/assets/screenshots/chat-workflow-confirm.png" width="100%"/>
 
-**Login**
+### Login
+
+**Split-screen brand login (feature highlights · light/dark theme · password visibility · responsive)**
 
 <img src="docs/assets/screenshots/login.png" width="100%"/>
+
+**Dark theme**
+
+<img src="docs/assets/screenshots/login-dark.png" width="100%"/>
 
 ### Workflows & Canvas Orchestration
 

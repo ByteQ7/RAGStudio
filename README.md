@@ -64,9 +64,15 @@
 
 <img src="docs/assets/screenshots/chat-workflow-confirm.png" width="100%"/>
 
-**登录页**
+### 登录页
+
+**双栏品牌登录（左侧产品能力介绍 · 明暗主题切换 · 密码显隐 · 响应式适配）**
 
 <img src="docs/assets/screenshots/login.png" width="100%"/>
+
+**深色主题**
+
+<img src="docs/assets/screenshots/login-dark.png" width="100%"/>
 
 ### 工作流与画布编排
 
