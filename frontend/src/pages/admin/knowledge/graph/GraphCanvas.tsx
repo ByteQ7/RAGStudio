@@ -67,7 +67,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
 
     const graph = new Graph({
       container,
-      autoFit: { type: "view", padding: 32 },
+      autoFit: { type: "view" },
+      padding: 32,
       zoomRange: ZOOM_RANGE,
       animation: { duration: 200 },
       behaviors: [
@@ -110,13 +111,13 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     graphRef.current = graph;
 
     graph.on("node:click", (e) => {
-      const id = (e.target as { id?: string }).id;
+      const id = (e as { target?: { id?: string } }).target?.id;
       if (id) {
         propsRef.current.onNodeClick(id);
       }
     });
     graph.on("node:dblclick", (e) => {
-      const id = (e.target as { id?: string }).id;
+      const id = (e as { target?: { id?: string } }).target?.id;
       if (id) {
         propsRef.current.onNodeFocus(id);
       }
@@ -134,24 +135,25 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // 聚焦展开时旧节点以固定坐标（fx/fy）参与迭代，避免整图重排。
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || !props.data || props.data.nodes.length === 0) {
+    const data = props.data;
+    if (!graph || !data || data.nodes.length === 0) {
       return;
     }
     const seq = ++layoutSeqRef.current;
     const container = containerRef.current;
     const width = container?.clientWidth ?? 800;
     const height = container?.clientHeight ?? 640;
-    const incremental = isIncrementalExpand(prevDataRef.current, props.data);
+    const incremental = isIncrementalExpand(prevDataRef.current, data);
     const positions = incremental ? collectPositions(graph) : new Map<string, NodePosition>();
-    void computeLayout(props.data, positions, width, height).then((layoutResult) => {
+    void computeLayout(data, positions, width, height).then((layoutResult) => {
       if (seq !== layoutSeqRef.current || !graphRef.current) {
         return;
       }
-      const gd: GraphData = buildGraphData(props.data, layoutResult, props.showEdgeLabels, props.hiddenTypes);
+      const gd: GraphData = buildGraphData(data, layoutResult, props.showEdgeLabels, props.hiddenTypes);
       graph.setData(gd);
       graph.render().then(() => {
         if (!incremental) {
-          graph.fitView({ padding: 32 }, { duration: 300 });
+          graph.fitView({}, { duration: 300 });
         }
       });
     });
@@ -228,7 +230,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       void graph.zoomTo(next, { duration: 200 });
     },
     fitView: () => {
-      void graphRef.current?.fitView({ padding: 32 }, { duration: 300 });
+      void graphRef.current?.fitView({}, { duration: 300 });
     },
     exportPng: async () => {
       const graph = graphRef.current;

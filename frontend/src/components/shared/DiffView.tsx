@@ -78,14 +78,15 @@ function alignRows(oldText: string, newText: string): Row[] {
       }
     } else if (op.kind === "del") {
       const add = ops[i + 1]?.kind === "add" ? ops[++i] : null;
+      const addLines = add?.lines ?? [];
       const k = op.lines.length;
-      const m = add ? add.lines.length : 0;
+      const m = addLines.length;
       for (let j = 0; j < Math.max(k, m); j++) {
         const hasLeft = j < k;
         const hasRight = j < m;
         rows.push({
           left: hasLeft ? { no: ++oldNo, text: op.lines[j] } : null,
-          right: hasRight ? { no: ++newNo, text: add.lines[j] } : null,
+          right: hasRight ? { no: ++newNo, text: addLines[j] } : null,
           kind: hasLeft && hasRight ? "mod" : hasLeft ? "del" : "add"
         });
       }
@@ -239,7 +240,7 @@ export function DiffView({
                   <div key={`fold-${row.foldId}`}>
                     {row.rows.map((r, i) => (
                       <div key={i} className="grid grid-cols-[44px_1fr_44px_1fr]">
-                        {renderCells(r, true)}
+                        {renderCells(r)}
                       </div>
                     ))}
                   </div>
@@ -259,7 +260,7 @@ export function DiffView({
             }
             return (
               <div key={index} className="grid grid-cols-[44px_1fr_44px_1fr]">
-                {renderCells(row, false)}
+                {renderCells(row)}
               </div>
             );
           })}
@@ -269,7 +270,7 @@ export function DiffView({
   );
 }
 
-function renderCells(row: Row, expanded: boolean) {
+function renderCells(row: Row) {
   const leftBg = row.kind === "same" ? "" : KIND_BG[row.kind];
   const rightBg = row.kind === "same" ? "" : KIND_BG_RIGHT[row.kind];
   return (

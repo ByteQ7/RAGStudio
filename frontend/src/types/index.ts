@@ -9,6 +9,8 @@ export type MessageStatus = "streaming" | "done" | "cancelled" | "error";
 
 export interface UserChoiceOption {
   text: string;
+  /** 选项说明（可选）：帮助用户理解该选项的后果，渲染为按钮下方小字 */
+  description?: string;
 }
 
 export interface UserChoiceData {
@@ -36,6 +38,8 @@ export interface Session {
 /** 对话分组（元宝式：可设置分组专属指令与默认知识库，组内新对话自动套用） */
 export interface ConversationGroup {
   id: string;
+  /** 后端返回的分组 ID 字段（部分接口用 groupId，前端归一化为 id 时兼容读取） */
+  groupId?: string;
   name: string;
   instruction?: string | null;
   /** 是否置顶 */

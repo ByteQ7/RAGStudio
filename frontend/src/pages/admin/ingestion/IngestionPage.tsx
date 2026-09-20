@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
   ChevronUp,
@@ -8,7 +8,8 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Trash2
+  Trash2,
+  Workflow
 } from "lucide-react";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -100,30 +101,6 @@ const NODE_TYPE_SHORT_LABEL: Record<string, string> = {
 };
 
 const getNodeTypeShortLabel = (type: string): string => NODE_TYPE_SHORT_LABEL[type] ?? type;
-
-interface PipelineTemplate {
-  name: string;
-  description: string;
-  nodeTypes: PipelineNodeType[];
-}
-
-const PIPELINE_TEMPLATES: PipelineTemplate[] = [
-  {
-    name: "标准流水线",
-    description: "获取 → 解析 → 分块 → Chunk富化 → 向量入库，适合大多数场景",
-    nodeTypes: ["fetcher", "parser", "chunker", "enricher", "indexer"]
-  },
-  {
-    name: "简洁流水线",
-    description: "获取 → 解析 → 分块 → 向量入库，跳过 AI 富化，处理速度更快",
-    nodeTypes: ["fetcher", "parser", "chunker", "indexer"]
-  },
-  {
-    name: "深度处理流水线",
-    description: "获取 → 解析 → 文档增强 → 分块 → Chunk富化 → 向量入库，最高质量",
-    nodeTypes: ["fetcher", "parser", "enhancer", "chunker", "enricher", "indexer"]
-  }
-];
 
 const CONDITION_FIELDS = [
   { value: "source_type", label: "来源类型" },
@@ -240,6 +217,7 @@ interface PipelineNodeForm {
 }
 
 export function IngestionPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<"pipelines" | "tasks">(() =>
@@ -418,7 +396,7 @@ export function IngestionPage() {
                 </Button>
                 <Button
                   className="admin-primary-gradient"
-                  onClick={() => setPipelineDialog({ open: true, mode: "create", pipeline: null })}
+                  onClick={() => navigate("/admin/ingestion/pipelines/new")}
                 >
                   <Plus className="mr-2 h-4 w-4" />
                   新建流水线
@@ -455,6 +433,14 @@ export function IngestionPage() {
                       <TableCell>{formatDate(pipeline.updateTime)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/admin/ingestion/pipelines/${pipeline.id}/edit`)}
+                          >
+                            <Workflow className="mr-0.1 h-4 w-4" />
+                            画布编辑
+                          </Button>
                           <Button size="sm" variant="outline" onClick={() => openPipelineNodes(pipeline)}>
                             查看节点
                           </Button>
@@ -681,7 +667,6 @@ interface PipelineDialogProps {
 function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit, embeddingModels }: PipelineDialogProps) {
   const [saving, setSaving] = useState(false);
   const [nodes, setNodes] = useState<PipelineNodeForm[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
   const [conditionExpanded, setConditionExpanded] = useState<Record<string, boolean>>({});
   const [conditionAdvanced, setConditionAdvanced] = useState<Record<string, boolean>>({});
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
@@ -954,16 +939,6 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit, embeddin
   };
 
   /* ------------------------------------------------------------------ */
-  /*  Template selection                                                 */
-  /* ------------------------------------------------------------------ */
-
-  const applyTemplate = (templateIndex: number) => {
-    setSelectedTemplate(templateIndex);
-    const template = PIPELINE_TEMPLATES[templateIndex];
-    setNodes(template.nodeTypes.map((nt) => createNode(nt)));
-  };
-
-  /* ------------------------------------------------------------------ */
   /*  Build settings (unchanged logic)                                   */
   /* ------------------------------------------------------------------ */
 
@@ -1138,7 +1113,6 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit, embeddin
         description: pipeline?.description || ""
       });
       setNodes(buildNodesFromPipeline(pipeline?.nodes));
-      setSelectedTemplate(null);
       setConditionExpanded({});
       setConditionAdvanced({});
       setExpandedTasks({});
@@ -1357,32 +1331,6 @@ function PipelineDialog({ open, mode, pipeline, onOpenChange, onSubmit, embeddin
                 </FormItem>
               )}
             />
-
-            {/* ── Template selector (create mode only) ─────────────── */}
-            {mode === "create" && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">选择模板</label>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {PIPELINE_TEMPLATES.map((template, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      className={`rounded-lg border p-3 text-left transition-colors hover:bg-accent ${
-                        selectedTemplate === idx
-                          ? "border-primary bg-primary/5 ring-1 ring-primary"
-                          : ""
-                      }`}
-                      onClick={() => applyTemplate(idx)}
-                    >
-                      <div className="text-sm font-medium">{template.name}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {template.description}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* ── Node config header ───────────────────────────────── */}
             <div className="text-sm font-medium">节点配置</div>

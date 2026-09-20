@@ -22,8 +22,6 @@ import { DiffView } from "@/components/shared/DiffView";
 import {
   getSkillDiff,
   getSkillVersionFile,
-  listSkillVersions,
-  type SkillDiffFile,
   type SkillDiffResult,
   type SkillVersionInfo
 } from "@/services/skillService";

@@ -72,7 +72,7 @@ export function buildGraphData(
           labelText: n.name,
           labelFontSize: 12,
           labelFill: "#94a3b8",
-          labelPlacement: "bottom",
+          labelPlacement: "bottom" as const,
           labelOffsetY: 6
         }
       };
@@ -92,7 +92,7 @@ export function buildGraphData(
         labelText: showEdgeLabels ? l.predicate : "",
         labelFontSize: 10,
         labelFill: "#94a3b8",
-        labelPlacement: "center"
+        labelPlacement: "center" as const
       }
     }));
   return { nodes, edges };

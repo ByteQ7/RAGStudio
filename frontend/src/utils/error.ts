@@ -1,4 +1,4 @@
-export function getErrorMessage(error: unknown, fallback: string) {
+export function getErrorMessage(error: unknown, fallback = "操作失败") {
   if (typeof error === "string" && error.trim()) {
     return error;
   }

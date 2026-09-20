@@ -8,6 +8,45 @@ export interface PageResult<T> {
   pages: number;
 }
 
+/** 画布节点类型 */
+export type IngestionNodeKind = "start" | "processor" | "condition" | "end";
+
+export interface IngestionGraphNodeData {
+  nodeType?: string | null;
+  settings?: Record<string, unknown> | null;
+  condition?: Record<string, unknown> | null;
+  note?: string | null;
+}
+
+export interface IngestionGraphNode {
+  id: string;
+  kind: IngestionNodeKind;
+  x?: number | null;
+  y?: number | null;
+  data: IngestionGraphNodeData;
+}
+
+export interface IngestionGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string | null;
+  condition?: Record<string, unknown> | null;
+}
+
+/** 流水线画布图（编辑态事实源，见 docs/workflow-canvas-design.md §10） */
+export interface IngestionGraph {
+  version?: number;
+  nodes: IngestionGraphNode[];
+  edges: IngestionGraphEdge[];
+}
+
+/** 图校验结果 */
+export interface IngestionGraphValidation {
+  errors: string[];
+  warnings: string[];
+}
+
 export interface IngestionPipelineNode {
   id: number;
   nodeId: string;
@@ -17,12 +56,19 @@ export interface IngestionPipelineNode {
   nextNodeId?: string | null;
 }
 
+/** 图校验请求体 */
+export interface IngestionGraphValidatePayload {
+  graph: IngestionGraph;
+}
+
 export interface IngestionPipeline {
   id: string;
   name: string;
   description?: string | null;
   createdBy?: string | null;
   nodes?: IngestionPipelineNode[];
+  /** 画布图（graph_json 为空时服务端由节点自动生成） */
+  graph?: IngestionGraph | null;
   createTime?: string;
   updateTime?: string;
 }
@@ -37,6 +83,8 @@ export interface IngestionPipelinePayload {
     condition?: Record<string, unknown> | null;
     nextNodeId?: string | null;
   }>;
+  /** 画布图；提供时服务端校验并编译为节点配置（nodes 被忽略） */
+  graph?: IngestionGraph | null;
 }
 
 export interface IngestionTask {
@@ -119,6 +167,16 @@ export async function createIngestionPipeline(payload: IngestionPipelinePayload)
 
 export async function updateIngestionPipeline(id: string, payload: IngestionPipelinePayload) {
   return api.put<IngestionPipeline, IngestionPipeline>(`/ingestion/pipelines/${id}`, payload);
+}
+
+/** 仅校验画布图（画布「校验」按钮），不落库 */
+export async function validateIngestionPipelineGraph(
+  graph: IngestionGraph
+): Promise<IngestionGraphValidation> {
+  return api.post<IngestionGraphValidation, IngestionGraphValidation>(
+    "/ingestion/pipelines/validate",
+    { graph }
+  );
 }
 
 export async function deleteIngestionPipeline(id: string) {

@@ -19,6 +19,11 @@ export interface LayoutNode {
   radius: number;
   fx?: number;
   fy?: number;
+  /** d3-force 仿真过程中写入的坐标（初始可空） */
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
 }
 
 export interface LayoutEdge {

@@ -8,10 +8,15 @@ import { LocationRequest } from "@/components/chat/LocationRequest";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import { ThinkingPanel } from "@/components/chat/ThinkingPanel";
 import { UserChoices } from "@/components/chat/UserChoices";
+import {
+  WorkflowConfirm,
+  type WorkflowConfirmData,
+  type WorkflowDecision,
+} from "@/components/chat/WorkflowConfirm";
 import { Avatar } from "@/components/common/Avatar";
 import { RAGStudioLogo } from "@/components/common/RAGStudioLogo";
 import { useAuthStore } from "@/stores/authStore";
-import type { Message, UserChoiceData } from "@/types";
+import type { Message, UserChoiceData, UserChoiceOption } from "@/types";
 
 // ==================== 标记解析工具 ====================
 
@@ -22,12 +27,15 @@ interface ParsedMarkers {
   hasLocationRequest: boolean;
   /** 用户选项数据（如有） */
   userChoice: UserChoiceData | null;
+  /** 工作流确认数据（如有） */
+  workflowConfirm: WorkflowConfirmData | null;
 }
 
 /**
  * 解析 AI 消息内容中的协议标记
  * - [LOCATION_REQUEST] — 位置请求
  * - [USER_CHOICE]...[/USER_CHOICE] — 用户选项
+ * - [WORKFLOW_CONFIRM]...[/WORKFLOW_CONFIRM] — 工作流确认卡片（JSON 载荷）
  */
 function parseMessageMarkers(content: string): ParsedMarkers {
   let cleanContent = content;
@@ -37,30 +45,80 @@ function parseMessageMarkers(content: string): ParsedMarkers {
   cleanContent = cleanContent.replace("[LOCATION_REQUEST]", "");
 
   // 检测用户选项块
+  // 语法：每行一个选项，可选用「 | 」追加说明（如：确认保存 | 立即生效）
   const choiceMatch = cleanContent.match(/\[USER_CHOICE\]([\s\S]*?)\[\/USER_CHOICE\]/);
   let userChoice: UserChoiceData | null = null;
   if (choiceMatch) {
-    const rawOptions = choiceMatch[1].trim();
-    const options = rawOptions
+    const options: UserChoiceOption[] = choiceMatch[1]
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
-      .map((text) => ({ text }));
+      .map((line) => {
+        const sep = line.indexOf("|");
+        if (sep <= 0) {
+          return { text: line };
+        }
+        const text = line.slice(0, sep).trim();
+        const description = line.slice(sep + 1).trim();
+        return description ? { text, description } : { text };
+      })
+      .filter((opt) => opt.text.length > 0);
     if (options.length > 0) {
       userChoice = { options };
     }
     cleanContent = cleanContent.replace(choiceMatch[0], "");
   }
 
-  return { cleanContent, hasLocationRequest, userChoice };
+  // 检测工作流确认块（JSON 载荷，解析失败则忽略标记）
+  const workflowMatch = cleanContent.match(/\[WORKFLOW_CONFIRM\]([\s\S]*?)\[\/WORKFLOW_CONFIRM\]/);
+  let workflowConfirm: WorkflowConfirmData | null = null;
+  if (workflowMatch) {
+    try {
+      const parsed = JSON.parse(workflowMatch[1].trim()) as WorkflowConfirmData;
+      if (parsed && parsed.name && Array.isArray(parsed.steps)) {
+        workflowConfirm = parsed;
+      }
+    } catch {
+      // 载荷损坏：不渲染卡片，同时把标记从正文剔除
+    }
+    cleanContent = cleanContent.replace(workflowMatch[0], "");
+  }
+
+  return { cleanContent, hasLocationRequest, userChoice, workflowConfirm };
 }
 
 interface MessageItemProps {
   message: Message;
   isLast?: boolean;
+  /** 该消息之后的第一条用户消息（确认卡片回执态推断用） */
+  nextUserMessage?: string;
 }
 
-export const MessageItem = React.memo(function MessageItem({ message, isLast }: MessageItemProps) {
+/**
+ * 从用户后续回复推断工作流确认卡片的决策（回执态）。
+ * 与后端 WorkflowSaveTool 的语义判定保持一致：确认保存 / 取消 / 其余视为修改意见。
+ */
+function inferWorkflowDecision(reply: string | undefined): WorkflowDecision {
+  if (!reply) return null;
+  const text = reply.trim();
+  if (!text) return null;
+  if (text === "确认保存" || /^(确认|确定|保存|固定|好的?|可以|同意|没问题|yes|y|ok|okay|sure)$/i.test(text)) {
+    return "confirmed";
+  }
+  if (text === "取消" || /^(取消|不保存|不要|算了|no|not)$/i.test(text)) {
+    return "cancelled";
+  }
+  if (text.startsWith("补充说明：")) {
+    return "edited";
+  }
+  return null;
+}
+
+export const MessageItem = React.memo(function MessageItem({
+  message,
+  isLast,
+  nextUserMessage,
+}: MessageItemProps) {
   const { user } = useAuthStore();
   const isUser = message.role === "user";
   const showFeedback =
@@ -74,8 +132,16 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
   const contentRef = React.useRef<HTMLDivElement | null>(null);
 
   // 解析协议标记（仅在助理消息中处理）
-  const { cleanContent, hasLocationRequest, userChoice } = React.useMemo(
-    () => (!isUser ? parseMessageMarkers(message.content) : { cleanContent: message.content, hasLocationRequest: false, userChoice: null }),
+  const { cleanContent, hasLocationRequest, userChoice, workflowConfirm } = React.useMemo(
+    () =>
+      !isUser
+        ? parseMessageMarkers(message.content)
+        : {
+            cleanContent: message.content,
+            hasLocationRequest: false,
+            userChoice: null,
+            workflowConfirm: null,
+          },
     [message.content, isUser]
   );
 
@@ -175,9 +241,21 @@ export const MessageItem = React.memo(function MessageItem({ message, isLast }: 
                 {hasLocationRequest && !isUser && isLast && (
                   <LocationRequest />
                 )}
-                {/* 用户选项组件 */}
+                {/* 用户选项组件：已选择时渲染只读回执；历史消息不可交互（问题已翻篇） */}
                 {userChoice && !isUser && (
-                  <UserChoices options={userChoice.options} />
+                  <UserChoices
+                    options={userChoice.options}
+                    selectedText={nextUserMessage}
+                    disabled={!isLast}
+                  />
+                )}
+                {/* 工作流确认卡片：仅最后一条消息可交互；已有后续回复时渲染只读回执 */}
+                {workflowConfirm && !isUser && (
+                  <WorkflowConfirm
+                    data={workflowConfirm}
+                    isLast={Boolean(isLast)}
+                    decision={inferWorkflowDecision(nextUserMessage)}
+                  />
                 )}
               </div>
             ) : null}

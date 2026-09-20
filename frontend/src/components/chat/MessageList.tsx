@@ -13,6 +13,20 @@ interface MessageListProps {
   sessionKey?: string | null;
 }
 
+/**
+ * 查找 index 之后的第一条用户消息内容（确认卡片的回执态推断用）。
+ * 仅向后扫描有限条数，避免长会话下每次渲染全量遍历。
+ */
+function findNextUserMessage(messages: Message[], index: number): string | undefined {
+  const limit = Math.min(messages.length, index + 6);
+  for (let i = index + 1; i < limit; i++) {
+    if (messages[i].role === "user") {
+      return messages[i].content;
+    }
+  }
+  return undefined;
+}
+
 export function MessageList({ messages, isLoading, isStreaming, sessionKey }: MessageListProps) {
   const virtuosoRef = React.useRef<VirtuosoHandle | null>(null);
   const scrollerRef = React.useRef<HTMLElement | null>(null);
@@ -225,7 +239,12 @@ export function MessageList({ messages, isLoading, isStreaming, sessionKey }: Me
           className={cn(index === messages.length - 1 && "animate-fade-up")}
           onMouseDown={handleTripleClickDown}
         >
-          <MessageItem message={message} isLast={index === messages.length - 1} />
+          <MessageItem
+            message={message}
+            isLast={index === messages.length - 1}
+            // 供确认卡片推断回执态：下一条用户消息即用户对该卡片的回复
+            nextUserMessage={findNextUserMessage(messages, index)}
+          />
         </div>
       )}
     />

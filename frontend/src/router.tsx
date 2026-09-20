@@ -19,6 +19,7 @@ const KnowledgeChunksPage = lazyPage(() => import("@/pages/admin/knowledge/Knowl
 const KnowledgeGraphPage = lazyPage(() => import("@/pages/admin/knowledge/KnowledgeGraphPage"), "KnowledgeGraphPage");
 const GraphRagPage = lazyPage(() => import("@/pages/admin/graph/GraphRagPage"), "GraphRagPage");
 const IngestionPage = lazyPage(() => import("@/pages/admin/ingestion/IngestionPage"), "IngestionPage");
+const IngestionCanvasPage = lazyPage(() => import("@/pages/admin/ingestion/IngestionCanvasPage"), "IngestionCanvasPage");
 const RagTracePage = lazyPage(() => import("@/pages/admin/traces/RagTracePage"), "RagTracePage");
 const RagTraceDetailPage = lazyPage(() => import("@/pages/admin/traces/RagTraceDetailPage"), "RagTraceDetailPage");
 const SystemSettingsPage = lazyPage(() => import("@/pages/admin/settings/SystemSettingsPage"), "SystemSettingsPage");
@@ -30,6 +31,8 @@ const McpServerPage = lazyPage(() => import("@/pages/admin/mcp/McpServerPage"), 
 const AiModelConfigPage = lazyPage(() => import("@/pages/admin/ai-models/AiModelConfigPage"), "AiModelConfigPage");
 const DefaultModelConfigPage = lazyPage(() => import("@/pages/admin/defaults/DefaultModelConfigPage"), "DefaultModelConfigPage");
 const SkillListPage = lazyPage(() => import("@/pages/admin/skills/SkillListPage"), "SkillListPage");
+const WorkflowListPage = lazyPage(() => import("@/pages/admin/workflows/WorkflowListPage"), "WorkflowListPage");
+const WorkflowCanvasPage = lazyPage(() => import("@/pages/admin/workflows/WorkflowCanvasPage"), "WorkflowCanvasPage");
 const PromptsPage = lazyPage(() => import("@/pages/admin/prompts/PromptsPage"), "PromptsPage");
 
 function SuspenseFallback() {
@@ -154,6 +157,14 @@ export const router = createBrowserRouter([
         element: <LazyPage Component={IngestionPage} />
       },
       {
+        path: "ingestion/pipelines/new",
+        element: <LazyPage Component={IngestionCanvasPage} />
+      },
+      {
+        path: "ingestion/pipelines/:id/edit",
+        element: <LazyPage Component={IngestionCanvasPage} />
+      },
+      {
         path: "traces",
         element: <LazyPage Component={RagTracePage} />
       },
@@ -196,6 +207,18 @@ export const router = createBrowserRouter([
       {
         path: "skills",
         element: <LazyPage Component={SkillListPage} />
+      },
+      {
+        path: "workflows",
+        element: <LazyPage Component={WorkflowListPage} />
+      },
+      {
+        path: "workflows/new",
+        element: <LazyPage Component={WorkflowCanvasPage} />
+      },
+      {
+        path: "workflows/:name/edit",
+        element: <LazyPage Component={WorkflowCanvasPage} />
       },
       {
         path: "prompts",

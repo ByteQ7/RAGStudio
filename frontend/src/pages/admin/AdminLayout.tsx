@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Upload,
   Users,
+  GitBranch,
   Workflow,
   Zap,
   BrainCircuit,
@@ -63,6 +64,7 @@ const navItems: NavItem[] = [
   { path: "/admin/sample-questions", label: "示例问题", icon: Lightbulb },
   { path: "/admin/mcp-servers", label: "MCP 服务", icon: Plug },
   { path: "/admin/skills", label: "SKILL管理", icon: Zap },
+  { path: "/admin/workflows", label: "工作流管理", icon: GitBranch },
   { path: "/admin/prompts", label: "提示词管理", icon: Terminal },
   { path: "/admin/ai-models", label: "模型管理", icon: BrainCircuit },
   { path: "/admin/defaults", label: "默认模型", icon: SlidersHorizontal },
@@ -89,7 +91,13 @@ export function AdminLayout() {
   const [searchFocused, setSearchFocused] = useState(false);
   const blurTimeoutRef = useRef<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const isAiModelsRoute = location.pathname.startsWith("/admin/ai-models");
+  // 全高路由（内容区撑满、无外框滚动）：模型管理、工作流画布编辑
+  const isFullHeightRoute =
+    location.pathname.startsWith("/admin/ai-models") ||
+    location.pathname === "/admin/workflows/new" ||
+    (location.pathname.startsWith("/admin/workflows/") && location.pathname.endsWith("/edit")) ||
+    location.pathname === "/admin/ingestion/pipelines/new" ||
+    (location.pathname.startsWith("/admin/ingestion/pipelines/") && location.pathname.endsWith("/edit"));
   const [mobileSidebar, setMobileSidebar] = useState(false);
 
   useEffect(() => {
@@ -128,7 +136,7 @@ export function AdminLayout() {
       dashboard: "仪表盘", knowledge: "知识库", graph: "知识图谱", ingestion: "数据通道",
       traces: "链路追踪", mappings: "关键词映射", users: "用户管理",
       "sample-questions": "示例问题", "mcp-servers": "MCP 服务",
-      "ai-models": "模型管理", defaults: "默认模型", skills: "SKILL管理", prompts: "提示词管理", settings: "系统设置",
+      "ai-models": "模型管理", defaults: "默认模型", skills: "SKILL管理", workflows: "工作流管理", prompts: "提示词管理", settings: "系统设置",
       alert: "告警设置"
     };
     const section = segments[1];
@@ -240,7 +248,7 @@ export function AdminLayout() {
       </aside>
 
       {/* Main */}
-      <div className={cn("flex flex-1 flex-col min-w-0", isAiModelsRoute ? "h-screen overflow-hidden" : "h-screen overflow-y-auto")}>
+      <div className={cn("flex flex-1 flex-col min-w-0", isFullHeightRoute ? "h-screen overflow-hidden" : "h-screen overflow-y-auto")}>
         {/* Top bar */}
         <header className="sticky top-0 z-30 border-b" style={{ borderColor: 'var(--color-border-secondary)', background: 'var(--color-bg-elevated)' }}>
           <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
@@ -356,7 +364,7 @@ export function AdminLayout() {
         </header>
 
         {/* Content */}
-        <div className={cn(isAiModelsRoute ? "flex flex-1 min-h-0 flex-col" : "p-4 lg:p-6")}>
+        <div className={cn(isFullHeightRoute ? "flex flex-1 min-h-0 flex-col" : "p-4 lg:p-6")}>
           <Outlet />
         </div>
       </div>
