@@ -100,6 +100,19 @@ def find_region(features, point):
     return None
 
 
+def normalize_gb(gb):
+    """
+    行政编码归一化为 6 位标准码。
+
+    数据源 gb 为 9 位 UN M49 编码（156 + 6 位行政区划码，如 156110000），
+    对外统一去掉国家码前缀 156，返回 110000 形式，与 SKILL.md 契约一致。
+    """
+    code = str(gb or "").strip()
+    if len(code) == 9 and code.startswith("156"):
+        return code[3:]
+    return code
+
+
 def regeo(lat, lng, data_dir=None):
     """
     逆地理编码主函数
@@ -153,11 +166,11 @@ def regeo(lat, lng, data_dir=None):
             "info": "Successfully retrieved address.",
             "address": {
                 "province": province.get("name"),
-                "province_code": str(province.get("gb", "")),
+                "province_code": normalize_gb(province.get("gb")),
                 "city": city.get("name") if city else None,
-                "city_code": str(city.get("gb", "")) if city else None,
+                "city_code": normalize_gb(city.get("gb")) if city else None,
                 "district": district.get("name") if district else None,
-                "district_code": str(district.get("gb", "")) if district else None
+                "district_code": normalize_gb(district.get("gb")) if district else None
             }
         }
     except Exception as e:

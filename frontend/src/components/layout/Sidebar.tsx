@@ -7,6 +7,8 @@ import {
   Folder,
   FolderMinus,
   FolderPlus,
+  Image,
+  KeyRound,
   LogOut,
   MessageSquare,
   MessageSquareText,
@@ -51,6 +53,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -65,6 +68,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
 import { batchDeleteSessions } from "@/services/sessionService";
 import { getKnowledgeBases, type KnowledgeBase } from "@/services/knowledgeService";
+import { changePassword, uploadAvatar } from "@/services/userService";
 import type { ConversationGroup, Session } from "@/types";
 
 interface SidebarProps {
@@ -89,7 +93,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const selectSession = useChatStore((s) => s.selectSession);
   const fetchSessions = useChatStore((s) => s.fetchSessions);
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, logout, updateAvatar } = useAuthStore();
   const [query, setQuery] = React.useState("");
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
@@ -100,6 +104,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [selectMode, setSelectMode] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [avatarFailed, setAvatarFailed] = React.useState(false);
+  const [passwordOpen, setPasswordOpen] = React.useState(false);
+  const [passwordForm, setPasswordForm] = React.useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
+  const [passwordSubmitting, setPasswordSubmitting] = React.useState(false);
   const [batchDeleting, setBatchDeleting] = React.useState(false);
   const [batchMoving, setBatchMoving] = React.useState(false);
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set());
@@ -129,6 +140,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [groupDeleteTarget, setGroupDeleteTarget] = React.useState<ConversationGroup | null>(null);
   const [groupDeleting, setGroupDeleting] = React.useState(false);
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
+  const fileInputRefAvatar = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     if (sessions.length === 0) {
@@ -424,6 +436,45 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const avatarUrl = user?.avatar?.trim();
   const showAvatar = Boolean(avatarUrl) && !avatarFailed;
   const avatarFallback = (user?.username || user?.userId || "用户").slice(0, 1).toUpperCase();
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const result = await uploadAvatar(file);
+      updateAvatar(result.avatarUrl);
+      setAvatarFailed(false);
+      toast.success("头像已更新");
+    } catch (error) {
+      toast.error((error as Error).message || "头像上传失败");
+    }
+  };
+
+  const submitPasswordChange = async () => {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      toast.error("请填写完整");
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast.error("两次密码不一致");
+      return;
+    }
+    setPasswordSubmitting(true);
+    try {
+      await changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword
+      });
+      toast.success("密码已更新");
+      setPasswordOpen(false);
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    } catch (error) {
+      toast.error((error as Error).message || "修改失败");
+    } finally {
+      setPasswordSubmitting(false);
+    }
+  };
 
   const startRename = (id: string, title: string) => {
     setRenamingId(id);
@@ -1049,6 +1100,15 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-44">
+                <DropdownMenuItem onClick={() => fileInputRefAvatar.current?.click()}>
+                  <Image className="mr-2 h-4 w-4" />
+                  更换头像
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  修改密码
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => logout()}
                   className="text-destructive focus:text-destructive"
@@ -1057,6 +1117,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   退出登录
                 </DropdownMenuItem>
               </DropdownMenuContent>
+              <input
+                ref={fileInputRefAvatar}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarChange}
+              />
             </DropdownMenu>
             <ThemeToggle className="rounded-lg" />
           </div>
@@ -1393,6 +1460,66 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               onClick={() => submitGroupKbs().catch(() => null)}
             >
               {kbSaving ? "保存中..." : `保存${kbSelected.size > 0 ? `（已选 ${kbSelected.size}）` : ""}`}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* 修改密码 */}
+      <Dialog
+        open={passwordOpen}
+        onOpenChange={(open) => {
+          setPasswordOpen(open);
+          if (!open) setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+        }}
+      >
+        <DialogContent className="max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>修改密码</DialogTitle>
+            <DialogDescription>请输入当前密码与新密码，修改后其他设备将退出登录</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <Input
+              type="password"
+              value={passwordForm.currentPassword}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+              placeholder="当前密码"
+            />
+            <Input
+              type="password"
+              value={passwordForm.newPassword}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))}
+              placeholder="新密码"
+            />
+            <Input
+              type="password"
+              value={passwordForm.confirmPassword}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
+              placeholder="确认新密码"
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submitPasswordChange().catch(() => null);
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <button
+              type="button"
+              className="rounded-lg border px-4 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--color-fill-quaternary)]"
+              style={{ borderColor: "var(--color-border-secondary)", color: "var(--color-text-secondary)" }}
+              onClick={() => setPasswordOpen(false)}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={passwordSubmitting}
+              className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40"
+              style={{ background: "hsl(var(--primary))" }}
+              onClick={() => submitPasswordChange().catch(() => null)}
+            >
+              {passwordSubmitting ? "保存中..." : "保存"}
             </button>
           </DialogFooter>
         </DialogContent>

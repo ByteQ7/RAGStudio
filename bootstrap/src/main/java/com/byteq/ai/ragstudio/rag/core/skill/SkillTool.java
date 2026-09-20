@@ -6,8 +6,11 @@ import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 将 {@link SkillDefinition} 包装为 Agent 可调用的 {@link Tool}
@@ -224,12 +227,10 @@ public class SkillTool implements Tool {
         String interpreter = resolveInterpreter(scriptFile, config);
         String command = interpreter + " " + basePath + "/" + scriptFile;
 
-        // 追加参数（shell 转义，防止注入）
-        if (params != null) {
-            for (Map.Entry<String, Object> entry : params.entrySet()) {
-                if (entry.getValue() != null) {
-                    command += " " + shellEscape(entry.getValue().toString());
-                }
+        // 追加参数（按 parameters.properties 声明顺序传递位置参数，值经 shell 转义防止注入）
+        for (Object value : orderedParamValues(params)) {
+            if (value != null) {
+                command += " " + shellEscape(value.toString());
             }
         }
 
@@ -248,6 +249,37 @@ public class SkillTool implements Tool {
         }
         List<String> files = definition.getScriptFiles();
         return (files != null && !files.isEmpty()) ? files.get(0) : null;
+    }
+
+    /**
+     * 按 skill.yaml parameters.properties 的声明顺序返回参数值（位置参数顺序）。
+     * <p>
+     * AgentScope 的 ToolCallParam 内部把入参拷贝为 HashMap（顺序不可控），
+     * 若直接遍历 params.entrySet() 追加位置参数，脚本收到的实参顺序会随哈希桶顺序变化：
+     * 如 geo-reverse 的 lat/lng 会被传成 lng/lat，导致"正确的坐标不在中国境内"。
+     * 未在 properties 中声明的额外参数按原迭代顺序追加在末尾。</p>
+     */
+    private List<Object> orderedParamValues(Map<String, Object> params) {
+        if (params == null || params.isEmpty()) {
+            return List.of();
+        }
+        List<Object> values = new ArrayList<>(params.size());
+        Set<String> declared = new LinkedHashSet<>();
+        Map<String, Object> parameters = definition.getParameters();
+        if (parameters != null && parameters.get("properties") instanceof Map<?, ?> properties) {
+            for (Object key : properties.keySet()) {
+                String name = String.valueOf(key);
+                if (params.containsKey(name) && declared.add(name)) {
+                    values.add(params.get(name));
+                }
+            }
+        }
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            if (!declared.contains(entry.getKey())) {
+                values.add(entry.getValue());
+            }
+        }
+        return values;
     }
 
     private String resolveInterpreter(String scriptFile, Map<String, Object> config) {
