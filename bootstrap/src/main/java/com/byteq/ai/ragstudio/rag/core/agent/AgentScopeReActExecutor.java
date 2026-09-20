@@ -110,6 +110,24 @@ public class AgentScopeReActExecutor {
     private static final Pattern NO_RESULT_ANSWER_PATTERN =
             Pattern.compile("未检索到|未找到|找不到|没有找到|未能找到|没有相关|无相关|暂无相关");
 
+    /** 定位请求标记：前端据此弹出定位组件并回传坐标（见 MessageItem / LocationRequest） */
+    private static final String LOCATION_REQUEST_MARKER = "[LOCATION_REQUEST]";
+
+    /**
+     * 最终回答在询问用户位置/城市的语义判定（后端兜底用）。
+     * 模型偶发只口头询问城市名而漏输出 {@value #LOCATION_REQUEST_MARKER}，前端不会触发定位，
+     * 后续也就拿不到坐标调用 geo-reverse / weather，因此命中时由后端确定性补发标记。
+     */
+    private static final Pattern LOCATION_ASK_PATTERN = Pattern.compile(
+            "(?:请|麻烦|需要|能否|可以|方便)[^。！？!?\\n]{0,15}(?:提供|告诉|告知|输入|分享|发送|确认)"
+                    + "[^。！？!?\\n]{0,15}(?:城市|位置|地点|地区|坐标)"
+                    + "|(?:需要|得先|先要|还要|必须)[^。！？!?\\n]{0,15}(?:知道|了解|获取|确认)"
+                    + "[^。！？!?\\n]{0,15}(?:城市|位置|地点|地区|坐标)"
+                    + "|(?:需要|请|麻烦)[^。！？!?\\n]{0,8}(?:您|你)的?(?:城市|位置|地点|地区|坐标)"
+                    + "|(?:哪个|哪座|哪一?个)城市"
+                    + "|(?:城市|位置|地点|地区)(?:是|在)(?:哪里|哪儿|哪边|哪|什么)"
+                    + "|(?:所在|当前|目前)的?(?:城市|位置|地点|地区)[^。！？!?\\n]{0,10}(?:吗|呢|？|\\?)");
+
     /** 否定性回答判定的正文长度上限（去引用标记后），超长回答不做该兜底以免误伤 */
     private static final int MAX_NO_RESULT_BODY_LEN = 120;
 
@@ -641,6 +659,7 @@ public class AgentScopeReActExecutor {
         if (StrUtil.isBlank(finalAnswer)) {
             finalAnswer = "（无回答内容）";
         }
+        maybeAppendLocationRequest(finalAnswer, callback);
         AgentStep finishStep = AgentStep.finish(state.modelCallCount.get() - 1,
                 truncateThought(drain(state.thinkingBuffer)), finalAnswer);
         state.steps.add(finishStep);
@@ -680,6 +699,26 @@ public class AgentScopeReActExecutor {
             }
         }
         return state.answerBuffer.toString();
+    }
+
+    /** 最终回答是否在询问用户位置/城市且未输出定位标记（后端兜底判定，供单测直接覆盖） */
+    static boolean needsLocationRequest(String finalAnswer) {
+        return StrUtil.isNotBlank(finalAnswer)
+                && !finalAnswer.contains(LOCATION_REQUEST_MARKER)
+                && LOCATION_ASK_PATTERN.matcher(finalAnswer).find();
+    }
+
+    /**
+     * 定位请求兜底：模型偶发只口头询问城市名而漏输出 [LOCATION_REQUEST]，
+     * 前端不会弹出定位组件，后续拿不到坐标调用 geo-reverse / weather。
+     * 命中时由后端补发标记（走 content 通道，随回答流式透出并持久化）。
+     */
+    private void maybeAppendLocationRequest(String finalAnswer, StreamCallback callback) {
+        if (!needsLocationRequest(finalAnswer)) {
+            return;
+        }
+        log.info("最终回答在询问用户位置但缺少 [LOCATION_REQUEST]，后端自动补发定位请求标记");
+        callback.onContent("\n" + LOCATION_REQUEST_MARKER);
     }
 
     private void streamText(String text, RunState state, StreamCallback callback) {
