@@ -138,3 +138,6 @@ frontend/vite.config.*.js
 # JVM 崩溃日志与回收站（本地运行时产物，不入库）
 hs_err_pid*.log
 .Trash-*/
+
+# 毕业论文（本地写作，不入库）
+/论文/
