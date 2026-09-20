@@ -1,7 +1,7 @@
 package com.byteq.ai.ragstudio.rag.service.handler;
 
 import cn.hutool.core.util.StrUtil;
-import com.byteq.ai.ragstudio.rag.core.agent.AgentStep;
+import com.byteq.ai.ragstudio.rag.core.harness.step.AgentStep;
 import com.byteq.ai.ragstudio.rag.dao.entity.ConversationDO;
 import com.byteq.ai.ragstudio.rag.dto.AgentStepPayload;
 import com.byteq.ai.ragstudio.rag.dto.CompletionPayload;

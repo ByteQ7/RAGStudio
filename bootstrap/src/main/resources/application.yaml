@@ -53,6 +53,13 @@ rag:
   agent:
     max-iterations: 10        # Agent 循环最大迭代次数
     timeout-ms: 120000        # Agent 总执行超时（毫秒），超时强制中断 Agent
+  # 工作流（Agent 从对话中沉淀的可复用流程，见 docs/workflow-harness-design.md）
+  workflow:
+    enabled: ${WORKFLOW_ENABLED:true}                    # 工作流功能总开关（含提取/保存/召回工具）
+    recall-threshold: ${WORKFLOW_RECALL_THRESHOLD:0.25}  # 召回余弦阈值（低阈值宁多勿漏）
+    recall-top-k: 8                                      # 单次召回候选上限
+    draft-ttl-minutes: 30                                # 待确认草稿有效期（分钟）
+    embedding-model-key: tool_selector                   # 召回向量使用的默认模型配置 key
   skills:
     # SKILL 工作区（默认在数据目录下：项目内运行=项目同级 RAGStudioData/skills，JAR 运行=JAR 旁 RAGStudioData/skills）；
     # 存量项目 skills/ 目录与旧 data/skills 在启动时自动迁移/收编

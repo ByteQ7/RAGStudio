@@ -18,20 +18,14 @@ import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.infra.reasoning.ReasoningRouter;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
-import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
-import com.byteq.ai.ragstudio.rag.core.mcp.McpToolExecutor;
-import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
-import com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateLoader;
-import com.byteq.ai.ragstudio.rag.core.prompt.PromptTemplateUtils;
-import com.byteq.ai.ragstudio.rag.core.retrieve.RetrievalEngine;
+import com.byteq.ai.ragstudio.rag.core.harness.context.AgentContext;
+import com.byteq.ai.ragstudio.rag.core.harness.context.DynamicContextMiddleware;
+import com.byteq.ai.ragstudio.rag.core.harness.prompt.SystemPromptAssembler;
+import com.byteq.ai.ragstudio.rag.core.harness.step.AgentStep;
+import com.byteq.ai.ragstudio.rag.core.harness.stream.ThinkTagStreamFilter;
+import com.byteq.ai.ragstudio.rag.core.harness.tool.ToolAssemblyContext;
+import com.byteq.ai.ragstudio.rag.core.harness.tool.ToolRegistryAssembler;
 import com.byteq.ai.ragstudio.rag.core.skill.SandboxExecutor;
-import com.byteq.ai.ragstudio.rag.core.skill.SkillDefinition;
-import com.byteq.ai.ragstudio.rag.core.skill.SkillLoader;
-import com.byteq.ai.ragstudio.rag.core.skill.SkillTool;
-import com.byteq.ai.ragstudio.rag.core.skill.ToolReaderTool;
-import com.byteq.ai.ragstudio.rag.core.skill.WebSearchTool;
-import com.byteq.ai.ragstudio.rag.core.tool.Tool;
-import com.byteq.ai.ragstudio.rag.core.tool.ToolNameUtil;
 import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
 import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
@@ -96,17 +90,6 @@ import java.util.regex.Pattern;
 @Component
 public class AgentScopeReActExecutor {
 
-    private static final String REACT_SYSTEM_PROMPT_PATH = "prompt/react-system-agentscope.st";
-    private static final String AGENT_REMINDER_PATH = "prompt/agent-reminder.st";
-
-    private static final String NO_TOOLS_TEXT = "当前没有可用工具。";
-    private static final String NO_KB_TEXT = "（无预检索知识库内容）";
-    private static final String KB_IRRELEVANT_NOTE =
-            "> ⚠️ 注意：用户问题经判断与所选知识库**不相关**，已跳过知识库检索。请不要尝试使用 rag_search 工具，"
-            + "也不要输出任何 [^chunk_{id}] 引用标记。";
-    private static final String SEARCH_PRIORITY_WITH_RAG = "先 `rag_search`，不够再 `web-search` 或其他";
-    private static final String SEARCH_PRIORITY_WITHOUT_RAG = "使用可用工具搜索相关数据";
-
     private static final String CANCEL_MARKER = "任务已被用户取消";
 
     private static final String TRACE_STATUS_RUNNING = TraceStatus.RUNNING.name();
@@ -166,11 +149,8 @@ public class AgentScopeReActExecutor {
     private final ModelSelector selector;
     private final DefaultModelService defaultModelService;
     private final ReasoningRouter reasoningRouter;
-    private final RetrievalEngine retrievalEngine;
-    private final SearchChannelProperties searchProperties;
-    private final McpToolRegistry mcpToolRegistry;
-    private final SkillLoader skillLoader;
-    private final PromptTemplateLoader templateLoader;
+    private final ToolRegistryAssembler toolRegistryAssembler;
+    private final SystemPromptAssembler systemPromptAssembler;
     private final StreamTaskManager taskManager;
     private final RagTraceRecordService traceRecordService;
     private final RagTraceProperties traceProperties;
@@ -181,11 +161,8 @@ public class AgentScopeReActExecutor {
             ModelSelector selector,
             DefaultModelService defaultModelService,
             ReasoningRouter reasoningRouter,
-            RetrievalEngine retrievalEngine,
-            SearchChannelProperties searchProperties,
-            McpToolRegistry mcpToolRegistry,
-            SkillLoader skillLoader,
-            PromptTemplateLoader templateLoader,
+            ToolRegistryAssembler toolRegistryAssembler,
+            SystemPromptAssembler systemPromptAssembler,
             StreamTaskManager taskManager,
             RagTraceRecordService traceRecordService,
             RagTraceProperties traceProperties,
@@ -194,11 +171,8 @@ public class AgentScopeReActExecutor {
         this.selector = selector;
         this.defaultModelService = defaultModelService;
         this.reasoningRouter = reasoningRouter;
-        this.retrievalEngine = retrievalEngine;
-        this.searchProperties = searchProperties;
-        this.mcpToolRegistry = mcpToolRegistry;
-        this.skillLoader = skillLoader;
-        this.templateLoader = templateLoader;
+        this.toolRegistryAssembler = toolRegistryAssembler;
+        this.systemPromptAssembler = systemPromptAssembler;
         this.taskManager = taskManager;
         this.traceRecordService = traceRecordService;
         this.traceProperties = traceProperties;
@@ -236,8 +210,6 @@ public class AgentScopeReActExecutor {
         }
 
         RunState state = new RunState(taskId, ctx);
-        // 标记 Agent 循环开始时间（供总超时 watchdog 与后续统计使用）
-        ctx.markStart();
         // 捕获当前链路的 traceId 与父节点（Agent循环）ID：
         // AgentScope 事件回调在独立线程执行，ThreadLocal 不传递，需在启动线程快照
         state.traceId = RagTraceContext.getTraceId();
@@ -250,12 +222,19 @@ public class AgentScopeReActExecutor {
             Model model = modelFactory.buildChatModel(primary);
             Model fallbackModel = fallback != null ? modelFactory.buildChatModel(fallback) : null;
 
-            // 2. 构建工具集
-            Toolkit toolkit = buildToolkit(ctx, state, sandboxExecutor, sandboxEnabled,
-                    sandboxNetworkEnabled, allowedCommandPrefixes);
+            // 2. 构建工具集（Harness · 工具子模块统一组装：内置 + MCP + SKILL + 扩展）
+            ToolAssemblyContext assembly = new ToolAssemblyContext();
+            // 引用溯源回调：检索 Chunk 收集 + 引用编号起始偏移（与旧逻辑一致）
+            assembly.setChunksConsumer(chunks -> state.retrievedChunks.addAll(chunks));
+            assembly.setCitationStartIndexSupplier(() -> state.retrievedChunks.size());
+            assembly.setResultConsumer(result -> onToolResult(result, state));
+            Toolkit toolkit = toolRegistryAssembler.assemble(ctx, assembly, sandboxExecutor,
+                    sandboxEnabled, sandboxNetworkEnabled, allowedCommandPrefixes);
+            state.toolNames.addAll(assembly.toolNamesSnapshot());
+            state.toolNameMapping.putAll(assembly.getToolNameMapping());
 
-            // 3. 构建 System Prompt（含目标摘要、历史摘要、前置指令——AgentScope 输入不允许 SYSTEM 消息）
-            String sysPrompt = buildSystemPrompt(ctx, state.toolNames);
+            // 3. 构建 System Prompt（Harness · 提示词子模块；动态块由中间件每轮追加）
+            String sysPrompt = systemPromptAssembler.assemble(ctx, state.toolNames);
 
             // 4. 构建 ReActAgent
             ReActAgent agent = ReActAgent.builder()
@@ -270,6 +249,9 @@ public class AgentScopeReActExecutor {
                             .timeout(Duration.ofMillis(ctx.getTimeoutMs()))
                             .build())
                     .defaultSessionId(taskId)
+                    // Harness · 动态上下文中间件：每轮重建 system message，
+                    // 使工具在上一轮失效的上下文块（如工作流候选）不再进入后续模型调用
+                    .middleware(new DynamicContextMiddleware(ctx.getDynamicContexts()))
                     .build();
 
             // 5. 构建消息列表并订阅事件流
@@ -824,103 +806,7 @@ public class AgentScopeReActExecutor {
         return entry;
     }
 
-    // ==================== 工具集构建 ====================
-
-    private Toolkit buildToolkit(AgentContext ctx, RunState state, SandboxExecutor sandboxExecutor,
-                                 boolean sandboxEnabled, boolean sandboxNetworkEnabled,
-                                 List<String> allowedCommandPrefixes) {
-        Toolkit toolkit = new Toolkit();
-        List<String> toolNames = new ArrayList<>();
-
-        // rag_search（引用溯源：chunks 与上下文 [^chunk_N] 编号按同一顺序追加）
-        RagSearchTool ragTool = new RagSearchTool(retrievalEngine, searchProperties,
-                ctx.getKnowledgeBaseIds(), ctx.getKbSummaryText(),
-                ctx.getQuestion(), ctx.getRewrittenQuery(), ctx.getSubQuestions());
-        ragTool.setChunksConsumer(chunks -> state.retrievedChunks.addAll(chunks));
-        ragTool.setCitationStartIndexSupplier(() -> state.retrievedChunks.size());
-        register(toolkit, toolNames, ragTool, state);
-
-        // 内置 time_now
-        register(toolkit, toolNames, new TimeTool(), state);
-
-        // MCP 工具（全部注册，运行时由模型自主选择）
-        for (McpToolExecutor executor : mcpToolRegistry.listAllExecutors()) {
-            register(toolkit, toolNames, new McpToolAdapter(executor), state);
-        }
-
-        // tool_reader：运行时发现 MCP + SKILL 工具（展示规范化名，与模型可见名称一致）
-        register(toolkit, toolNames,
-                new ToolReaderTool(skillLoader, mcpToolRegistry, state.toolNameMapping), state);
-
-        // SKILL 工具（仅注册有执行配置的技能；纯知识型技能通过 tool_reader 激活）
-        List<SkillDefinition> skills = skillLoader.getAllSkills();
-        int executableSkills = 0;
-        for (SkillDefinition def : skills) {
-            if (!def.isExecutable()) {
-                log.debug("SKILL [{}] 为纯知识型技能，不注册为可调用工具", def.getName());
-                continue;
-            }
-            executableSkills++;
-            SkillTool skillTool = new SkillTool(def, sandboxExecutor,
-                    sandboxEnabled, sandboxNetworkEnabled, allowedCommandPrefixes);
-            // 网络搜索技能包装为引用溯源工具：结果与知识库 Chunk 共用 [^chunk_N] 编号进入 citations
-            Tool tool = isWebSearchSkill(def)
-                    ? new WebSearchTool(skillTool,
-                            chunks -> state.retrievedChunks.addAll(chunks),
-                            () -> state.retrievedChunks.size())
-                    : skillTool;
-            register(toolkit, toolNames, tool, state);
-        }
-
-        state.toolNames.addAll(toolNames);
-        log.info("AgentScope 工具注册: MCP={}, SKILL={}(可执行 {})，内置={}, 总计={}",
-                mcpToolRegistry.size(), skills.size(), executableSkills, 3, toolNames.size());
-        return toolkit;
-    }
-
-    /** 是否为网络搜索类 SKILL（结果接入 WEB 引用溯源） */
-    private boolean isWebSearchSkill(SkillDefinition def) {
-        return "web-search".equalsIgnoreCase(def.getName());
-    }
-
-    private void register(Toolkit toolkit, List<String> toolNames, Tool tool, RunState state) {
-        try {
-            ProjectToolAdapter adapter = new ProjectToolAdapter(tool, result -> onToolResult(result, state));
-            String finalName = resolveToolName(tool.name(), state);
-            adapter.setExposedName(finalName);
-            toolkit.registerTool(adapter);
-            toolNames.add(finalName);
-        } catch (Exception e) {
-            log.warn("工具 [{}] 注册失败，跳过: {}", tool.name(), e.getMessage());
-        }
-    }
-
-    /**
-     * 规范化工具名并消解碰撞：
-     * DeepSeek 等厂商严格要求函数名匹配 ^[a-zA-Z0-9_-]+$ 且 ≤64 字符，
-     * MCP/SKILL 工具名可能含中文、点号、冒号等非法字符，直接透传会 400；
-     * 不同原始名清洗后可能重名（如 a.b 与 a-b 均变为 a_b），追加数字后缀消解。
-     * 原始名 → 规范化名 的映射记录在 RunState，供 tool_reader 等展示一致性使用。
-     */
-    private String resolveToolName(String rawName, RunState state) {
-        String base = ProjectToolAdapter.sanitizeToolName(rawName);
-        String finalName = base;
-        Set<String> usedNames = state.usedToolNames;
-        if (!usedNames.add(base)) {
-            int counter = 1;
-            while (true) {
-                String suffix = "_" + (counter++);
-                int keep = Math.max(1, ToolNameUtil.MAX_TOOL_NAME_LENGTH - suffix.length());
-                finalName = base.length() > keep ? base.substring(0, keep) : base;
-                finalName += suffix;
-                if (usedNames.add(finalName)) {
-                    break;
-                }
-            }
-        }
-        state.toolNameMapping.put(rawName, finalName);
-        return finalName;
-    }
+    // ==================== 工具结果回调 ====================
 
     private void onToolResult(ToolResult result, RunState state) {
         if (CollUtil.isNotEmpty(result.getS3ImageUrls())) {
@@ -930,76 +816,8 @@ public class AgentScopeReActExecutor {
 
     // ==================== System Prompt 与消息构建 ====================
 
-    /**
-     * 构建 System Prompt：基础模板 + 对话目标摘要 + 历史摘要（SYSTEM 消息）+ 前置指令。
-     * AgentScope ReActAgent 不允许输入 SYSTEM 角色消息，全部系统内容合并到 sysPrompt。
-     */
-    private String buildSystemPrompt(AgentContext ctx, List<String> toolNames) {
-        String template = templateLoader.load(REACT_SYSTEM_PROMPT_PATH);
-
-        String toolDefs;
-        if (CollUtil.isEmpty(toolNames)) {
-            toolDefs = NO_TOOLS_TEXT;
-        } else {
-            StringBuilder sb = new StringBuilder();
-            sb.append("当前可用工具：").append(String.join("、", toolNames)).append("。");
-            toolDefs = sb.toString();
-        }
-
-        String kbContext = StrUtil.isNotBlank(ctx.getKbContext()) ? ctx.getKbContext() : NO_KB_TEXT;
-        boolean hasRagSearch = toolNames.contains("rag_search");
-        // 「已选知识库且相关，必须强制检索」的强指令统一由 agent-reminder 的 kb_forced section 下发
-        //（可在后管「提示词管理」页编辑），此处只负责"不相关"场景的负向提示，避免同一约束双份注入
-        String relevanceNote = (!ctx.isKbRelevant() && StrUtil.isBlank(ctx.getKbContext()))
-                ? KB_IRRELEVANT_NOTE : "";
-        String searchPriorityRule = hasRagSearch ? SEARCH_PRIORITY_WITH_RAG : SEARCH_PRIORITY_WITHOUT_RAG;
-
-        String filled = PromptTemplateUtils.fillSlots(template, Map.of(
-                "tool_definitions", toolDefs,
-                "kb_context", kbContext,
-                "kb_relevance_note", relevanceNote,
-                "search_priority_rule", searchPriorityRule
-        ));
-        String sysPrompt = PromptTemplateUtils.cleanupPrompt(filled);
-
-        // 1. 对话目标摘要
-        String goalSummary = buildGoalSummary(ctx);
-        if (goalSummary != null) {
-            sysPrompt = sysPrompt + "\n\n" + goalSummary;
-        }
-
-        // 2. 对话历史中的 SYSTEM 消息（摘要等）合并进系统提示词
-        if (CollUtil.isNotEmpty(ctx.getHistory())) {
-            StringBuilder extras = new StringBuilder();
-            for (ChatMessage msg : ctx.getHistory()) {
-                if (msg.getRole() == ChatMessage.Role.SYSTEM && StrUtil.isNotBlank(msg.getContent())) {
-                    extras.append("\n\n").append(msg.getContent());
-                }
-            }
-            if (extras.length() > 0) {
-                sysPrompt = sysPrompt + extras;
-            }
-        }
-
-        // 3. 前置指令（多轮 / 历史图片 / 强制检索）
-        StringBuilder reminder = new StringBuilder();
-        if (CollUtil.isNotEmpty(ctx.getHistory()) && ctx.getHistory().size() >= 4) {
-            reminder.append("\n\n").append(templateLoader.loadSection(AGENT_REMINDER_PATH, "multi_turn"));
-        }
-        boolean hasHistoryImage = ctx.getHistory() != null && ctx.getHistory().stream()
-                .anyMatch(m -> m.getImageUrls() != null && !m.getImageUrls().isEmpty());
-        if (hasHistoryImage) {
-            reminder.append("\n\n").append(templateLoader.loadSection(AGENT_REMINDER_PATH, "image_history"));
-        }
-        if (ctx.isKbRelevant() && hasRagSearch) {
-            reminder.append("\n\n").append(templateLoader.loadSection(AGENT_REMINDER_PATH, "kb_forced"));
-        }
-        if (reminder.length() > 0) {
-            sysPrompt = sysPrompt + "\n\n" + reminder;
-        }
-
-        return sysPrompt;
-    }
+    // 说明：System Prompt 的组装已迁至 Harness 的 SystemPromptAssembler（rag/core/harness/prompt），
+    // 工具注册已迁至 ToolRegistryAssembler（rag/core/harness/tool），此处仅保留消息列表构建。
 
     /**
      * 构建消息列表：历史（USER / ASSISTANT，SYSTEM 已并入 sysPrompt）+ 用户问题
@@ -1026,43 +844,6 @@ public class AgentScopeReActExecutor {
         messages.add(userMsg);
 
         return modelFactory.convertMessages(ChatRequest.builder().messages(messages).build());
-    }
-
-    private String buildGoalSummary(AgentContext ctx) {
-        if (CollUtil.isEmpty(ctx.getHistory())) {
-            return null;
-        }
-        List<String> userQuestions = new ArrayList<>();
-        List<String> imageDescriptions = new ArrayList<>();
-        for (int i = 0; i < ctx.getHistory().size(); i++) {
-            ChatMessage msg = ctx.getHistory().get(i);
-            boolean hasImage = msg.getImageUrls() != null && !msg.getImageUrls().isEmpty();
-            if (msg.getRole() == ChatMessage.Role.USER && StrUtil.isNotBlank(msg.getContent())) {
-                String content = msg.getContent().trim();
-                if (!content.startsWith("Observation:") && !content.startsWith("{\"query\"")
-                        && !content.contains("[^chunk_")) {
-                    userQuestions.add(content);
-                    if (hasImage && i + 1 < ctx.getHistory().size()) {
-                        ChatMessage next = ctx.getHistory().get(i + 1);
-                        if (next.getRole() == ChatMessage.Role.ASSISTANT && StrUtil.isNotBlank(next.getContent())) {
-                            imageDescriptions.add(next.getContent().trim());
-                        }
-                    }
-                }
-            }
-        }
-        if (userQuestions.isEmpty() && imageDescriptions.isEmpty()) {
-            return null;
-        }
-        String previousQuestions = String.join(" → ", userQuestions);
-        String imageNote = "";
-        if (!imageDescriptions.isEmpty()) {
-            imageNote = "（用户之前上传了图片，分析结果：" + String.join("；", imageDescriptions) + "）。";
-        }
-        return templateLoader.renderSection(AGENT_REMINDER_PATH, "goal_summary", Map.of(
-                "previous_questions", previousQuestions,
-                "image_note", imageNote
-        ));
     }
 
     // ==================== 模型选择与生成参数 ====================
@@ -1272,8 +1053,6 @@ public class AgentScopeReActExecutor {
         /** 手动节点开始时间：nodeId → startMs */
         final Map<String, Long> traceNodeStartTimes = new java.util.concurrent.ConcurrentHashMap<>();
         final List<String> toolNames = new ArrayList<>();
-        /** 已注册的规范化工具名集合（碰撞消解用） */
-        final Set<String> usedToolNames = java.util.concurrent.ConcurrentHashMap.newKeySet();
         /** 原始工具名 → 规范化名（供 tool_reader 等与模型可见名称保持一致） */
         final Map<String, String> toolNameMapping = new java.util.concurrent.ConcurrentHashMap<>();
         final List<RetrievedChunk> retrievedChunks = java.util.Collections.synchronizedList(new ArrayList<>());

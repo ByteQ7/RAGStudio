@@ -34,7 +34,7 @@ public record AgentStepPayload(
      * 从内部 AgentStep 模型创建 SSE 载荷
      */
     public static AgentStepPayload from(
-            com.byteq.ai.ragstudio.rag.core.agent.AgentStep step) {
+            com.byteq.ai.ragstudio.rag.core.harness.step.AgentStep step) {
         return new AgentStepPayload(
                 step.getIteration(),
                 step.getAction().name(),

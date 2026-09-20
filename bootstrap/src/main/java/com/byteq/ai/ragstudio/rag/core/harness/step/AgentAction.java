@@ -1,4 +1,4 @@
-package com.byteq.ai.ragstudio.rag.core.agent;
+package com.byteq.ai.ragstudio.rag.core.harness.step;
 
 /**
  * Agent 动作类型枚举

@@ -16,7 +16,7 @@ import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO;
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.AISettings;
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.DefaultSettings;
 import com.byteq.ai.ragstudio.rag.controller.vo.SystemSettingsVO.MemorySettings;
-import com.byteq.ai.ragstudio.rag.core.agent.ToolRetriever;
+import com.byteq.ai.ragstudio.rag.core.harness.tool.ToolRetriever;
 import cn.dev33.satoken.annotation.SaCheckRole;
 import com.byteq.ai.ragstudio.user.constant.RoleConstant;
 import lombok.RequiredArgsConstructor;

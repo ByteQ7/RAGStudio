@@ -7,9 +7,12 @@ import com.byteq.ai.ragstudio.framework.convention.ChatMessage;
 import com.byteq.ai.ragstudio.framework.trace.RagTraceContext;
 import com.byteq.ai.ragstudio.framework.trace.TraceStatus;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
-import com.byteq.ai.ragstudio.rag.core.agent.AgentContext;
+import com.byteq.ai.ragstudio.rag.core.harness.context.AgentContext;
 import com.byteq.ai.ragstudio.rag.core.agent.AgentScopeReActExecutor;
 import com.byteq.ai.ragstudio.rag.core.agent.KbEmbeddingSelector;
+import com.byteq.ai.ragstudio.rag.core.harness.context.ContextBlock;
+import com.byteq.ai.ragstudio.rag.core.harness.context.ContextBlockIds;
+import com.byteq.ai.ragstudio.rag.core.harness.context.DynamicContextRegistry;
 import com.byteq.ai.ragstudio.rag.core.rewrite.QueryRewriteService;
 import com.byteq.ai.ragstudio.rag.core.rewrite.RewriteResult;
 import com.byteq.ai.ragstudio.rag.core.retrieve.EntityIdQueryDetector;
@@ -20,6 +23,8 @@ import com.byteq.ai.ragstudio.knowledge.dao.mapper.KnowledgeBaseMapper;
 import com.byteq.ai.ragstudio.rag.dao.entity.RagTraceNodeDO;
 import com.byteq.ai.ragstudio.rag.service.RagTraceRecordService;
 import com.byteq.ai.ragstudio.rag.service.handler.StreamTaskManager;
+import com.byteq.ai.ragstudio.rag.workflow.WorkflowRecallService;
+import com.byteq.ai.ragstudio.rag.workflow.WorkflowRenderer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -154,6 +159,9 @@ public class StreamChatPipeline {
 
     /** 知识库语义选择器（嵌入模型，多模态），按用户问题自动选择相关知识库 */
     private final KbEmbeddingSelector kbEmbeddingSelector;
+
+    /** 工作流语义召回服务（低精度 Embedding + 低阈值，命中则注入候选清单） */
+    private final WorkflowRecallService workflowRecallService;
 
     /** HTTP 模型工厂，用于将 S3 图片 URL 转为 data URI（多模态选库用） */
     private final com.byteq.ai.ragstudio.infra.http.HttpModelFactory httpModelFactory;
@@ -335,25 +343,36 @@ public class StreamChatPipeline {
             kbSummaryText = "";
         }
 
-        // 4. 构建 AgentContext（迭代次数与总超时来自 rag.agent.* 配置，见 application.yaml）
-        AgentContext agentCtx = new AgentContext(
-                userOriginalQuestion,
-                ctx.getHistory(),
-                "",
-                kbRelevant,
-                List.of(),
-                agentMaxIterations,
-                agentTimeoutMs,
-                ctx.getImageUrls(),
-                ctx.getDeepThinkingLevel(),
-                ctx.getConversationId(),
-                ctx.getUserId(),
-                finalKbIds,
-                kbSummaryText,
-                effectiveRewrittenQuestion,
+        // 4. 工作流召回（Harness · 动态上下文）：低阈值语义匹配，命中则把候选名称+描述注入 system prompt；
+        //    Agent 选中某个工作流后由 workflow_use 工具失效该块，后续迭代不再注入其余候选
+        DynamicContextRegistry dynamicContexts = new DynamicContextRegistry();
+        traceNode("工作流召回", "WORKFLOW_RECALL", () -> {
+            List<WorkflowRenderer.Card> candidates = workflowRecallService.recall(userOriginalQuestion);
+            String catalog = WorkflowRenderer.renderCandidateList(candidates);
+            if (StrUtil.isNotBlank(catalog)) {
+                dynamicContexts.register(ContextBlock.of(ContextBlockIds.WORKFLOW_CANDIDATES, catalog));
+            }
+            return null;
+        });
+
+        // 5. 构建 AgentContext（迭代次数与总超时来自 rag.agent.* 配置，见 application.yaml）
+        AgentContext agentCtx = AgentContext.builder()
+                .question(userOriginalQuestion)
+                .history(ctx.getHistory())
+                .kbRelevant(kbRelevant)
+                .maxIterations(agentMaxIterations)
+                .timeoutMs(agentTimeoutMs)
+                .imageUrls(ctx.getImageUrls())
+                .thinkingLevel(ctx.getDeepThinkingLevel())
+                .conversationId(ctx.getConversationId())
+                .userId(ctx.getUserId())
+                .knowledgeBaseIds(finalKbIds)
+                .kbSummaryText(kbSummaryText)
+                .rewrittenQuery(effectiveRewrittenQuestion)
                 // 复用改写阶段拆分的子问题：多问句查询按子问题并行召回，避免重复支付改写成本
-                rewriteResult.subQuestions()
-        );
+                .subQuestions(rewriteResult.subQuestions())
+                .dynamicContexts(dynamicContexts)
+                .build();
 
         // 5. 执行 AgentScope ReActAgent（Task 驱动，SSE 事件透传）
         // join 等待 Agent 事件流完全结束：trace 节点记录完整 Agent 时长，

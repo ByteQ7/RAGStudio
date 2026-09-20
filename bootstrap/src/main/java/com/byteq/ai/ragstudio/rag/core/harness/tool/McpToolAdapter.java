@@ -1,4 +1,4 @@
-package com.byteq.ai.ragstudio.rag.core.agent;
+package com.byteq.ai.ragstudio.rag.core.harness.tool;
 
 import cn.hutool.core.collection.CollUtil;
 import com.byteq.ai.ragstudio.rag.core.tool.Tool;

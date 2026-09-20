@@ -1,4 +1,4 @@
-package com.byteq.ai.ragstudio.rag.core.agent;
+package com.byteq.ai.ragstudio.rag.core.harness.stream;
 
 import java.util.function.Consumer;
 

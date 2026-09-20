@@ -571,6 +571,7 @@ CREATE TABLE t_ingestion_pipeline (
     id          VARCHAR(64)   NOT NULL PRIMARY KEY,
     name        VARCHAR(100) NOT NULL,
     description TEXT,
+    graph_json  TEXT,
     created_by  VARCHAR(64) DEFAULT '',
     updated_by  VARCHAR(64) DEFAULT '',
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -582,6 +583,7 @@ COMMENT ON TABLE t_ingestion_pipeline IS '摄取流水线表';
 COMMENT ON COLUMN t_ingestion_pipeline.id IS 'ID';
 COMMENT ON COLUMN t_ingestion_pipeline.name IS '流水线名称';
 COMMENT ON COLUMN t_ingestion_pipeline.description IS '流水线描述';
+COMMENT ON COLUMN t_ingestion_pipeline.graph_json IS '画布图 JSON（编辑态事实源，运行态节点由编译产生）';
 COMMENT ON COLUMN t_ingestion_pipeline.created_by IS '创建人';
 COMMENT ON COLUMN t_ingestion_pipeline.updated_by IS '更新人';
 COMMENT ON COLUMN t_ingestion_pipeline.create_time IS '创建时间';
@@ -598,6 +600,7 @@ CREATE TABLE t_ingestion_pipeline_node (
     next_node_id   VARCHAR(64),
     settings_json  JSONB,
     condition_json JSONB,
+    branches_json  TEXT,
     created_by     VARCHAR(64) DEFAULT '',
     updated_by     VARCHAR(64) DEFAULT '',
     create_time    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -608,6 +611,7 @@ CREATE TABLE t_ingestion_pipeline_node (
 CREATE INDEX idx_ingestion_pipeline_node_pipeline ON t_ingestion_pipeline_node (pipeline_id);
 COMMENT ON TABLE t_ingestion_pipeline_node IS '摄取流水线节点表';
 COMMENT ON COLUMN t_ingestion_pipeline_node.id IS 'ID';
+COMMENT ON COLUMN t_ingestion_pipeline_node.branches_json IS '排他分支 JSON（画布编译产物，可空）';
 COMMENT ON COLUMN t_ingestion_pipeline_node.pipeline_id IS '流水线ID';
 COMMENT ON COLUMN t_ingestion_pipeline_node.node_id IS '节点标识(同一流水线内唯一)';
 COMMENT ON COLUMN t_ingestion_pipeline_node.node_type IS '节点类型';
@@ -1496,3 +1500,28 @@ CREATE TABLE IF NOT EXISTS t_skill_blob (
     content     BYTEA       NOT NULL,
     create_time TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============================================
+-- 工作流（Agent 从对话中沉淀的可复用流程，见 docs/workflow-harness-design.md）
+-- 单表模型：工作流为结构化文本（steps JSON），每次编辑直接覆盖并保留 change_log；
+-- embedding 为"名称+描述"的向量缓存（JSON 数组），供低阈值语义召回使用
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS t_workflow (
+    id            BIGSERIAL    PRIMARY KEY,
+    name          VARCHAR(64)  NOT NULL UNIQUE,
+    title         VARCHAR(128) NOT NULL,
+    description   VARCHAR(1024) NOT NULL,
+    steps         TEXT         NOT NULL,
+    graph_json    TEXT,
+    source        VARCHAR(16)  NOT NULL DEFAULT 'EXTRACTED',
+    enabled       BOOLEAN      NOT NULL DEFAULT TRUE,
+    embedding     TEXT,
+    embedding_model VARCHAR(128),
+    embedding_text_hash VARCHAR(64),
+    change_log    VARCHAR(512),
+    updated_by    VARCHAR(64),
+    create_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_enabled ON t_workflow (enabled);
