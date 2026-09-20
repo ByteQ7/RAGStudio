@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byteq.ai.ragstudio.ingestion.controller.request.IngestionPipelineCreateRequest;
 import com.byteq.ai.ragstudio.ingestion.controller.request.IngestionPipelineUpdateRequest;
 import com.byteq.ai.ragstudio.ingestion.controller.vo.IngestionPipelineVO;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraph;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraphValidator;
 import com.byteq.ai.ragstudio.framework.convention.Result;
 import com.byteq.ai.ragstudio.framework.web.Results;
 import com.byteq.ai.ragstudio.ingestion.service.IngestionPipelineService;
@@ -48,6 +50,20 @@ public class IngestionPipelineController {
     @PostMapping("/ingestion/pipelines")
     public Result<IngestionPipelineVO> create(@RequestBody IngestionPipelineCreateRequest request) {
         return Results.success(pipelineService.create(request));
+    }
+
+    /**
+     * 仅校验画布图（画布"校验"按钮），返回 ERROR/WARN 列表，不落库
+     */
+    @PostMapping("/ingestion/pipelines/validate")
+    public Result<IngestionGraphValidator.ValidationResult> validateGraph(@RequestBody GraphRequest request) {
+        return Results.success(pipelineService.validateGraph(request.getGraph()));
+    }
+
+    /** 图校验请求体 */
+    @lombok.Data
+    public static class GraphRequest {
+        private IngestionGraph graph;
     }
 
     /**

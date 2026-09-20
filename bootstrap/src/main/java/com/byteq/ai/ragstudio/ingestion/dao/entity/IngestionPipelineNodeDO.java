@@ -63,6 +63,11 @@ public class IngestionPipelineNodeDO {
     private String conditionJson;
 
     /**
+     * 排他分支 JSON（画布编译产物，可空）
+     */
+    private String branchesJson;
+
+    /**
      * 创建者
      */
     private String createdBy;

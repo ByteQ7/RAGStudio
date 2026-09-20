@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byteq.ai.ragstudio.ingestion.controller.request.IngestionPipelineCreateRequest;
 import com.byteq.ai.ragstudio.ingestion.controller.request.IngestionPipelineUpdateRequest;
 import com.byteq.ai.ragstudio.ingestion.controller.vo.IngestionPipelineVO;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraph;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraphValidator;
 import com.byteq.ai.ragstudio.ingestion.domain.pipeline.PipelineDefinition;
 
 /**
@@ -72,6 +74,14 @@ public interface IngestionPipelineService {
      * @param pipelineId 要删除的流水线 ID
      */
     void delete(String pipelineId);
+
+    /**
+     * 仅校验画布图（画布"校验"按钮），不落库
+     *
+     * @param graph 画布图
+     * @return 校验结果（ERROR/WARN 列表）
+     */
+    IngestionGraphValidator.ValidationResult validateGraph(IngestionGraph graph);
 
     /**
      * 获取流水线定义

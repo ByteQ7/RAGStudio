@@ -1,5 +1,6 @@
 package com.byteq.ai.ragstudio.ingestion.controller.vo;
 
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraph;
 import lombok.Data;
 
 import java.util.Date;
@@ -35,6 +36,11 @@ public class IngestionPipelineVO {
      * 管道节点列表
      */
     private List<IngestionPipelineNodeVO> nodes;
+
+    /**
+     * 画布图（graph_json 为空时由节点列表自动生成，保证可直接画布编辑）
+     */
+    private IngestionGraph graph;
 
     /**
      * 创建时间

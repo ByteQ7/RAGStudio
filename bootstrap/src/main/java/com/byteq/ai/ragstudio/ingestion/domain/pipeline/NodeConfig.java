@@ -9,6 +9,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 流水线节点配置实体类
  * <p>
@@ -51,9 +53,36 @@ public class NodeConfig {
     private JsonNode condition;
 
     /**
-     * 下一个节点 ID
-     * 用于定义流水线中节点的执行顺序，指向当前节点的后继节点。
-     * 如果为空，表示当前节点是流水线的末端节点。
+     * 下一个节点 ID（无条件后继）
+     * <p>
+     * 无分支时指向唯一的后继节点；存在分支时作为"兜底分支"（所有条件均不命中时走这里），
+     * 为空表示所有条件不命中时流水线正常结束。
      */
     private String nextNodeId;
+
+    /**
+     * 条件分支列表（排他分支，可空）
+     * <p>
+     * 执行完当前节点后按顺序求值：首个命中的分支作为后继；
+     * 全部不命中则走 {@link #nextNodeId}（兜底），为空则结束。
+     */
+    private List<Branch> branches;
+
+    /**
+     * 单个条件分支
+     * <p>
+     * 由画布编译产生：条件挂在连线上，{@code condition} 为空表示兜底分支。
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class Branch {
+
+        /** 分支条件（JSON，格式见 {@link ConditionEvaluator}）；null = 兜底分支 */
+        private JsonNode condition;
+
+        /** 命中后的后继节点 ID */
+        private String nextNodeId;
+    }
 }

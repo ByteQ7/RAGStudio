@@ -68,6 +68,10 @@ public class ConditionEvaluator {
             if (condition.has("field")) {
                 return evalRule(context, condition);
             }
+            // 高级模式：{ expr: "SpEL 表达式" }
+            if (condition.has("expr")) {
+                return evalSpel(context, condition.path("expr").asText(""));
+            }
         }
         return true;
     }
@@ -105,11 +109,32 @@ public class ConditionEvaluator {
             log.warn("条件规则缺少 field 字段，默认拒绝: node={}", node);
             return false;
         }
-        String operator = node.path("operator").asText("eq");
+        // operator 为规范字段；op 为旧前端产物的兼容别名
+        String operator = node.has("operator")
+                ? node.path("operator").asText("eq")
+                : node.path("op").asText("eq");
         JsonNode valueNode = node.get("value");
-        Object left = readField(context, field);
+        Object left = readField(context, normalizeFieldPath(field));
         Object right = valueNode == null ? null : objectMapper.convertValue(valueNode, Object.class);
         return compare(left, right, operator);
+    }
+
+    /**
+     * 归一化字段路径：兼容旧前端使用的扁平名称（source_type/file_name/mime_type），
+     * 映射到 {@link IngestionContext} 的真实属性路径。
+     */
+    static String normalizeFieldPath(String field) {
+        if (!StringUtils.hasText(field)) {
+            return field;
+        }
+        String trimmed = field.trim();
+        return switch (trimmed) {
+            case "source_type" -> "source.type";
+            case "file_name" -> "source.fileName";
+            case "mime_type" -> "mimeType";
+            case "source_location" -> "source.location";
+            default -> trimmed;
+        };
     }
 
     // 通过 BeanWrapper 从上下文中读取指定路径的属性值
@@ -203,6 +228,10 @@ public class ConditionEvaluator {
     private Object normalize(Object value) {
         if (value instanceof String s) {
             return s.trim();
+        }
+        // 枚举按名称小写比较：使 SourceType.FILE 能与配置里的 "file" 匹配
+        if (value instanceof Enum<?> e) {
+            return e.name().toLowerCase();
         }
         return value;
     }

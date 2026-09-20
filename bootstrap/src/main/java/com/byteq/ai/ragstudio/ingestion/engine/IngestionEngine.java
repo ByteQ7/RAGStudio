@@ -178,41 +178,54 @@ public class IngestionEngine {
      *         如果检测到环或引用不存在的节点
      */
     private void validatePipeline(Map<String, NodeConfig> nodeConfigMap) {
-        Set<String> visited = new HashSet<>();
-
-        for (String nodeId : nodeConfigMap.keySet()) {
-            if (visited.contains(nodeId)) {
-                continue;
+        // 引用完整性 + 收集所有后继关系（nextNodeId + branches）
+        Map<String, List<String>> adjacency = new HashMap<>();
+        for (NodeConfig config : nodeConfigMap.values()) {
+            List<String> targets = new ArrayList<>();
+            if (StringUtils.hasText(config.getNextNodeId())) {
+                if (!nodeConfigMap.containsKey(config.getNextNodeId())) {
+                    throw new ClientException("找不到下一个节点: " + config.getNextNodeId()
+                            + "，被节点 " + config.getNodeId() + " 引用");
+                }
+                targets.add(config.getNextNodeId());
             }
-
-            Set<String> path = new HashSet<>();
-            String current = nodeId;
-
-            while (current != null) {
-                if (path.contains(current)) {
-                    throw new ClientException("流水线存在环: " + current);
-                }
-
-                path.add(current);
-                visited.add(current);
-
-                NodeConfig config = nodeConfigMap.get(current);
-                if (config == null) {
-                    log.warn("流水线验证：节点 {} 在配置中不存在，终止当前路径", current);
-                    break;
-                }
-
-                String nextId = config.getNextNodeId();
-                if (StringUtils.hasText(nextId)) {
-                    if (!nodeConfigMap.containsKey(nextId)) {
-                        throw new ClientException("找不到下一个节点: " + nextId + "，被节点 " + current + " 引用");
+            if (config.getBranches() != null) {
+                for (NodeConfig.Branch branch : config.getBranches()) {
+                    if (branch == null || !StringUtils.hasText(branch.getNextNodeId())) {
+                        continue;
                     }
-                    current = nextId;
-                } else {
-                    break;
+                    if (!nodeConfigMap.containsKey(branch.getNextNodeId())) {
+                        throw new ClientException("找不到分支节点: " + branch.getNextNodeId()
+                                + "，被节点 " + config.getNodeId() + " 的分支引用");
+                    }
+                    targets.add(branch.getNextNodeId());
                 }
+            }
+            adjacency.put(config.getNodeId(), targets);
+        }
+
+        // 环检测：DFS 三色标记（覆盖分支边）
+        Map<String, Integer> color = new HashMap<>(); // 0=未访问 1=访问中 2=已完成
+        for (String nodeId : nodeConfigMap.keySet()) {
+            if (color.getOrDefault(nodeId, 0) == 0) {
+                detectCycle(nodeId, adjacency, color);
             }
         }
+    }
+
+    /** DFS 环检测（三色标记）：发现回边即抛错 */
+    private void detectCycle(String nodeId, Map<String, List<String>> adjacency, Map<String, Integer> color) {
+        color.put(nodeId, 1);
+        for (String next : adjacency.getOrDefault(nodeId, List.of())) {
+            int state = color.getOrDefault(next, 0);
+            if (state == 1) {
+                throw new ClientException("流水线存在环: " + next);
+            }
+            if (state == 0) {
+                detectCycle(next, adjacency, color);
+            }
+        }
+        color.put(nodeId, 2);
     }
 
     /**
@@ -226,11 +239,19 @@ public class IngestionEngine {
      * @return 起始节点的 ID，如果没有找到则返回 null
      */
     private String findStartNode(Map<String, NodeConfig> nodeConfigMap) {
-        Set<String> referencedNodes = nodeConfigMap.values().stream()
-                .map(NodeConfig::getNextNodeId)
-                .filter(StringUtils::hasText)
-                .collect(Collectors.toSet());
-
+        Set<String> referencedNodes = new HashSet<>();
+        for (NodeConfig config : nodeConfigMap.values()) {
+            if (StringUtils.hasText(config.getNextNodeId())) {
+                referencedNodes.add(config.getNextNodeId());
+            }
+            if (config.getBranches() != null) {
+                for (NodeConfig.Branch branch : config.getBranches()) {
+                    if (branch != null && StringUtils.hasText(branch.getNextNodeId())) {
+                        referencedNodes.add(branch.getNextNodeId());
+                    }
+                }
+            }
+        }
         return nodeConfigMap.keySet().stream()
                 .filter(nodeId -> !referencedNodes.contains(nodeId))
                 .findFirst()
@@ -290,11 +311,42 @@ public class IngestionEngine {
                 break;
             }
 
-            // 移动到下一个节点
-            currentNodeId = config.getNextNodeId();
+            // 移动到下一个节点（优先排他分支，未命中走兜底 nextNodeId）
+            currentNodeId = resolveNextNode(config, context);
         }
 
         log.info("流水线执行完成，共执行 {} 个节点", executedCount);
+    }
+
+    /**
+     * 解析后继节点：排他分支
+     * <p>
+     * 按 branches 顺序求值，首个命中者作为后继；全部不命中时走 {@code nextNodeId}（兜底），
+     * 兜底为空则流水线正常结束。无 branches 时回退到旧的 {@code nextNodeId} 链式语义。
+     * </p>
+     */
+    private String resolveNextNode(NodeConfig config, IngestionContext context) {
+        List<NodeConfig.Branch> branches = config.getBranches();
+        if (branches == null || branches.isEmpty()) {
+            return config.getNextNodeId();
+        }
+        for (NodeConfig.Branch branch : branches) {
+            if (branch == null) {
+                continue;
+            }
+            if (branch.getCondition() == null || branch.getCondition().isNull()) {
+                continue;
+            }
+            if (conditionEvaluator.evaluate(context, branch.getCondition())) {
+                if (!StringUtils.hasText(branch.getNextNodeId())) {
+                    log.info("节点 {} 命中分支条件，流水线结束", config.getNodeId());
+                    return null;
+                }
+                log.info("节点 {} 命中分支条件，跳转到 {}", config.getNodeId(), branch.getNextNodeId());
+                return branch.getNextNodeId();
+            }
+        }
+        return config.getNextNodeId();
     }
 
     /**

@@ -20,6 +20,11 @@ import com.byteq.ai.ragstudio.ingestion.dao.mapper.IngestionPipelineNodeMapper;
 import com.byteq.ai.ragstudio.framework.context.UserContext;
 import com.byteq.ai.ragstudio.framework.exception.ClientException;
 import com.byteq.ai.ragstudio.ingestion.domain.enums.IngestionNodeType;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraph;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraphCompiler;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraphFactory;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraphJson;
+import com.byteq.ai.ragstudio.ingestion.domain.graph.IngestionGraphValidator;
 import com.byteq.ai.ragstudio.ingestion.domain.pipeline.NodeConfig;
 import com.byteq.ai.ragstudio.ingestion.domain.pipeline.PipelineDefinition;
 import com.byteq.ai.ragstudio.ingestion.service.IngestionPipelineService;
@@ -31,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 数据清洗流水线业务逻辑实现
@@ -72,7 +78,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         } catch (DuplicateKeyException dke) {
             throw new ClientException("流水线名称已存在");
         }
-        upsertNodes(pipeline.getId(), request.getNodes());
+        applyGraph(pipeline, request.getGraph(), request.getNodes());
         return toVO(pipeline, fetchNodes(pipeline.getId()));
     }
 
@@ -105,9 +111,7 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         pipeline.setUpdatedBy(UserContext.getUsername());
         pipelineMapper.updateById(pipeline);
 
-        if (request.getNodes() != null) {
-            upsertNodes(pipeline.getId(), request.getNodes());
-        }
+        applyGraph(pipeline, request.getGraph(), request.getNodes());
         return toVO(pipeline, fetchNodes(pipeline.getId()));
     }
 
@@ -165,6 +169,11 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
         nodeMapper.delete(qw);
     }
 
+    @Override
+    public IngestionGraphValidator.ValidationResult validateGraph(IngestionGraph graph) {
+        return IngestionGraphValidator.validate(graph);
+    }
+
     /**
      * 获取流水线完整定义（供引擎执行使用）
      * <p>
@@ -190,25 +199,63 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
                 .build();
     }
 
-    // 全量替换流水线的节点配置：先删除旧节点，再逐一插入新节点
-    private void upsertNodes(String pipelineId, List<IngestionPipelineNodeRequest> nodes) {
-        if (nodes == null || nodes.isEmpty()) {
+    /**
+     * 应用图/线性节点变更并持久化 graph_json
+     * <p>
+     * 优先级：graph 非空 → 校验 + 编译为运行节点；否则 nodes 非空 → 直接使用并生成线性图；
+     * 两者都为空（null）→ 不动节点。nodes 显式传空数组视为清空（修复旧实现空数组不清空的问题）。
+     * </p>
+     */
+    private void applyGraph(IngestionPipelineDO pipeline, IngestionGraph graph,
+                            List<IngestionPipelineNodeRequest> nodes) {
+        List<NodeConfig> configs;
+        String graphJson;
+        if (graph != null && !graph.isEmpty()) {
+            IngestionGraphValidator.ValidationResult validation = IngestionGraphValidator.validate(graph);
+            if (validation.hasError()) {
+                throw new ClientException("流水线图校验失败：" + String.join("；", validation.errors()));
+            }
+            configs = IngestionGraphCompiler.compile(graph);
+            graphJson = IngestionGraphJson.toJson(graph);
+        } else if (nodes != null) {
+            configs = nodes.stream()
+                    .filter(Objects::nonNull)
+                    .map(node -> NodeConfig.builder()
+                            .nodeId(node.getNodeId())
+                            .nodeType(normalizeNodeType(node.getNodeType()))
+                            .settings(node.getSettings())
+                            .condition(node.getCondition())
+                            .nextNodeId(node.getNextNodeId())
+                            .build())
+                    .toList();
+            graphJson = IngestionGraphJson.toJson(IngestionGraphFactory.fromNodes(configs));
+        } else {
             return;
         }
+
+        replaceNodes(pipeline.getId(), configs);
+        pipeline.setGraphJson(graphJson);
+        pipeline.setUpdatedBy(UserContext.getUsername());
+        pipelineMapper.updateById(pipeline);
+    }
+
+    // 全量替换流水线的运行节点：先删除旧节点，再逐一插入新节点（含分支）
+    private void replaceNodes(String pipelineId, List<NodeConfig> configs) {
         LambdaQueryWrapper<IngestionPipelineNodeDO> qw = new LambdaQueryWrapper<IngestionPipelineNodeDO>()
                 .eq(IngestionPipelineNodeDO::getPipelineId, pipelineId);
         nodeMapper.delete(qw);
-        for (IngestionPipelineNodeRequest node : nodes) {
-            if (node == null) {
+        for (NodeConfig config : configs) {
+            if (config == null) {
                 continue;
             }
             IngestionPipelineNodeDO entity = IngestionPipelineNodeDO.builder()
                     .pipelineId(pipelineId)
-                    .nodeId(node.getNodeId())
-                    .nodeType(normalizeNodeType(node.getNodeType()))
-                    .nextNodeId(node.getNextNodeId())
-                    .settingsJson(toJson(node.getSettings()))
-                    .conditionJson(toJson(node.getCondition()))
+                    .nodeId(config.getNodeId())
+                    .nodeType(normalizeNodeType(config.getNodeType()))
+                    .nextNodeId(config.getNextNodeId())
+                    .settingsJson(toJson(config.getSettings()))
+                    .conditionJson(toJson(config.getCondition()))
+                    .branchesJson(config.getBranches() == null ? null : toJson(objectMapper.valueToTree(config.getBranches())))
                     .createdBy(UserContext.getUsername())
                     .updatedBy(UserContext.getUsername())
                     .build();
@@ -228,7 +275,20 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
     private IngestionPipelineVO toVO(IngestionPipelineDO pipeline, List<IngestionPipelineNodeDO> nodes) {
         IngestionPipelineVO vo = BeanUtil.toBean(pipeline, IngestionPipelineVO.class);
         vo.setNodes(nodes.stream().map(this::toNodeVO).toList());
+        vo.setGraph(resolveGraph(pipeline, nodes));
         return vo;
+    }
+
+    /** 读取画布图：优先 graph_json；为空时由运行节点自动生成线性图（旧数据兼容，不落库） */
+    private IngestionGraph resolveGraph(IngestionPipelineDO pipeline, List<IngestionPipelineNodeDO> nodes) {
+        IngestionGraph graph = IngestionGraphJson.parse(pipeline.getGraphJson());
+        if (graph != null && !graph.isEmpty()) {
+            return graph;
+        }
+        List<NodeConfig> configs = (nodes != null ? nodes : List.<IngestionPipelineNodeDO>of()).stream()
+                .map(this::toNodeConfig)
+                .toList();
+        return IngestionGraphFactory.fromNodes(configs);
     }
 
     // 将节点 DO 转换为 VO，并反序列化 settings 和 condition JSON
@@ -248,7 +308,22 @@ public class IngestionPipelineServiceImpl implements IngestionPipelineService {
                 .settings(parseJson(node.getSettingsJson()))
                 .condition(parseJson(node.getConditionJson()))
                 .nextNodeId(node.getNextNodeId())
+                .branches(parseBranches(node.getBranchesJson()))
                 .build();
+    }
+
+    // 解析分支 JSON 为 NodeConfig.Branch 列表
+    private List<NodeConfig.Branch> parseBranches(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(raw, new com.fasterxml.jackson.core.type.TypeReference<List<NodeConfig.Branch>>() {
+            });
+        } catch (Exception e) {
+            log.warn("分支 JSON 解析失败: {}", raw, e);
+            return null;
+        }
     }
 
     // 将 JsonNode 序列化为字符串，null 返回 null

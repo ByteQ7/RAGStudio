@@ -387,7 +387,13 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
             return;
         }
         Map<String, Integer> nodeOrderMap = buildNodeOrderMap(pipeline);
+        // 有分支时按实际执行顺序编号（日志本身即执行顺序），否则沿用静态链顺序以兼容旧行为
+        boolean hasBranches = pipeline != null && pipeline.getNodes() != null
+                && pipeline.getNodes().stream().anyMatch(n -> n != null
+                        && n.getBranches() != null && !n.getBranches().isEmpty());
+        int executionSeq = 0;
         for (NodeLog log : logs) {
+            executionSeq++;
             String status = resolveNodeStatus(log);
             String outputJson = truncateOutputJson(log.getOutput());
             IngestionTaskNodeDO nodeDO = IngestionTaskNodeDO.builder()
@@ -395,7 +401,8 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
                     .pipelineId(task.getPipelineId())
                     .nodeId(log.getNodeId())
                     .nodeType(log.getNodeType())
-                    .nodeOrder(nodeOrderMap.getOrDefault(log.getNodeId(), 0))
+                    .nodeOrder(hasBranches ? executionSeq
+                            : nodeOrderMap.getOrDefault(log.getNodeId(), 0))
                     .status(status)
                     .durationMs(log.getDurationMs())
                     .message(log.getMessage())
@@ -427,22 +434,47 @@ public class IngestionTaskServiceImpl implements IngestionTaskService {
             if (StringUtils.hasText(node.getNextNodeId())) {
                 referenced.add(node.getNextNodeId());
             }
+            if (node.getBranches() != null) {
+                for (NodeConfig.Branch branch : node.getBranches()) {
+                    if (branch != null && StringUtils.hasText(branch.getNextNodeId())) {
+                        referenced.add(branch.getNextNodeId());
+                    }
+                }
+            }
         }
+        // 从入口节点开始 BFS 遍历（覆盖分支），保证分支节点也有稳定顺序
         int order = 1;
         Set<String> visited = new HashSet<>();
+        java.util.ArrayDeque<String> queue = new java.util.ArrayDeque<>();
         for (String nodeId : nodeMap.keySet()) {
-            if (referenced.contains(nodeId)) {
+            if (!referenced.contains(nodeId)) {
+                queue.add(nodeId);
+            }
+        }
+        if (queue.isEmpty() && !nodeMap.isEmpty()) {
+            queue.add(nodeMap.keySet().iterator().next());
+        }
+        while (!queue.isEmpty()) {
+            String current = queue.poll();
+            if (!visited.add(current)) {
                 continue;
             }
-            String current = nodeId;
-            while (StringUtils.hasText(current) && !visited.contains(current)) {
-                orderMap.put(current, order++);
-                visited.add(current);
-                NodeConfig config = nodeMap.get(current);
-                if (config == null) {
-                    break;
+            orderMap.put(current, order++);
+            NodeConfig config = nodeMap.get(current);
+            if (config == null) {
+                continue;
+            }
+            String next = config.getNextNodeId();
+            if (StringUtils.hasText(next) && nodeMap.containsKey(next)) {
+                queue.add(next);
+            }
+            if (config.getBranches() != null) {
+                for (NodeConfig.Branch branch : config.getBranches()) {
+                    if (branch != null && StringUtils.hasText(branch.getNextNodeId())
+                            && nodeMap.containsKey(branch.getNextNodeId())) {
+                        queue.add(branch.getNextNodeId());
+                    }
                 }
-                current = config.getNextNodeId();
             }
         }
         for (String nodeId : nodeMap.keySet()) {

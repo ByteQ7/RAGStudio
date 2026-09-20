@@ -40,6 +40,11 @@ public class IngestionPipelineDO {
     private String description;
 
     /**
+     * 画布图 JSON（编辑态事实源）
+     */
+    private String graphJson;
+
+    /**
      * 创建人
      */
     private String createdBy;
