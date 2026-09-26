@@ -1,6 +1,7 @@
 package com.byteq.ai.ragstudio.rag.core.harness.tool;
 
 import com.byteq.ai.ragstudio.framework.convention.RetrievedChunk;
+import com.byteq.ai.ragstudio.rag.core.harness.observation.ObservationStore;
 import com.byteq.ai.ragstudio.rag.core.tool.ToolResult;
 
 import java.util.ArrayList;
@@ -38,6 +39,9 @@ public class ToolAssemblyContext {
     /** 工具执行结果回调（图片 URL 收集等） */
     private Consumer<ToolResult> resultConsumer;
 
+    /** 观察存储（Observation Mask 开启时非空；用于注册 observation_reader 回读工具） */
+    private ObservationStore observationStore;
+
     public List<String> getToolNames() {
         return toolNames;
     }
@@ -72,6 +76,14 @@ public class ToolAssemblyContext {
 
     public void setResultConsumer(Consumer<ToolResult> resultConsumer) {
         this.resultConsumer = resultConsumer;
+    }
+
+    public ObservationStore getObservationStore() {
+        return observationStore;
+    }
+
+    public void setObservationStore(ObservationStore observationStore) {
+        this.observationStore = observationStore;
     }
 
     /** 已注册的规范化工具名（不可变快照） */

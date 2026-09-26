@@ -876,7 +876,7 @@ CREATE TABLE t_default_model_config (
 );
 COMMENT ON TABLE t_default_model_config IS '场景默认模型配置表';
 COMMENT ON COLUMN t_default_model_config.id IS '主键ID';
-COMMENT ON COLUMN t_default_model_config.config_key IS '配置键: chat/summary/title/multimodal/doc_image/tool_selector/rerank；graph_extract 由图谱页按需写入';
+COMMENT ON COLUMN t_default_model_config.config_key IS '配置键: chat/summary/title/multimodal/doc_image/tool_selector/rerank/observation_extract；graph_extract 由图谱页按需写入';
 COMMENT ON COLUMN t_default_model_config.model_id IS '关联 t_ai_model.modelId';
 COMMENT ON COLUMN t_default_model_config.create_time IS '创建时间';
 COMMENT ON COLUMN t_default_model_config.update_time IS '更新时间';
@@ -1374,6 +1374,12 @@ INSERT INTO t_default_model_config (id, config_key, model_id, create_time, updat
 ('2080317483776966656', 'tool_selector', 'qwen3-vl-embedding', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('1851609203492257792', 'rerank', 'qwen3-vl-rerank', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO NOTHING;
+
+-- 观察结论提取场景（Observation Mask）：旧工具结果压缩为「结论+句柄」的轻量模型，
+-- 未配置时运行期自动回退 summary 场景；可重放
+INSERT INTO t_default_model_config (id, config_key, model_id, create_time, update_time) VALUES
+('2080317483776966657', 'observation_extract', 'deepseek-v4-flash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (config_key) DO NOTHING;
 
 -- ============================================
 -- 知识库：不预置（Embedding 模型未启用，无法摄入文档，

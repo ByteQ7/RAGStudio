@@ -1,6 +1,8 @@
 package com.byteq.ai.ragstudio.rag.core.harness.tool;
 
+import com.byteq.ai.ragstudio.rag.config.ObservationMaskProperties;
 import com.byteq.ai.ragstudio.rag.config.SearchChannelProperties;
+import com.byteq.ai.ragstudio.rag.core.harness.observation.ObservationReaderTool;
 import com.byteq.ai.ragstudio.rag.core.harness.context.AgentContext;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolExecutor;
 import com.byteq.ai.ragstudio.rag.core.mcp.McpToolRegistry;
@@ -24,7 +26,8 @@ import java.util.List;
  * <p>
  * 统一把各类工具注册进 AgentScope {@link Toolkit}，是工具可见性的唯一入口：
  * <ol>
- *   <li><b>内置工具</b>：rag_search（绑定本次请求 KB/改写上下文）、time_now、tool_reader</li>
+ *   <li><b>内置工具</b>：rag_search（绑定本次请求 KB/改写上下文）、time_now、tool_reader、
+ *       observation_reader（观察掩码开启时，回读被压缩的工具结果）</li>
  *   <li><b>MCP 工具</b>：全量注册（由模型自主选择；后续可接入 ToolRetriever 预筛）</li>
  *   <li><b>SKILL 工具</b>：仅注册有执行配置的技能；纯知识型技能通过 tool_reader 激活</li>
  *   <li><b>扩展工具</b>：{@link HarnessToolProvider}（工作流等业务模块贡献）</li>
@@ -38,17 +41,20 @@ public class ToolRegistryAssembler {
 
     private final RetrievalEngine retrievalEngine;
     private final SearchChannelProperties searchProperties;
+    private final ObservationMaskProperties observationMaskProperties;
     private final McpToolRegistry mcpToolRegistry;
     private final SkillLoader skillLoader;
     private final List<HarnessToolProvider> toolProviders;
 
     public ToolRegistryAssembler(RetrievalEngine retrievalEngine,
                                  SearchChannelProperties searchProperties,
+                                 ObservationMaskProperties observationMaskProperties,
                                  McpToolRegistry mcpToolRegistry,
                                  SkillLoader skillLoader,
                                  List<HarnessToolProvider> toolProviders) {
         this.retrievalEngine = retrievalEngine;
         this.searchProperties = searchProperties;
+        this.observationMaskProperties = observationMaskProperties;
         this.mcpToolRegistry = mcpToolRegistry;
         this.skillLoader = skillLoader;
         this.toolProviders = toolProviders != null ? toolProviders : List.of();
@@ -94,7 +100,13 @@ public class ToolRegistryAssembler {
         register(toolkit, assembly, new ToolReaderTool(skillLoader, mcpToolRegistry,
                 assembly.getToolNameMapping()));
 
-        // 5. SKILL 工具（仅注册有执行配置的技能；纯知识型技能通过 tool_reader 激活）
+        // 5. observation_reader：观察掩码开启时，凭句柄回读被压缩的工具结果
+        if (assembly.getObservationStore() != null) {
+            register(toolkit, assembly,
+                    new ObservationReaderTool(assembly.getObservationStore(), observationMaskProperties));
+        }
+
+        // 6. SKILL 工具（仅注册有执行配置的技能；纯知识型技能通过 tool_reader 激活）
         List<SkillDefinition> skills = skillLoader.getAllSkills();
         int executableSkills = 0;
         for (SkillDefinition def : skills) {
@@ -119,7 +131,7 @@ public class ToolRegistryAssembler {
             register(toolkit, assembly, tool);
         }
 
-        // 6. 扩展工具（HarnessToolProvider：工作流等）
+        // 7. 扩展工具（HarnessToolProvider：工作流等）
         int providedCount = 0;
         for (HarnessToolProvider provider : toolProviders) {
             try {
@@ -137,8 +149,8 @@ public class ToolRegistryAssembler {
             }
         }
 
-        // 内置工具 = rag_search + time_now + tool_reader（3 个）
-        int builtinCount = 3;
+        // 内置工具 = rag_search + time_now + tool_reader（+ observation_reader，掩码开启时）
+        int builtinCount = 3 + (assembly.getObservationStore() != null ? 1 : 0);
         log.info("AgentScope 工具注册: MCP={}, SKILL={}(可执行 {}), 扩展={}, 内置={}, 总计={}",
                 mcpToolRegistry.size(), skills.size(), executableSkills, providedCount, builtinCount,
                 assembly.getToolNames().size());

@@ -115,6 +115,21 @@ rag:
     summary-max-chars: 200
     title-max-length: 30
 
+  # 观察掩码：ReAct 循环中旧工具结果压缩为「结论 + 句柄」，Agent 可凭句柄按需回读
+  observation-mask:
+    enabled: ${OBSERVATION_MASK_ENABLED:true}
+    keep-recent-rounds: 1        # 最近 N 轮工具批次保留全文（保证 Agent 至少完整读过一轮）
+    min-chars-to-mask: 600       # 低于该长度的工具结果不压缩
+    conclusion-max-chars: 500    # 轻量模型结论长度上限
+    extract-model-scene: observation_extract   # 结论提取模型场景键（缺省回退 summary）
+    extract-timeout-ms: 8000     # 结论提取超时（超时走头尾摘要兜底，不阻塞主循环）
+    max-observations: 32         # 单请求登记上限（超限保持原文）
+    max-stored-chars: 262144     # 单请求观察原文总字符上限
+    reader-default-chars: 4000   # observation_reader 单次返回默认字符数
+    reader-max-chars: 8000       # observation_reader 单次返回上限
+    mask-errors: false           # 失败结果保留原文，便于模型感知错误
+    exclude-tools: []            # 不参与压缩的工具名（对齐 Anthropic exclude_tools）
+
   semaphore:
     document-upload:
       name: rag:document:upload

@@ -60,6 +60,13 @@ public class RAGConstant {
      */
     public static final String MCP_PARAMETER_EXTRACT_USER_PROMPT_PATH = "prompt/mcp-parameter-extract-user.st";
 
+    /**
+     * 观察压缩结论提取提示词模板路径
+     * 通过 {@code {question}}、{@code {tool_name}}、{@code {tool_args}}、
+     * {@code {max_chars}}、{@code {observation}} 控制结论提取输入与长度
+     */
+    public static final String OBSERVATION_CONCLUSION_PROMPT_PATH = "prompt/observation-conclusion.st";
+
     // ==================== S3 文件存储常量 ====================
 
     /**

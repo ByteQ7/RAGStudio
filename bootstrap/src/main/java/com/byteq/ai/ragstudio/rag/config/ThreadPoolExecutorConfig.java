@@ -119,6 +119,28 @@ public class ThreadPoolExecutorConfig {
     }
 
     /**
+     * 观察结论提取线程池（Observation Mask）
+     * <p>
+     * 与主循环并行执行轻量模型结论提取；有界队列 + AbortPolicy，
+     * 队列满时提交失败由提取器捕获并降级为头尾摘要，不阻塞 Agent 事件线程。
+     */
+    @Bean
+    public Executor observationExtractExecutor() {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                Math.max(1, CPU_COUNT >> 2),
+                Math.max(2, CPU_COUNT),
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(500),
+                ThreadFactoryBuilder.create()
+                        .setNamePrefix("observation_extract_executor_")
+                        .build(),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+        return TtlExecutors.getTtlExecutor(executor);
+    }
+
+    /**
      * 对话记忆摘要生成线程池
      */
     @Bean

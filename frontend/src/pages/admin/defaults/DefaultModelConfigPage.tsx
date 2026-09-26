@@ -28,7 +28,8 @@ const CONFIG_KEY_LABELS: Record<string, string> = {
   title: "话题命名默认模型",
   multimodal: "图片多模态默认模型",
   doc_image: "文档图片解析默认模型",
-  rerank: "重排序默认模型"
+  rerank: "重排序默认模型",
+  observation_extract: "观察结论提取模型"
 };
 
 // 配置键 → 说明文字
@@ -38,7 +39,8 @@ const CONFIG_KEY_DESCRIPTIONS: Record<string, string> = {
   title: "自动生成对话标题时使用的模型",
   multimodal: "聊天中用户上传图片时使用的模型（需支持多模态）",
   doc_image: "文档入库时，提取嵌入图片中的文字（需支持多模态）",
-  rerank: "知识库检索后对Chunk进行语义重排序的模型（需支持Rerank能力，建议使用多模态Rerank模型以支持图片Chunk重排序）"
+  rerank: "知识库检索后对Chunk进行语义重排序的模型（需支持Rerank能力，建议使用多模态Rerank模型以支持图片Chunk重排序）",
+  observation_extract: "ReAct 循环中把旧工具结果压缩为「结论+句柄」时使用的模型（建议使用低成本小模型；未配置时回退摘要模型）"
 };
 
 export function DefaultModelConfigPage() {

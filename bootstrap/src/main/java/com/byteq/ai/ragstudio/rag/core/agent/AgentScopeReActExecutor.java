@@ -17,7 +17,12 @@ import com.byteq.ai.ragstudio.infra.model.ModelHealthStore;
 import com.byteq.ai.ragstudio.infra.model.ModelSelector;
 import com.byteq.ai.ragstudio.infra.model.ModelTarget;
 import com.byteq.ai.ragstudio.infra.reasoning.ReasoningRouter;
+import com.byteq.ai.ragstudio.rag.config.ObservationMaskProperties;
 import com.byteq.ai.ragstudio.rag.config.RagTraceProperties;
+import com.byteq.ai.ragstudio.rag.core.harness.observation.ObservationConclusionExtractor;
+import com.byteq.ai.ragstudio.rag.core.harness.observation.ObservationEntry;
+import com.byteq.ai.ragstudio.rag.core.harness.observation.ObservationMaskMiddleware;
+import com.byteq.ai.ragstudio.rag.core.harness.observation.ObservationStore;
 import com.byteq.ai.ragstudio.rag.core.harness.context.AgentContext;
 import com.byteq.ai.ragstudio.rag.core.harness.context.DynamicContextMiddleware;
 import com.byteq.ai.ragstudio.rag.core.harness.prompt.SystemPromptAssembler;
@@ -49,6 +54,7 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -173,6 +179,8 @@ public class AgentScopeReActExecutor {
     private final RagTraceRecordService traceRecordService;
     private final RagTraceProperties traceProperties;
     private final ModelHealthStore healthStore;
+    private final ObservationMaskProperties observationMaskProperties;
+    private final ObservationConclusionExtractor conclusionExtractor;
 
     public AgentScopeReActExecutor(
             AgentScopeModelFactory modelFactory,
@@ -184,7 +192,9 @@ public class AgentScopeReActExecutor {
             StreamTaskManager taskManager,
             RagTraceRecordService traceRecordService,
             RagTraceProperties traceProperties,
-            ModelHealthStore healthStore) {
+            ModelHealthStore healthStore,
+            ObservationMaskProperties observationMaskProperties,
+            ObservationConclusionExtractor conclusionExtractor) {
         this.modelFactory = modelFactory;
         this.selector = selector;
         this.defaultModelService = defaultModelService;
@@ -195,6 +205,8 @@ public class AgentScopeReActExecutor {
         this.traceRecordService = traceRecordService;
         this.traceProperties = traceProperties;
         this.healthStore = healthStore;
+        this.observationMaskProperties = observationMaskProperties;
+        this.conclusionExtractor = conclusionExtractor;
     }
 
     /**
@@ -242,6 +254,13 @@ public class AgentScopeReActExecutor {
 
             // 2. 构建工具集（Harness · 工具子模块统一组装：内置 + MCP + SKILL + 扩展）
             ToolAssemblyContext assembly = new ToolAssemblyContext();
+            // 观察掩码：登记工具结果全文 + 注册 observation_reader 回读工具（关闭时不建存储）
+            ObservationStore observationStore = null;
+            if (Boolean.TRUE.equals(observationMaskProperties.getEnabled())) {
+                observationStore = new ObservationStore(observationMaskProperties);
+                state.observationStore = observationStore;
+                assembly.setObservationStore(observationStore);
+            }
             // 引用溯源回调：检索 Chunk 收集 + 引用编号起始偏移（与旧逻辑一致）
             assembly.setChunksConsumer(chunks -> state.retrievedChunks.addAll(chunks));
             assembly.setCitationStartIndexSupplier(() -> state.retrievedChunks.size());
@@ -255,7 +274,7 @@ public class AgentScopeReActExecutor {
             String sysPrompt = systemPromptAssembler.assemble(ctx, state.toolNames);
 
             // 4. 构建 ReActAgent
-            ReActAgent agent = ReActAgent.builder()
+            ReActAgent.Builder agentBuilder = ReActAgent.builder()
                     .name("qa")
                     .sysPrompt(sysPrompt)
                     .model(model)
@@ -269,8 +288,13 @@ public class AgentScopeReActExecutor {
                     .defaultSessionId(taskId)
                     // Harness · 动态上下文中间件：每轮重建 system message，
                     // 使工具在上一轮失效的上下文块（如工作流候选）不再进入后续模型调用
-                    .middleware(new DynamicContextMiddleware(ctx.getDynamicContexts()))
-                    .build();
+                    .middleware(new DynamicContextMiddleware(ctx.getDynamicContexts()));
+            if (observationStore != null) {
+                // 观察掩码中间件：每轮模型调用前把旧工具结果压缩为「结论 + 句柄」，
+                // 只改当次模型输入，不写回 AgentState，不影响 SSE/agentSteps 展示
+                agentBuilder.middleware(new ObservationMaskMiddleware(observationStore, observationMaskProperties));
+            }
+            ReActAgent agent = agentBuilder.build();
 
             // 5. 构建消息列表并订阅事件流
             List<Msg> msgs = buildMessages(ctx);
@@ -426,9 +450,9 @@ public class AgentScopeReActExecutor {
                         k -> new StringBuilder()).append(resultDelta.getDelta());
             } else if (event instanceof ToolResultEndEvent resultEnd) {
                 AgentStep step = state.stepByToolCall.get(resultEnd.getToolCallId());
+                StringBuilder buf = state.toolResultBuffers.remove(resultEnd.getToolCallId());
+                String observation = buf != null ? buf.toString() : "";
                 if (step != null) {
-                    StringBuilder buf = state.toolResultBuffers.remove(resultEnd.getToolCallId());
-                    String observation = buf != null ? buf.toString() : "";
                     step.setObservation(observation);
                     Long start = state.toolCallStartTimes.remove(resultEnd.getToolCallId());
                     if (start != null) {
@@ -436,6 +460,8 @@ public class AgentScopeReActExecutor {
                     }
                     pushStep(step, callback);
                 }
+                // 观察掩码：登记完整结果并异步提取结论（事件流同步派发，先于下一轮 reasoning）
+                captureObservation(state, resultEnd, observation);
                 finishTraceNode(state, state.toolCallNodeIds.remove(resultEnd.getToolCallId()));
             } else if (event instanceof ExceedMaxItersEvent) {
                 maxItersExceeded.set(true);
@@ -489,6 +515,7 @@ public class AgentScopeReActExecutor {
                     "达到最大推理步数（" + state.ctx.getMaxIterations() + "），已终止");
             pushStep(errorStep, callback);
             pushStepsComplete(state, callback);
+            logObservationStats(state);
             streamText("抱歉，这个问题有点复杂，我暂时无法完整回答。请尝试换一种方式提问。", state, callback);
             return;
         }
@@ -673,6 +700,7 @@ public class AgentScopeReActExecutor {
         if (!state.s3ImageUrls.isEmpty()) {
             callback.setRetrievedImageUrls(new ArrayList<>(state.s3ImageUrls));
         }
+        logObservationStats(state);
         callback.onComplete();
     }
 
@@ -851,6 +879,45 @@ public class AgentScopeReActExecutor {
         if (CollUtil.isNotEmpty(result.getS3ImageUrls())) {
             state.s3ImageUrls.addAll(result.getS3ImageUrls());
         }
+    }
+
+    /**
+     * 观察掩码：登记工具结果全文并异步提取结论。
+     * <p>
+     * 事件流同步派发（sink.next 直调订阅者），此处先于结果写入 AgentState 与下一轮 reasoning，
+     * 因此下一轮中间件必然能查到本条观察，不存在竞态。
+     */
+    private void captureObservation(RunState state, ToolResultEndEvent event, String observation) {
+        ObservationStore store = state.observationStore;
+        if (store == null || StrUtil.isBlank(observation)) {
+            return;
+        }
+        AgentStep step = state.stepByToolCall.get(event.getToolCallId());
+        Map<String, Object> toolInput = step != null && step.getToolInput() != null
+                ? step.getToolInput() : Map.of();
+        String toolName = StrUtil.blankToDefault(event.getToolCallName(),
+                step != null ? step.getToolName() : null);
+        if (StrUtil.isBlank(toolName)) {
+            toolName = "unknown";
+        }
+        boolean success = event.getState() == null || event.getState() == ToolResultState.SUCCESS;
+        int iteration = Math.max(0, state.modelCallCount.get() - 1);
+        ObservationEntry entry = store.register(event.getToolCallId(), toolName, toolInput,
+                observation, iteration, success);
+        if (entry != null) {
+            conclusionExtractor.extractAsync(entry, state.ctx.getQuestion());
+        }
+    }
+
+    /** 观察掩码收益统计（请求收尾统一输出） */
+    private void logObservationStats(RunState state) {
+        ObservationStore store = state.observationStore;
+        if (store == null) {
+            return;
+        }
+        log.info("观察掩码统计: taskId={}, 登记观察={}, 已压缩={}, 节省字符={}, 回读次数={}",
+                state.taskId, store.size(), store.maskedObservations(),
+                store.savedChars(), store.readerCalls());
     }
 
     // ==================== System Prompt 与消息构建 ====================
@@ -1113,6 +1180,8 @@ public class AgentScopeReActExecutor {
         final Map<String, Long> toolCallStartTimes = new java.util.concurrent.ConcurrentHashMap<>();
         /** think 标签流式剥离器：content 内联 <think> 区间改道 think 通道（每次运行独立状态） */
         final ThinkTagStreamFilter thinkTagFilter = new ThinkTagStreamFilter();
+        /** 观察掩码存储（开关关闭时为 null） */
+        volatile ObservationStore observationStore;
         volatile Msg finalMsg;
 
         RunState(String taskId, AgentContext ctx) {

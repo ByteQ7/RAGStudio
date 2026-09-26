@@ -33,6 +33,11 @@ public enum PromptKeys {
             "prompt/context-format.st",
             "{chunks_body},{rules},{body},{error_list},{index},{question},{context},{questions},{content},{snippet_section}"),
 
+    OBSERVATION_CONCLUSION("observation_conclusion", "chat", "观察压缩结论提取",
+            "ReAct 循环中把旧工具结果压缩为「结论 + 句柄」时，用轻量模型提取结论的提示词（保留 [^chunk_N] 引用标记）。",
+            "prompt/observation-conclusion.st",
+            "{question},{tool_name},{tool_args},{max_chars},{observation}"),
+
     // ==================== query 查询理解类 ====================
 
     QUERY_REWRITE("query_rewrite", "query", "查询改写与多问句拆分",
