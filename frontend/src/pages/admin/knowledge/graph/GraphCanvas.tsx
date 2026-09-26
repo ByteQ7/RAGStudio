@@ -41,6 +41,41 @@ function collectPositions(graph: Graph): Map<string, NodePosition> {
   return positions;
 }
 
+/** 指针离开画布时清理 hover 高亮（G6 hover-activate 只响应元素级 leave，画布级 leave 会残留状态） */
+function clearHoverStates(graph: Graph): void {
+  const states: Record<string, string[]> = {};
+  const collect = (ids: string[]) => {
+    for (const id of ids) {
+      const current = graph.getElementState(id);
+      const next = current.filter((state) => state !== "active" && state !== "inactive");
+      if (next.length !== current.length) {
+        states[id] = next;
+      }
+    }
+  };
+  collect(graph.getNodeData().map((node) => node.id));
+  collect(graph.getEdgeData().map((edge) => edge.id));
+  if (Object.keys(states).length > 0) {
+    void graph.setElementState(states);
+  }
+}
+
+/** 同步选中态：清除其他节点的 selected，并在目标节点存在时高亮（节点不存在/画布未渲染时静默跳过） */
+function syncSelectedState(graph: Graph, selectedId: string | null): void {
+  if (!graph.rendered) {
+    return;
+  }
+  const prevSelected = graph.getElementDataByState("node", "selected");
+  for (const node of prevSelected) {
+    if (node.id !== selectedId) {
+      graph.setElementState(node.id, []);
+    }
+  }
+  if (selectedId && graph.getNodeData().some((node) => node.id === selectedId)) {
+    graph.setElementState(selectedId, ["selected"]);
+  }
+}
+
 /** 新旧数据是否构成「聚焦展开」（新图包含全部旧节点 → 保留视口与坐标） */
 function isIncrementalExpand(prev: GraphSubgraph | null, next: GraphSubgraph | null): boolean {
   if (!prev || !next || prev.nodes.length === 0) {
@@ -57,6 +92,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const prevDataRef = useRef<GraphSubgraph | null>(null);
   /** 布局请求序号：数据变化时递增，丢弃过期布局结果，防止竞态 */
   const layoutSeqRef = useRef(0);
+  /** 首次布局是否已写入画布：避免未拿到坐标就渲染（autoFit 会缩放到最大导致视图空白） */
+  const layoutAppliedRef = useRef(false);
   const focusTsRef = useRef(0);
   propsRef.current = props;
 
@@ -67,7 +104,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
 
     const graph = new Graph({
       container,
-      autoFit: { type: "view" },
       padding: 32,
       zoomRange: ZOOM_RANGE,
       animation: { duration: 200 },
@@ -84,12 +120,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
             stroke: "#2563eb",
             halo: true,
             haloStroke: "#2563eb",
-            haloOpacity: 0.25,
+            haloStrokeOpacity: 0.35,
             haloLineWidth: 8
           },
           active: {
-            lineWidth: 2.5,
-            stroke: "#f59e0b"
+            halo: true,
+            haloStroke: "#f59e0b",
+            haloLineWidth: 8,
+            haloStrokeOpacity: 0.9
           },
           inactive: {
             opacity: 0.25
@@ -110,6 +148,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     });
     graphRef.current = graph;
 
+    graph.on("canvas:pointerleave", () => clearHoverStates(graph));
     graph.on("node:click", (e) => {
       const id = (e as { target?: { id?: string } }).target?.id;
       if (id) {
@@ -127,6 +166,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       graph.destroy();
       graphRef.current = null;
       prevDataRef.current = null;
+      layoutAppliedRef.current = false;
     };
   }, []);
 
@@ -149,13 +189,25 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       if (seq !== layoutSeqRef.current || !graphRef.current) {
         return;
       }
-      const gd: GraphData = buildGraphData(data, layoutResult, props.showEdgeLabels, props.hiddenTypes);
+      const gd: GraphData = buildGraphData(
+        data,
+        layoutResult,
+        propsRef.current.showEdgeLabels,
+        propsRef.current.hiddenTypes
+      );
       graph.setData(gd);
-      graph.render().then(() => {
-        if (!incremental) {
-          graph.fitView({}, { duration: 300 });
-        }
-      });
+      layoutAppliedRef.current = true;
+      void graph
+        .render()
+        .then(() => {
+          if (!incremental) {
+            graph.fitView({}, { duration: 300 });
+          }
+          syncSelectedState(graph, propsRef.current.selectedId);
+        })
+        .catch(() => {
+          // 画布在渲染完成前被销毁（如数据重载触发重新挂载），忽略该渲染结果
+        });
     });
     prevDataRef.current = props.data;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,9 +219,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (!graph || !props.data || props.data.nodes.length === 0) {
       return;
     }
+    // 首次布局尚未写入时跳过：此时没有坐标，渲染会让 autoFit 以原点包围盒缩放到最大
+    if (!layoutAppliedRef.current) {
+      return;
+    }
     const gd: GraphData = buildGraphData(props.data, collectPositions(graph), props.showEdgeLabels, props.hiddenTypes);
     graph.setData(gd);
-    void graph.render();
+    syncSelectedState(graph, propsRef.current.selectedId);
+    void graph.render().catch(() => {
+      // 同数据更新：画布销毁中断渲染时忽略
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.showEdgeLabels, props.hiddenTypes]);
 
@@ -179,15 +238,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (!graph) {
       return;
     }
-    const prevSelected = graph.getElementDataByState("node", "selected");
-    for (const node of prevSelected) {
-      if (node.id !== props.selectedId) {
-        graph.setElementState(node.id, []);
-      }
-    }
-    if (props.selectedId) {
-      graph.setElementState(props.selectedId, ["selected"]);
-    }
+    syncSelectedState(graph, props.selectedId);
   }, [props.selectedId]);
 
   // ==================== 外部定位请求 ====================
@@ -203,7 +254,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       return;
     }
     const exists = graph.getNodeData().some((n) => n.id === id);
-    if (!exists) {
+    if (!exists || !graph.rendered) {
       return;
     }
     graph.setElementState(id, ["selected"]);
@@ -252,7 +303,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     },
     focusEntity: (id: string) => {
       const graph = graphRef.current;
-      if (!graph) return;
+      if (!graph || !graph.rendered) return;
       const exists = graph.getNodeData().some((n) => n.id === id);
       if (!exists) {
         return;
