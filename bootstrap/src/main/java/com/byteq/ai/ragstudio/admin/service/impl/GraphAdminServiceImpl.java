@@ -280,11 +280,11 @@ public class GraphAdminServiceImpl implements GraphAdminService {
 
     private List<String> queryNeighbors(String kbId, Set<String> frontier, int limit) {
         List<String> result = new ArrayList<>();
-        jdbcTemplate.query("""
+        result.addAll(jdbcTemplate.query("""
                         SELECT r.target_entity_id AS id FROM t_graph_relation r
                         WHERE r.kb_id = ? AND r.source_entity_id = ANY(?) ORDER BY r.weight DESC LIMIT ?
                         """,
-                (rs, i) -> rs.getString("id"), kbId, frontier.toArray(new String[0]), limit);
+                (rs, i) -> rs.getString("id"), kbId, frontier.toArray(new String[0]), limit));
         result.addAll(jdbcTemplate.query("""
                         SELECT r.source_entity_id AS id FROM t_graph_relation r
                         WHERE r.kb_id = ? AND r.target_entity_id = ANY(?) ORDER BY r.weight DESC LIMIT ?
