@@ -38,9 +38,9 @@ description: 经纬度逆地理编码。输入 lat、lng，返回省份/城市/�
 ## 使用示例
 
 ```
-用户：我的位置：纬度 31.9242, 经度 120.4923
+用户：我的位置：纬度 31.2642, 经度 120.4923
 Action: geo-reverse
-Action Input: {"lat": "31.9242", "lng": "120.4923"}
+Action Input: {"lat": "31.2642", "lng": "120.4923"}
 → {"status": 1, "address": {"province": "江苏省", "city": "苏州市", "district": "吴中区", ...}}
 → Final Answer: 您当前在江苏省苏州市。请问您想查询哪个城市的天气？
 ```
