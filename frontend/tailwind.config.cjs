@@ -2,6 +2,9 @@
 module.exports = {
   darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  // `table` 工具类会命中 Prism markdown 表格 token 的 class（token.table 等，
+  // 如 SKILL.md 编辑器高亮层），使其 display:table 导致表格被拆成多行；禁用该工具类
+  blocklist: ["table"],
   theme: {
     extend: {
       colors: {

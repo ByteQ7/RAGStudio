@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { CodeEditor } from "@/components/shared/CodeEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -980,17 +981,18 @@ export function SkillListPage() {
                                 </span>
                               </div>
                             ) : (
-                              <Textarea
+                              <CodeEditor
                                 value={currentFileContent}
-                                onChange={(event) =>
+                                onChange={(content) =>
                                   setUpserts((prev) => ({
                                     ...prev,
-                                    [selectedFile]: event.target.value
+                                    [selectedFile]: content
                                   }))
                                 }
+                                filePath={selectedFile}
                                 disabled={selectedFileDeleted || fileLoading}
                                 placeholder={fileLoading ? "加载中..." : "输入文件内容..."}
-                                className="flex-1 font-mono text-xs leading-relaxed resize-none"
+                                className="flex-1"
                               />
                             )}
                           </>
